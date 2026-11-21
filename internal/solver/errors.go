@@ -419,10 +419,14 @@ type ReadonlyFieldError struct {
 // written value fits every member's field. The way to write the field is to narrow the
 // receiver with a `match` and write through the narrowed binding.
 //
-// Receiver and Target are the receiver and the assignment target as written. Union is the
-// receiver's type. Source is the written value's type. Member and FieldType name the first
-// member, in declaration order, whose field type rejects Source, and that field's type. Both
-// are nil when every member accepts Source.
+// Its fields are:
+//
+//   - Receiver and Target, the receiver and the assignment target as written;
+//   - Field, the written field;
+//   - Union, the receiver's type;
+//   - Source, the written value's type;
+//   - Member and FieldType, the first member in declaration order whose field type rejects
+//     Source, and that field's type. Both are nil when every member accepts Source.
 type UnionFieldWriteError struct {
 	Receiver  ast.Node
 	Target    ast.Node

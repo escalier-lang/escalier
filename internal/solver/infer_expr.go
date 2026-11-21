@@ -3050,14 +3050,16 @@ func (c *checker) fieldWriteMember(name string, recv soltype.Type) (soltype.ObjT
 // as `object["name"]`. The rules are the ones inferMemberAssign documents.
 func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, name string, recv soltype.Type, place *ownedPlace, source soltype.Type) soltype.Type {
 	// A union receiver has no single member to check the source against. For an owned
-	// receiver, the structural requirement below checks that each member's field type fits
-	// the written type, which is the check a read makes, and never that the written value
-	// fits the field. So `u.kind = "b"` on `val mut u: {kind: "a"} | {kind: "b"}` would pass
-	// it, since `"a"` fits `string`, and leave a value that matches neither member. Such a
-	// write is rejected here. A write through an immutable
-	// borrow skips this check, so the requirement reports the immutability instead. A variable
-	// whose lower bounds disagree is not checked here, since it joins values that flow into it,
-	// as `val {mut x} = p else { {x: {a: 1}} }` joins `p.x` with a literal.
+	// receiver, the structural requirement below checks only that each member's field type
+	// fits the written type. That is the check a read makes. It never checks that the written
+	// value fits the field. So `u.kind = "b"` on `val mut u: {kind: "a"} | {kind: "b"}` would
+	// pass, since `"a"` fits `string`, and leave a value that matches neither member. Such a
+	// write is rejected here.
+	//
+	// A write through an immutable borrow skips this check, so the requirement reports the
+	// immutability. A variable whose lower bounds disagree is not checked either. It joins the
+	// values that flow into it, as `val {mut x} = p else { {x: {a: 1}} }` joins `p.x` with a
+	// literal.
 	if ref, isRef := recv.(*soltype.RefType); !isRef || ref.Mut {
 		if uw, ok := c.unionWriteReceiver(name, recv); ok {
 			return c.rejectUnionFieldWrite(e, object, name, recv, place, uw, source)
@@ -3149,10 +3151,12 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 	return w
 }
 
-// unionFieldWrite is the union a field write lands on. union is the receiver's type, members
-// are its members other than `undefined` and `null`, and fields holds the type a write to the
-// field may store in each member, in the same order. readonly reports whether some member
-// declares the field readonly.
+// unionFieldWrite is the union a field write lands on. Its fields are:
+//
+//   - union, the receiver's type;
+//   - members, the union's members other than `undefined` and `null`;
+//   - fields, the type a write to the field may store in each member, in the order of members;
+//   - readonly, whether some member declares the field readonly.
 type unionFieldWrite struct {
 	union    soltype.Type
 	members  []soltype.Type
@@ -3197,11 +3201,19 @@ func (c *checker) unionWriteReceiver(name string, recv soltype.Type) (unionField
 	return uw, true
 }
 
-// rejectUnionFieldWrite reports a write of field name through recv, a receiver whose type is the
-// union uw, and returns the written type. e is the assignment, object its receiver as written,
-// place the place recv is an owned layer of or nil, and source the written value's type. A write
-// through an immutable binding reports that binding and nothing else. A field some member
-// declares readonly reports ReadonlyFieldError and nothing else.
+// rejectUnionFieldWrite reports a write of field name through a union receiver and returns the
+// written type. Its parameters are:
+//
+//   - e, the assignment;
+//   - object, the receiver as written;
+//   - name, the written field;
+//   - recv, the receiver's type;
+//   - place, the place recv is an owned layer of, or nil;
+//   - uw, the union recv denotes, from unionWriteReceiver;
+//   - source, the written value's type.
+//
+// A write through an immutable binding reports that binding and nothing else. A field some
+// member declares readonly reports ReadonlyFieldError and nothing else.
 func (c *checker) rejectUnionFieldWrite(e *ast.BinaryExpr, object ast.Expr, name string, recv soltype.Type, place *ownedPlace, uw unionFieldWrite, source soltype.Type) soltype.Type {
 	w := widen(source)
 	owned, unsettled := c.ownedOrUnsettledMutation(e, recv, place)
