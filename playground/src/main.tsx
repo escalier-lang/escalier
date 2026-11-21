@@ -112,7 +112,13 @@ async function start(
         // has no process ID, and the server doesn't read this field.
         processId: null,
         workspaceFolders: [{ uri: 'file:///', name: 'playground' }],
-        capabilities: {},
+        // provideCompletionItems maps a snippet item to Monaco's InsertAsSnippet rule,
+        // so the server may send items such as `throws ${1:_}`.
+        capabilities: {
+            textDocument: {
+                completion: { completionItem: { snippetSupport: true } },
+            },
+        },
     });
     console.log('initialize response', initResponse);
 
