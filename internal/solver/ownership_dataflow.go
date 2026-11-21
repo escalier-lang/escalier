@@ -1734,7 +1734,7 @@ func (d *bodyDataflow) placeUsedLaterAt(p movePlace, ev ownershipEvent, at liven
 // The error blames the argument that holds the closure, once per argument.
 func (d *bodyDataflow) checkClosureArgWrites(ev *callEvent, s *dataflowState) {
 	var closures, borrows []*liveLoan
-	for _, l := range d.sortedLoans(s) {
+	for _, l := range s.loans {
 		switch {
 		case l.closure():
 			closures = append(closures, l)
@@ -1745,6 +1745,11 @@ func (d *bodyDataflow) checkClosureArgWrites(ev *callEvent, s *dataflowState) {
 	if len(closures) == 0 || len(borrows) == 0 {
 		return
 	}
+	// Most calls hold no closure capture or no mutable loan and return above, so only the
+	// calls that reach here pay for the sort. Each list is sorted into the order the borrows
+	// were taken, which keeps the reports deterministic.
+	d.sortLoans(closures)
+	d.sortLoans(borrows)
 
 	for i, arg := range ev.call.Args {
 		if err := d.closureArgWrite(ev, i, passedVia(ev.params[i], calleeName(ev.call.Callee)), closures, borrows); err != nil {
@@ -2551,10 +2556,14 @@ func (d *bodyDataflow) sortedLoans(s *dataflowState) []*liveLoan {
 	for _, l := range s.loans {
 		out = append(out, l)
 	}
+	d.sortLoans(out)
+	return out
+}
 
-	slices.SortFunc(out, func(a, b *liveLoan) int {
+// sortLoans sorts `loans` in place into the order sortedLoans returns.
+func (d *bodyDataflow) sortLoans(loans []*liveLoan) {
+	slices.SortFunc(loans, func(a, b *liveLoan) int {
 		oa, ob := d.order[a.ev], d.order[b.ev]
 		return cmp.Or(cmp.Compare(oa.event, ob.event), cmp.Compare(oa.derived, ob.derived))
 	})
-	return out
 }

@@ -519,9 +519,10 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 }
 
 // TestClosureArgWritesMutableSlot covers a closure that a call's argument holds, where the
-// call also borrows a place as mutable through a `&mut self` receiver or a `&mut` parameter. A closure that writes an overlapping place is rejected, whether it assigns the
-// place, passes it as a `&mut self` receiver or a `&mut` argument, or calls another closure
-// that does. The accepted cases cover a closure that only reads the place, one that writes a
+// call also borrows a place as mutable through a `&mut self` receiver or a `&mut` parameter.
+// A closure that writes an overlapping place is rejected, whether it assigns the place, passes
+// it as a `&mut self` receiver or a `&mut` argument, or calls another closure that does,
+// including a closure nested in its own body. The accepted cases cover a closure that only reads the place, one that writes a
 // disjoint place, and a call with no `&mut` slot.
 func TestClosureArgWritesMutableSlot(t *testing.T) {
 	tests := map[string]struct {
@@ -584,6 +585,18 @@ func TestClosureArgWritesMutableSlot(t *testing.T) {
 				}
 			`,
 			want: []string{"4:15-7:7: this call may run the 'compareFn' passed to 'sort', which writes 'arr' while the call borrows it as mutable for 'self'"},
+		},
+		"CompareFnCallsANestedClosureThatPops": {
+			src: `
+				export fn sortPop(mut arr: Array<number>) -> undefined {
+					arr.sort(fn (a, b) {
+						val pop = fn () { arr.pop() }
+						pop()
+						return 0
+					})
+				}
+			`,
+			want: []string{"3:15-7:7: this call may run the 'compareFn' passed to 'sort', which writes 'arr' while the call borrows it as mutable for 'self'"},
 		},
 		"CallbackCallsAMutMethodOfTheReceiver": {
 			src: `

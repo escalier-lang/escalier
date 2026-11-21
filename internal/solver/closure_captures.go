@@ -42,8 +42,11 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 	// moved maps each captured name the closure's body moves to the expression that moves it.
 	moved := c.capturesMovedBy[closure]
 	// mutCalls maps the declaration of each local the closure's body passes as a `&mut self`
-	// receiver or a `&mut` argument to the field path of each such value.
-	mutCalls := c.mutCallPaths(closure)
+	// receiver or a `&mut` argument to the field path of each such value. The walk that fills
+	// it runs at the first capture that records into the event table, so a closure with no
+	// such capture skips it.
+	var mutCalls map[ast.Node][][]placeSeg
+	mutCallsDone := false
 	var callWrites []movePlace
 
 	for _, capture := range c.closureCaptures(closure) {
@@ -79,6 +82,10 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 		// owned local.
 		if t := c.eventTable(); t != nil {
 			t.captureTypes[root] = bindingType(b)
+			if !mutCallsDone {
+				mutCalls = c.mutCallPaths(closure)
+				mutCallsDone = true
+			}
 			for _, path := range mutCalls[bindingDecl(b)] {
 				callWrites = append(callWrites, movePlace{root: root, path: path})
 			}
