@@ -414,24 +414,22 @@ type ReadonlyFieldError struct {
 }
 
 // UnionFieldWriteError fires on an assignment such as `u.kind = "b"` or `u["kind"] = "b"`
-// whose receiver is a union of members that each declare the field. A write through the
-// union could leave the value matching none of its members, so it is rejected even when the
-// written value fits every member's field. The way to write the field is to narrow the
-// receiver with a `match` and write through the narrowed binding.
+// whose receiver is a union of members that each declare the field, when the written value
+// does not fit the field in some member. The write could leave the value matching none of
+// the union's members. The way to write the field is to narrow the receiver with a `match`
+// and write through the narrowed binding.
 //
 // Its fields are:
 //
 //   - Receiver and Target, the receiver and the assignment target as written;
 //   - Field, the written field;
-//   - Union, the receiver's type;
 //   - Source, the written value's type;
 //   - Member and FieldType, the first member in declaration order whose field type rejects
-//     Source, and that field's type. Both are nil when every member accepts Source.
+//     Source, and that field's type.
 type UnionFieldWriteError struct {
 	Receiver  ast.Node
 	Target    ast.Node
 	Field     string
-	Union     soltype.Type
 	Source    soltype.Type
 	Member    soltype.Type
 	FieldType soltype.Type
@@ -3773,12 +3771,6 @@ func (e *UnionFieldWriteError) Message() string {
 	receiver := writtenPlaceName(e.Receiver, "the receiver")
 	target := writtenPlaceName(e.Target, soltype.DisplayMemberName(e.Field))
 	fix := fmt.Sprintf("narrow '%s' with a `match` and write through the narrowed binding", receiver)
-	if e.Member == nil {
-		return fmt.Sprintf(
-			"cannot assign to '%s', since '%s' has the union type '%s' and a write through it could leave the value matching none of its members; %s",
-			target, receiver, soltype.Print(e.Union), fix,
-		)
-	}
 	member := soltype.Print(e.Member)
 	return fmt.Sprintf(
 		"cannot assign %s to '%s', since '%s' may hold %s '%s', whose '%s' is %s; %s",
