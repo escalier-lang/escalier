@@ -192,16 +192,18 @@ the parser requires anyway.
 
 ## Playground
 
-The playground already forwards code actions, since #2747. `language.ts`
-registers the provider from `playground/src/code-actions.ts`, which keeps the
-diagnostics the server last published and matches them to Monaco markers by range
-and message, so a fix that reads a diagnostic's `data` works. The quick fix
-needs no client change.
+The playground already forwards code actions, since #2747.
+`playground/src/language/language.ts` registers the provider from
+`playground/src/language/code-actions.ts`. The provider keeps the diagnostics the
+server last published and matches them to Monaco markers by range and message, so
+a fix that reads a diagnostic's `data` works. The quick fix needs no client
+change.
 
 Completion is the remaining gap. `provideCompletionItems` in
-`playground/src/completions.ts` maps `textEdit`, `insertText` and
+`playground/src/language/completions.ts` maps `textEdit`, `insertText` and
 `insertTextFormat`, but drops `additionalTextEdits`. It needs to convert each
-edit's range with `lspRangeToMonacoRange` and set Monaco's `additionalTextEdits`.
+edit's range with `lspRangeToMonacoRange` from `ranges.ts` and set Monaco's
+`additionalTextEdits`.
 `resolveCompletionItem` copies only `detail` back, which is fine as long as the
 server computes the edits up front.
 
