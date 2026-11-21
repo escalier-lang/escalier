@@ -10,6 +10,10 @@
     font-size: 12px;
 }
 
+.spacer {
+    flex: 1;
+}
+
 .item {
     display: flex;
     align-items: center;

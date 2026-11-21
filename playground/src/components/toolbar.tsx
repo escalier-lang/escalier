@@ -7,7 +7,6 @@ import {
     useThemeStore,
 } from '#theme/theme';
 
-import { CheckStatusIndicator } from './check-status';
 import { ConfirmDialog } from './confirm-dialog';
 import { Dropdown, type DropdownItem } from './dropdown';
 
@@ -126,9 +125,7 @@ export const Toolbar = ({
             >
                 Report a bug
             </button>
-            <div className={styles.spacer}>
-                <CheckStatusIndicator />
-            </div>
+            <div className={styles.spacer} />
             <a
                 className={`${styles.dropdownButton} ${styles.link}`}
                 href={REPO_URL}

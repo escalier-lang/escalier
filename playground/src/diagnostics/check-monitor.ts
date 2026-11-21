@@ -3,17 +3,17 @@ import { create } from 'zustand';
 import type { CheckEvent } from '#lsp-client/client';
 
 /**
- * How long the server has to be checking before the toolbar says so. A shorter check
- * leaves the toolbar showing how long the last one took, so a quick edit doesn't flash
+ * How long the server has to be checking before the status bar says so. A shorter check
+ * leaves the status bar showing how long the last one took, so a quick edit doesn't flash
  * the indicator. Checking an edit to one of the playground's examples takes 100 to
  * 220 ms in a production build, so this is about five times the slowest.
  */
 export const SOFT_BUDGET_MS = 1_000;
 
-/** How often the toolbar's elapsed time updates once a check passes SOFT_BUDGET_MS. */
+/** How often the status bar's elapsed time updates once a check passes SOFT_BUDGET_MS. */
 const TICK_MS = 250;
 
-/** What the toolbar shows about checks. */
+/** What the status bar shows about checks. */
 export type CheckStatus =
     | {
           kind: 'idle';
@@ -45,7 +45,7 @@ export function formatSeconds(ms: number): string {
         : `${Math.round(ms / 1000)} s`;
 }
 
-/** Returns what the toolbar shows for status, or an empty string for nothing. */
+/** Returns what the status bar shows for status, or an empty string for nothing. */
 export function checkStatusText(status: CheckStatus): string {
     if (status.kind === 'checking' && status.elapsedMs >= SOFT_BUDGET_MS) {
         return `Checking… ${formatSeconds(status.elapsedMs)}`;
@@ -90,7 +90,7 @@ export class CheckMonitor {
             return;
         }
         this.busySince = Date.now();
-        // A check under SOFT_BUDGET_MS changes nothing the toolbar shows, so the ticks
+        // A check under SOFT_BUDGET_MS changes nothing the status bar shows, so the ticks
         // publish only past it.
         this.timer = setInterval(() => {
             if (
