@@ -409,7 +409,7 @@ func TestInfoEvaluate(t *testing.T) {
 		{
 			name:     "IndexedAccess",
 			src:      "type Point = {x: number, y?: number}\ndeclare val v: Point[\"y\"]",
-			expected: "number",
+			expected: "number | undefined",
 		},
 		{
 			name:     "Keyof",
@@ -429,7 +429,7 @@ func TestInfoEvaluate(t *testing.T) {
 		{
 			name:     "NestedOperator",
 			src:      "type Point = {x: number, y?: number}\ndeclare val v: {y: Point[\"y\"]}",
-			expected: "{y: number}",
+			expected: "{y: number | undefined}",
 		},
 		{
 			name:     "OperatorInSelectedBranch",

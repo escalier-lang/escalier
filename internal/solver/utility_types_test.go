@@ -113,6 +113,20 @@ func runUtilityReductions(t *testing.T, tests []utilityReduction) {
 // TypeScript reduces the same application to.
 func TestUtilityTypeReductions(t *testing.T) {
 	runUtilityReductions(t, []utilityReduction{
+		{
+			// An optional property may be absent, so reading it by indexed access gives
+			// `undefined` as well as the property's type.
+			name:         "IndexOptionalProperty",
+			src:          `type Result = {x: number, y?: number}["y"]`,
+			wantExpanded: "number | undefined",
+		},
+		{
+			// A mapped type over a key set written out, rather than `keyof T`, copies no `?`
+			// marker, so the field keeps the `undefined` its indexed access gave it.
+			name:         "NonHomomorphicMapKeepsUndefined",
+			src:          `type Result = {[K]: {y?: number}[K] for K in "y"}`,
+			wantExpanded: "{y: number | undefined}",
+		},
 		// `Partial<T>` adds `?` to every field. The mapped type's `?` modifier is what does it.
 		{
 			name:         "Partial",

@@ -250,10 +250,11 @@ func (i *Info) DisplayTypeOf(n ast.Node) soltype.Type {
 // operators are indexed access, `keyof`, conditional and mapped types, object and tuple
 // spreads, template literals, the intrinsic string operators, `Exact` and `Inexact`, and
 // a meet with a complement. `Point["y"]` for `type Point = {x: number, y?: number}`
-// evaluates to `number`. An operator over a type parameter has no value to reduce to and
-// stays as written. Evaluate expands an alias only where an operator reads through it, so
-// `{p: Point}` evaluates to itself while the spread in `{...Point, z: number}` merges
-// Point's fields. A table built by NewInfo returns t unchanged.
+// evaluates to `number | undefined`. An operator over a type parameter has no value to
+// reduce to and stays as written. Evaluate expands an alias only where an operator reads
+// through it, so `{p: Point}` evaluates to itself while the spread in
+// `{...Point, z: number}` merges Point's fields. A table built by NewInfo returns t
+// unchanged.
 //
 // Call it only once the run has finished, for the reason ResolvedTypeOf gives. Deciding
 // a conditional runs a trial that writes the run's Context and rolls it back, so no other

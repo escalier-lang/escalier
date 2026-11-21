@@ -29,14 +29,14 @@ func TestHoverVerbosity(t *testing.T) {
 			name:  "IndexedAccessAliasLevel0",
 			files: map[string]string{"lib/a.esc": point + "export type Y = Point[\"y\"]"},
 			open:  "lib/a.esc", line: 1, col: 12, level: 0,
-			expected: "type Y = Point[\"y\"]\n= number",
+			expected: "type Y = Point[\"y\"]\n= number | undefined",
 			reached:  0, canIncrease: true, canDecrease: false,
 		},
 		{
 			name:  "IndexedAccessAliasLevel1",
 			files: map[string]string{"lib/a.esc": point + "export type Y = Point[\"y\"]"},
 			open:  "lib/a.esc", line: 1, col: 12, level: 1,
-			expected: "type Y = number",
+			expected: "type Y = number | undefined",
 			reached:  1, canIncrease: false, canDecrease: true,
 		},
 		{
@@ -44,14 +44,14 @@ func TestHoverVerbosity(t *testing.T) {
 			name:  "IndexedAccessAliasPastLastLevel",
 			files: map[string]string{"lib/a.esc": point + "export type Y = Point[\"y\"]"},
 			open:  "lib/a.esc", line: 1, col: 12, level: 3,
-			expected: "type Y = number",
+			expected: "type Y = number | undefined",
 			reached:  1, canIncrease: false, canDecrease: true,
 		},
 		{
 			name:  "IndexedAccessAliasRefLevel1",
 			files: map[string]string{"lib/a.esc": point + "export type Y = Point[\"y\"]\nexport val y: Y = 1"},
 			open:  "lib/a.esc", line: 2, col: 14, level: 1,
-			expected: "type Y = number",
+			expected: "type Y = number | undefined",
 			reached:  1, canIncrease: false, canDecrease: true,
 		},
 		{
@@ -200,7 +200,7 @@ func TestHoverVerbosity(t *testing.T) {
 			name:  "AliasRefFromBin",
 			files: map[string]string{"lib/a.esc": point + "export type Y = Point[\"y\"]", "bin/main.esc": "val y: Y = 1"},
 			open:  "bin/main.esc", line: 0, col: 7, level: 1,
-			expected: "type Y = number",
+			expected: "type Y = number | undefined",
 			reached:  1, canIncrease: false, canDecrease: true,
 		},
 		{
@@ -260,7 +260,7 @@ func TestHoverVerbosityOverJSON(t *testing.T) {
 	encoded, err := json.Marshal(result)
 	require.NoError(t, err)
 	require.JSONEq(t, `{
-		"contents": {"kind": "markdown", "value": "`+"```escalier\\ntype Y = number\\n```"+`"},
+		"contents": {"kind": "markdown", "value": "`+"```escalier\\ntype Y = number | undefined\\n```"+`"},
 		"verbosityLevel": 1,
 		"canDecreaseVerbosity": true
 	}`, string(encoded))
