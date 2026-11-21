@@ -399,7 +399,7 @@ func TestMoveSemantics(t *testing.T) {
 		"GlobalEscapeReportsStaticImmutablePath": {
 			src: `
 				var sink = &{x: 0}
-				fn cache(p: &mut {x: number}) -> undefined {
+				fn cache(p: &'static mut {x: number}) -> undefined {
 					sink = p
 					p.x = 1
 				}

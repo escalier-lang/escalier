@@ -13,6 +13,13 @@ func TestWrittenLifetimeWidened(t *testing.T) {
 		src  string
 		want []string
 	}{
+		"KeepsAnUnnamedInputForTheWholeProgram": {
+			src:  "var sink = &{x: 0}\nfn cache(p: &{x: number}) -> undefined {\n  sink = p\n}",
+			want: []string{"2:13-2:25: the body keeps 'p' for the whole program, but the signature does not write its lifetime; write `'static` on its borrow"},
+		},
+		"KeepsAStaticInputForTheWholeProgram": {
+			src: "var sink = &{x: 0}\nfn cache(p: &'static {x: number}) -> undefined {\n  sink = p\n}",
+		},
 		"ReturnsTheNamedInput": {
 			src: `
 				type Flat = {x: number}

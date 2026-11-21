@@ -2581,6 +2581,27 @@ func (e *LifetimeRelationUndeclaredError) Message() string {
 		e.Sub, super, e.Sub, e.Super)
 }
 
+// ClassLifetimeRelationUndeclaredError fires when a member's body requires a lifetime its
+// class declares to outlive a lifetime the member's own `<…>` list names, and the member's
+// signature does not imply it. Class and Member are the two names without their quote, and
+// Param is the member's binder for Member, which the error blames. No bound in the
+// member's list can name the class's lifetime as the longer one, so the error suggests
+// writing the class's lifetime in place of the member's.
+type ClassLifetimeRelationUndeclaredError struct {
+	Class  string
+	Member string
+	Param  *ast.LifetimeParam
+}
+
+func (*ClassLifetimeRelationUndeclaredError) isSolverError()        {}
+func (e *ClassLifetimeRelationUndeclaredError) Span() ast.Span      { return e.Param.Span() }
+func (e *ClassLifetimeRelationUndeclaredError) Related() []ast.Span { return nil }
+func (e *ClassLifetimeRelationUndeclaredError) Message() string {
+	return fmt.Sprintf(
+		"the body requires the class's '%s to outlive '%s, but the signature does not imply it; write '%s in place of '%s",
+		e.Class, e.Member, e.Class, e.Member)
+}
+
 // CallOnlyFuncKeptError fires when a body keeps a function parameter whose type is written with no
 // lifetime past the call. Such a parameter, as `g` in `fn f(g: fn () -> undefined)`, is only called
 // during the call, so a caller lends it a closure's captures for that call alone. `onClick(g)`

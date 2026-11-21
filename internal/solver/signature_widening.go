@@ -123,12 +123,15 @@ func (c *checker) snapshotWrittenLifetimes(
 
 // checkWrittenLifetimes reports each outlives relation the body requires between two
 // lifetimes of the written signature w describes that the resolved signature does not
-// imply. A relation between two lifetimes the signature names is left to
-// checkSignatureImpliesBodyLifetimes, and a lifetime the body forces to 'static to the
-// checks that report a borrow kept for 'static.
+// imply, and each unnamed lifetime of an input that the body forces to outlive 'static. A
+// relation between two lifetimes the signature names, and a named lifetime forced to
+// 'static, are left to checkSignatureImpliesBodyLifetimes.
 //
 // `fn pick<'x>(a: &'x Flat, b: &Flat) -> &'x Flat { return b }` makes b's lifetime outlive
 // 'x, which the signature does not say, and reports that 'b' flows into the return type.
+// `fn cache(p: &Flat) -> undefined { sink = p }` with a module-level `var sink = &{x: 0}`
+// makes p's lifetime outlive 'static and reports that the body keeps 'p' for the whole
+// program.
 func (c *checker) checkWrittenLifetimes(w *writtenLifetimes) {
 	if w == nil {
 		return
@@ -138,7 +141,16 @@ func (c *checker) checkWrittenLifetimes(w *writtenLifetimes) {
 	type pair struct{ a, b *soltype.LifetimeVar }
 	reported := set.NewSet[pair]()
 	for _, sub := range w.order {
-		if w.funcLts.Contains(sub) || reachesStatic(sub) {
+		if w.funcLts.Contains(sub) {
+			continue
+		}
+		if reachesStatic(sub, nil) {
+			_, named := w.names[sub]
+			if !named && !reachesStatic(sub, w.bounds) {
+				if err := w.keptForStaticError(sub); err != nil {
+					c.report(err)
+				}
+			}
 			continue
 		}
 		for _, super := range w.order {
@@ -194,6 +206,17 @@ func (w *writtenLifetimes) widenedError(sub, super *soltype.LifetimeVar) *Writte
 	for _, h := range w.holders[super] {
 		if h.input != "" && h.input != from {
 			return &WrittenLifetimeWidenedError{From: from, Into: h.input, At: w.holders[sub][0].span}
+		}
+	}
+	return nil
+}
+
+// keptForStaticError returns the error that reports the body keeping the input that holds
+// lt for the whole program, or nil when no input holds lt.
+func (w *writtenLifetimes) keptForStaticError(lt *soltype.LifetimeVar) *WrittenLifetimeKeptForStaticError {
+	for _, h := range w.holders[lt] {
+		if h.input != "" {
+			return &WrittenLifetimeKeptForStaticError{From: h.input, At: h.span}
 		}
 	}
 	return nil
@@ -267,8 +290,9 @@ func outlivesThrough(sub, super *soltype.LifetimeVar, limit map[*soltype.Lifetim
 }
 
 // reachesStatic reports whether lt outlives 'static by a chain of upper bounds, which a
-// body forces when it keeps a borrow for the whole program.
-func reachesStatic(lt *soltype.LifetimeVar) bool {
+// body forces when it keeps a borrow for the whole program. When limit is not nil it reads
+// the bounds as outlivesThrough does.
+func reachesStatic(lt *soltype.LifetimeVar, limit map[*soltype.LifetimeVar]int) bool {
 	seen := set.NewSet[*soltype.LifetimeVar]()
 	stack := []*soltype.LifetimeVar{lt}
 	for len(stack) > 0 {
@@ -278,7 +302,15 @@ func reachesStatic(lt *soltype.LifetimeVar) bool {
 			continue
 		}
 		seen.Add(lv)
-		for _, ub := range lv.UpperBounds {
+		ubs := lv.UpperBounds
+		if limit != nil {
+			n, ok := limit[lv]
+			if !ok {
+				continue
+			}
+			ubs = ubs[:n]
+		}
+		for _, ub := range ubs {
 			switch ub := ub.(type) {
 			case *soltype.StaticLifetime:
 				return true
@@ -354,6 +386,22 @@ func (c *writtenLifetimeCollector) add(lt soltype.Lifetime) {
 	if slices.Contains(c.refs[:len(c.refs)-1], true) {
 		c.exposed.Add(lv)
 	}
+}
+
+// WrittenLifetimeKeptForStaticError reports a body that keeps a borrow an input of a
+// written signature holds for the whole program, as a store into a module-level binding
+// does, where the signature leaves the borrow's lifetime unnamed. From names the input,
+// quoted as `'p'`, or "the receiver". At is the span of the input's written type.
+type WrittenLifetimeKeptForStaticError struct {
+	From string
+	At   ast.Span
+}
+
+func (*WrittenLifetimeKeptForStaticError) isSolverError()        {}
+func (e *WrittenLifetimeKeptForStaticError) Span() ast.Span      { return e.At }
+func (e *WrittenLifetimeKeptForStaticError) Related() []ast.Span { return nil }
+func (e *WrittenLifetimeKeptForStaticError) Message() string {
+	return "the body keeps " + e.From + " for the whole program, but the signature does not write its lifetime; write `'static` on its borrow"
 }
 
 // WrittenLifetimeWidenedError reports a body that makes a borrow an input of a written

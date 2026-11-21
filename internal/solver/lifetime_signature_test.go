@@ -22,6 +22,17 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 			want: []string{"1:6-1:8: the body requires 'a to outlive 'b, but the signature does not declare it; add the bound 'a: 'b"},
 		},
 		{
+			name: "a class lifetime the body makes outlive a member lifetime reports",
+			src: "class Holder<'a> {\n\tpeer: &'a mut {value: number},\n" +
+				"\tpick<'b>(&self) -> &'b {value: number} { return self.peer },\n}",
+			want: []string{"3:7-3:9: the body requires the class's 'a to outlive 'b, but the signature does not imply it; write 'a in place of 'b"},
+		},
+		{
+			name: "a receiver borrowed for the member lifetime implies the class lifetime outlives it",
+			src: "class Holder<'a> {\n\tpeer: &'a mut {value: number},\n" +
+				"\tpick<'b>(&'b self) -> &'b {value: number} { return self.peer },\n}",
+		},
+		{
 			name: "a declared bound covers the relation",
 			src:  `fn f<'a: 'b, 'b>(x: &'a {x: number}, y: &'b {x: number}) -> &'b {x: number} { return x }`,
 		},

@@ -1203,7 +1203,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// The converse also holds: every relation the body imposes between the lifetimes
 		// the signature names must be one the signature declares, since callers read only
 		// the signature.
-		c.checkSignatureImpliesBodyLifetimes(sig, ft, outerScope, outerBounds, outerOwners)
+		c.checkSignatureImpliesBodyLifetimes(sig, recv, ft, outerScope, outerBounds, outerOwners)
 		// The same holds for a lifetime the signature leaves unnamed in a part it writes,
 		// which elision fixes from the signature alone.
 		c.checkWrittenLifetimes(written)

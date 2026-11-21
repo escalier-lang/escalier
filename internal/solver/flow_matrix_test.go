@@ -3183,7 +3183,7 @@ func TestFlowMatrixModuleLevelBorrowCopy(t *testing.T) {
 			site:   "ModuleLevelStore",
 			src: `
 				declare var sink: &{x: number}
-				fn g(r: &{x: number}) -> number {
+				fn g(r: &'static {x: number}) -> number {
 					sink = r
 					return sink.x + r.x
 				}
@@ -3223,7 +3223,7 @@ func TestFlowMatrixModuleLevelNarrowedBorrow(t *testing.T) {
 			site:   "ModuleLevelStore",
 			src: `
 				declare var sink: &{x: number}
-				fn g(m: &mut {x: number}) -> number {
+				fn g(m: &'static mut {x: number}) -> number {
 					sink = m
 					return sink.x + m.x
 				}
