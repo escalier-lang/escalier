@@ -28,6 +28,7 @@ func TestNonNilExprType(t *testing.T) {
 		require.Equal(t, []string{
 			"1:9-1:13: internal error: the checker inferred no type for this CallExpr; please report this as a bug",
 		}, messagesWithSpan(t, c.errs))
+		require.Empty(t, c.errs[0].Related())
 	})
 
 	t.Run("NonNilPassesThrough", func(t *testing.T) {
