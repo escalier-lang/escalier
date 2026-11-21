@@ -1242,7 +1242,7 @@ test("passes the server's check notifications to their listeners", async () => {
 });
 
 test(
-    'calls the server exit listeners when a server ends, before the next starts',
+    'calls the server exit listeners when a server ends, before the next starts, and when stop() ends one',
     { timeout: 10_000 },
     async () => {
         // Only one Client can run at a time.
@@ -1270,11 +1270,11 @@ test(
             ends[0]();
 
             await vi.waitFor(() => expect(launchesAtExit).toEqual([1]));
+            await vi.waitFor(() => expect(ends).toHaveLength(2));
+            // stop() disposes the second server, which ends it.
             await testClient.stop();
-            // stop() ends a server without calling the listeners.
-            ends.at(-1)?.();
             await run;
-            expect(launchesAtExit).toEqual([1]);
+            expect(launchesAtExit).toEqual([1, 2]);
         } finally {
             error.mockRestore();
         }

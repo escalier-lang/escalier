@@ -346,10 +346,11 @@ export class Client {
                 console.error('[Escalier LSP] the server failed:', err);
                 stderr = `\n${describeError(err)}\n`;
             }
+            // A server that stop() ended still ends any check it was running.
+            this.serverEvents.emit('exit');
             if (this.stopping) {
                 return;
             }
-            this.serverEvents.emit('exit');
             this.crashReport = crashReportFrom(
                 stderr.slice(-STDERR_TAIL_CHARS),
             );
@@ -493,8 +494,9 @@ export class Client {
     }
 
     /**
-     * Calls callback each time a server ends, before the client starts the next one. Any
-     * check the server was running ends with it, and no `escalier/checkFinished` follows.
+     * Calls callback each time a server ends, including the one stop() ends, and before
+     * the client starts the next one. Any check the server was running ends with it, and
+     * no `escalier/checkFinished` follows.
      */
     onServerExit(callback: () => void) {
         this.serverEvents.on('exit', callback);
