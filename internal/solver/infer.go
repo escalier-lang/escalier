@@ -1185,9 +1185,9 @@ func (c *checker) recordType(n ast.Node, t soltype.Type) {
 	c.info.setType(n, t)
 }
 
-// inferExpr returns the type of e and records it in Info. It never returns nil. An
-// expression it cannot type yields the ErrorType sentinel, which constrain absorbs in both
-// directions, alongside the diagnostic that explains it.
+// inferExpr returns the type of e. It never returns nil. An expression it cannot type yields
+// the ErrorType sentinel, which constrain absorbs in both directions, alongside the
+// diagnostic that explains it.
 func (c *checker) inferExpr(scope *Scope, lvl int, e ast.Expr) soltype.Type {
 	return c.nonNilExprType(e, c.inferExprKind(scope, lvl, e))
 }
