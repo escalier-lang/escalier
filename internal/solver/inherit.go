@@ -94,6 +94,11 @@ func (c *checker) checkQueuedInheritedMembers() {
 	for _, p := range pending {
 		c.checkInheritedMembers(p.def, p.self, p.decl)
 	}
+	interfaces := c.pendingInterfaceOverrides
+	c.pendingInterfaceOverrides = nil
+	for _, sh := range interfaces {
+		c.checkInterfaceOverrides(sh)
+	}
 }
 
 // checkInheritedMembers checks every member a class declares against the same-named member
@@ -166,6 +171,7 @@ func (c *checker) checkOverriddenName(
 			// under this name, since the half under discussion may have no member at all.
 			own, _ := def.Body.Member(name)
 			c.report(&OverrideFormMismatchError{
+				Kind:       ClassDeclKind,
 				Member:     name,
 				Class:      self.Name,
 				SuperClass: owner.Name,
@@ -184,6 +190,7 @@ func (c *checker) checkOverriddenName(
 			continue
 		}
 		c.report(&IncompatibleOverrideError{
+			Kind:       ClassDeclKind,
 			Member:     name,
 			Class:      self.Name,
 			SuperClass: goal.owner.Name,
