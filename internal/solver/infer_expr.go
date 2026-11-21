@@ -3053,7 +3053,9 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 	// requirement below checks an owned receiver's field only in the read direction. So
 	// `u.kind = "b"` on `val mut u: {kind: "a"} | {kind: "b"}` would pass it, leaving a value
 	// that matches neither member. Such a write is rejected here. A write through an immutable
-	// borrow skips this check, so the requirement reports the immutability instead.
+	// borrow skips this check, so the requirement reports the immutability instead. A variable
+	// whose lower bounds disagree is not checked here, since it joins values that flow into it,
+	// as `val {mut x} = p else { {x: {a: 1}} }` joins `p.x` with a literal.
 	if ref, isRef := recv.(*soltype.RefType); !isRef || ref.Mut {
 		if uw, ok := c.unionWriteReceiver(name, recv); ok {
 			return c.rejectUnionFieldWrite(e, object, name, recv, place, uw, source)
@@ -3147,11 +3149,13 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 
 // unionFieldWrite is the union a field write lands on. union is the receiver's type, members
 // are its members other than `undefined` and `null`, and fields holds the type a write to the
-// field may store in each member, in the same order.
+// field may store in each member, in the same order. readonly reports whether some member
+// declares the field readonly.
 type unionFieldWrite struct {
-	union   soltype.Type
-	members []soltype.Type
-	fields  []soltype.Type
+	union    soltype.Type
+	members  []soltype.Type
+	fields   []soltype.Type
+	readonly bool
 }
 
 // unionWriteReceiver returns the union a write of field name through recv lands on. It reports
@@ -3159,9 +3163,7 @@ type unionFieldWrite struct {
 // each of those members declares name as a property. It reports false for any other receiver,
 // including a union with a member that lacks the field. A borrow is looked through. An
 // inference variable reads as the union its lower bounds agree on, and a variable whose lower
-// bounds are several different types reports false. Such a variable joins the values that
-// flow into it, as `val {mut x} = p else { {x: {a: 1}} }` joins `p.x` with a literal, and is
-// not a union the program wrote.
+// bounds are several different types reports false.
 func (c *checker) unionWriteReceiver(name string, recv soltype.Type) (unionFieldWrite, bool) {
 	carrier, found := soleLowerBound(soltype.CarrierOf(recv), func(t soltype.Type) (soltype.Type, bool) {
 		t = soltype.CarrierOf(t)
@@ -3185,6 +3187,7 @@ func (c *checker) unionWriteReceiver(name string, recv soltype.Type) (unionField
 		}
 		uw.members = append(uw.members, m)
 		uw.fields = append(uw.fields, writableFieldType(prop))
+		uw.readonly = uw.readonly || prop.Readonly
 	}
 	if len(uw.members) < 2 {
 		return unionFieldWrite{}, false
@@ -3195,11 +3198,19 @@ func (c *checker) unionWriteReceiver(name string, recv soltype.Type) (unionField
 // rejectUnionFieldWrite reports a write of field name through recv, a receiver whose type is the
 // union uw, and returns the written type. e is the assignment, object its receiver as written,
 // place the place recv is an owned layer of or nil, and source the written value's type. A write
-// through an immutable binding reports that binding and nothing else.
+// through an immutable binding reports that binding and nothing else. A field some member
+// declares readonly reports ReadonlyFieldError and nothing else.
 func (c *checker) rejectUnionFieldWrite(e *ast.BinaryExpr, object ast.Expr, name string, recv soltype.Type, place *ownedPlace, uw unionFieldWrite, source soltype.Type) soltype.Type {
 	w := widen(source)
 	owned, unsettled := c.ownedOrUnsettledMutation(e, recv, place)
-	if !owned || unsettled || place.b.Mut {
+	switch {
+	case owned && !unsettled && !place.b.Mut:
+		// ownedOrUnsettledMutation reported the immutable binding.
+	case uw.readonly:
+		// Narrowing to the member that declares the field readonly would not make the write
+		// legal, so the readonly diagnostic names the fault the UnionFieldWriteError fix would not.
+		c.report(&ReadonlyFieldError{Field: name, site: e.Left})
+	default:
 		err := &UnionFieldWriteError{
 			Receiver: object,
 			Target:   e.Left,

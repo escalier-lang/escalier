@@ -141,6 +141,21 @@ declare val ns: number | string
 			want: []string{"2:10-2:32: object is missing property: a"},
 		},
 		{
+			name: "ReadonlyMemberField",
+			src: `type RA = {readonly kind: "a"}
+type RB = {readonly kind: "b"}
+fn f(q: &mut (RA | RB)) { q.kind = "a" }`,
+			want: []string{"10:27-10:33: cannot assign to 'kind' because it is a readonly property"},
+		},
+		{
+			name: "JoinedVariableIsNotAUnionWrite",
+			src: `fn f(p: {x: {a: number}} | {y: string}) {
+    val {mut x} = p else { {x: {a: 1}} }
+    x.a = 2
+}`,
+			want: nil,
+		},
+		{
 			name: "NarrowedBindingWrite",
 			src: `fn f(q: &mut U) {
     match q {
