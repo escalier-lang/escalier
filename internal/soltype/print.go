@@ -555,7 +555,9 @@ func PrintFuncSignature(
 	p.scopeLifetimeNames(own)
 	sig := FuncSignature{Binders: append([]string{}, b.labels...)}
 	sig.Binders = append(sig.Binders, p.typeParamBinders(t.TypeParams)...)
-	sig.Binders = append(sig.Binders, p.lifetimeParamBinders(own)...)
+	// A written signature has to declare every bound the body relies on, so a lifetime the
+	// declaration names takes the bounds ltBounds computed for it beside the ones it wrote.
+	sig.Binders = append(sig.Binders, p.lifetimeParamBindersWith(own, ltBounds)...)
 	sig.Binders = append(sig.Binders, b.ltLabels...)
 	if t.SelfParam != nil {
 		sig.Receiver = p.printSelfReceiver(t.SelfParam)
@@ -1881,14 +1883,32 @@ func (p *namedPrinter) scopeLifetimeNames(lps []*LifetimeParam) func() {
 // lifetime-sort twin of typeParamBinders, joined into the same combined quantifier
 // prefix so a method renders `fn <U, 'a>(...)`.
 func (p *namedPrinter) lifetimeParamBinders(lps []*LifetimeParam) []string {
+	return p.lifetimeParamBindersWith(lps, nil)
+}
+
+// lifetimeParamBindersWith renders each of lps as a binder string, as lifetimeParamBinders
+// describes, with the bounds extra lists for the parameter's variable after the ones it
+// declares. A bound already declared is not repeated. A nil extra adds nothing.
+func (p *namedPrinter) lifetimeParamBindersWith(lps []*LifetimeParam, extra map[*LifetimeVar][]*LifetimeVar) []string {
 	binders := make([]string, len(lps))
 	for i, lp := range lps {
-		s := p.printLifetime(lp.Var) // the registered source name, else 'l{ID}
-		if len(lp.Bounds) > 0 {
-			rendered := make([]string, len(lp.Bounds))
-			for j, b := range lp.Bounds {
-				rendered[j] = p.printLifetime(b)
+		var rendered []string
+		seen := set.NewSet[string]()
+		add := func(b Lifetime) {
+			name := p.printLifetime(b)
+			if !seen.Contains(name) {
+				seen.Add(name)
+				rendered = append(rendered, name)
 			}
+		}
+		for _, b := range lp.Bounds {
+			add(b)
+		}
+		for _, b := range extra[lp.Var] {
+			add(b)
+		}
+		s := p.printLifetime(lp.Var)
+		if len(rendered) > 0 {
 			s += ": " + strings.Join(rendered, " & ")
 		}
 		binders[i] = s

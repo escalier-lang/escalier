@@ -24,8 +24,128 @@ type DeclSignature struct {
 // them, gets no binder and renders as a bare borrow.
 func (s DeclSignature) PrintWritten() soltype.FuncSignature {
 	bounds := displayLtBounds(s.Type, soltype.Positive)
+	s.Type, bounds = mergeOutlivedInputs(s.Type, bounds)
 	elided := s.elidedLifetimes(bounds)
 	return soltype.PrintFuncSignature(s.Type, s.ClassTypeParams, s.ClassLifetimeParams, bounds, elided)
+}
+
+// mergeOutlivedInputs returns ft with each group of input lifetimes that only outlive one
+// output lifetime replaced by that output lifetime, and ltBounds without the replaced
+// lifetimes' bounds. `fn <'a: 'c, 'b: 'c, 'c>(p: &'a P, s: &'b S) -> &'c R` becomes
+// `fn <'c>(p: &'c P, s: &'c S) -> &'c R`. The two accept the same calls: each borrow's
+// lifetime is covariant, so a caller's two lifetimes shrink to their overlap.
+//
+// A group is replaced only when every lifetime in it occurs as the lifetime of a borrow at
+// the signature's own level of the parameters and nowhere else, and is bounded by the
+// output lifetime alone, and when the output lifetime occurs only at the return's or the
+// thrown type's own level, has no bounds of its own, and is outlived by no other lifetime.
+// A lifetime the signature's binder list names is never replaced. ft and ltBounds are
+// returned unchanged when no group qualifies.
+func mergeOutlivedInputs(
+	ft *soltype.FuncType,
+	ltBounds map[*soltype.LifetimeVar][]*soltype.LifetimeVar,
+) (*soltype.FuncType, map[*soltype.LifetimeVar][]*soltype.LifetimeVar) {
+	if len(ltBounds) < 2 {
+		return ft, ltBounds
+	}
+	in := newLifetimeUses()
+	if ft.SelfParam != nil {
+		ft.SelfParam.Type.Accept(in, soltype.Negative)
+	}
+	for _, p := range ft.Params {
+		p.Type.Accept(in, soltype.Negative)
+	}
+	out := newLifetimeUses()
+	ft.Ret.Accept(out, soltype.Positive)
+	ft.ThrowsOrNever().Accept(out, soltype.Positive)
+	named := set.NewSet[*soltype.LifetimeVar]()
+	for _, lp := range ft.LifetimeParams {
+		if lp.Name != "" {
+			named.Add(lp.Var)
+		}
+	}
+
+	// outlivedBy groups the bounded lifetimes by the one lifetime each is bounded by.
+	outlivedBy := map[*soltype.LifetimeVar][]*soltype.LifetimeVar{}
+	blocked := set.NewSet[*soltype.LifetimeVar]()
+	for lv, bs := range ltBounds {
+		if len(bs) != 1 {
+			for _, b := range bs {
+				blocked.Add(b)
+			}
+			continue
+		}
+		outlivedBy[bs[0]] = append(outlivedBy[bs[0]], lv)
+	}
+	replace := map[*soltype.LifetimeVar]*soltype.LifetimeVar{}
+	for target, group := range outlivedBy {
+		ok := len(group) >= 2 && !blocked.Contains(target) && len(ltBounds[target]) == 0 &&
+			out.atTop[target] > 0 && in.atTop[target] == 0 && !in.nested.Contains(target) &&
+			!out.nested.Contains(target) && !out.funcLts.Contains(target) && !named.Contains(target)
+		for _, lv := range group {
+			ok = ok && in.atTop[lv] > 0 && !in.nested.Contains(lv) && !in.funcLts.Contains(lv) &&
+				out.atTop[lv] == 0 && !out.nested.Contains(lv) && !named.Contains(lv) && lv != target
+		}
+		if !ok {
+			continue
+		}
+		for _, lv := range group {
+			replace[lv] = target
+		}
+	}
+	if len(replace) == 0 {
+		return ft, ltBounds
+	}
+
+	merged := ft.Accept(&lifetimeReplacer{replace: replace}, soltype.Positive).(*soltype.FuncType)
+	if len(ft.LifetimeParams) > 0 {
+		params := make([]*soltype.LifetimeParam, 0, len(ft.LifetimeParams))
+		for _, lp := range ft.LifetimeParams {
+			if _, gone := replace[lp.Var]; !gone {
+				params = append(params, lp)
+			}
+		}
+		if len(params) != len(ft.LifetimeParams) {
+			copied := *merged
+			copied.LifetimeParams = params
+			merged = &copied
+		}
+	}
+	bounds := map[*soltype.LifetimeVar][]*soltype.LifetimeVar{}
+	for lv, bs := range ltBounds {
+		if _, gone := replace[lv]; !gone {
+			bounds[lv] = bs
+		}
+	}
+	return merged, bounds
+}
+
+// lifetimeReplacer rewrites the lifetime of each borrow whose lifetime is a key of replace
+// to that key's value.
+type lifetimeReplacer struct {
+	replace map[*soltype.LifetimeVar]*soltype.LifetimeVar
+}
+
+func (r *lifetimeReplacer) EnterType(soltype.Type, soltype.Polarity) soltype.EnterResult {
+	return soltype.EnterResult{}
+}
+
+func (r *lifetimeReplacer) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
+	ref, ok := t.(*soltype.RefType)
+	if !ok {
+		return t
+	}
+	lv, ok := ref.Lt.(*soltype.LifetimeVar)
+	if !ok {
+		return t
+	}
+	to, ok := r.replace[lv]
+	if !ok {
+		return t
+	}
+	copied := *ref
+	copied.Lt = to
+	return &copied
 }
 
 // FuncDeclSignature returns the signature of the function d declares at a module's or a

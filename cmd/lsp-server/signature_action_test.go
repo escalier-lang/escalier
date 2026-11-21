@@ -174,10 +174,19 @@ func TestSignatureAction(t *testing.T) {
 			diagnostic: "3:1-3:5 'pick' is a method, so it needs a return type; write `pick<'a>(&self, a: &'a Flat, c: boolean) -> &Flat | &'a Flat`",
 		},
 		{
+			// The method names 's, and the body makes 's outlive the result as well as other's
+			// lifetime, so the written signature declares the bound on 's too.
+			name:       "NamedLifetimeKeepsTheBoundTheBodyNeeds",
+			src:        "type Flat = {x: number}\ndeclare fn either<'r>(a: &'r Flat, b: &'r Flat) -> &'r Flat\nclass Box {\n\tinner: Flat,\n\tpick<'s>(&'s self, other: &Flat) { return either(&self.inner, other) },\n}",
+			cursor:     "pick",
+			expected:   "type Flat = {x: number}\ndeclare fn either<'r>(a: &'r Flat, b: &'r Flat) -> &'r Flat\nclass Box {\n\tinner: Flat,\n\tpick<'s: 'b, 'a: 'b, 'b>(&'s self, other: &'a Flat) -> &'b Flat { return either(&self.inner, other) },\n}",
+			diagnostic: "4:1-4:5 'pick' is a method, so it needs a return type; write `pick<'s: 'b, 'a: 'b, 'b>(&'s self, other: &'a Flat) -> &'b Flat`",
+		},
+		{
 			name:       "ThrowsGetsLifetime",
 			src:        "type Flat = {x: number}\nfn f(a: &Flat, b: &Flat, c: boolean) throws &Flat { if c { throw a } else { throw b } }",
 			cursor:     "f(",
-			expected:   "type Flat = {x: number}\nfn f<'a: 'c, 'b: 'c, 'c>(a: &'a Flat, b: &'b Flat, c: boolean) -> never throws &'c Flat { if c { throw a } else { throw b } }",
+			expected:   "type Flat = {x: number}\nfn f<'a>(a: &'a Flat, b: &'a Flat, c: boolean) -> never throws &'a Flat { if c { throw a } else { throw b } }",
 			diagnostic: "1:3-1:4 'f' is declared at a script's top level, so it needs a return type; write `-> never`",
 		},
 		{
@@ -251,6 +260,16 @@ func TestSignatureAction(t *testing.T) {
 			require.Empty(t, awaitDiagnostics(t, published, uri, 2))
 		})
 	}
+}
+
+// TestWrittenNamedLifetimeSignatureChecks asserts that the signature the code action writes
+// for a method that names a lifetime checks without a diagnostic.
+func TestWrittenNamedLifetimeSignatureChecks(t *testing.T) {
+	src := "type Flat = {x: number}\ndeclare fn either<'r>(a: &'r Flat, b: &'r Flat) -> &'r Flat\nclass Box {\n\tinner: Flat,\n\tpick<'s: 'b, 'a: 'b, 'b>(&'s self, other: &'a Flat) -> &'b Flat { return either(&self.inner, other) },\n}"
+	s := integrationServer(t, map[string]string{"bin/main.esc": src})
+	ctx, published := publishedDiagnostics()
+	uri := openFileIn(t, s, ctx, "bin/main.esc", src)
+	require.Empty(t, awaitDiagnostics(t, published, uri, 1))
 }
 
 // TestSignatureActionStaleDocument asserts that the action is not offered while the
