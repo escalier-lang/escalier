@@ -12,6 +12,7 @@ import {
 } from 'vscode-languageserver-protocol/browser';
 
 import type { FSAPI } from '#fs/fs-api';
+import type { Hover, HoverParams } from '#language/hover';
 
 import './wasm_exec'; // run for side-effects
 
@@ -1017,7 +1018,7 @@ export class Client {
         return this.sendRequest('textDocument/codeAction', params);
     }
 
-    textDocumentHover(params: lsp.HoverParams): Promise<lsp.Hover | null> {
+    textDocumentHover(params: HoverParams): Promise<Hover | null> {
         return this.sendRequest('textDocument/hover', params);
     }
 
