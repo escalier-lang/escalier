@@ -1413,8 +1413,9 @@ func (d *bodyDataflow) pass(ev *passEvent, s *dataflowState) {
 //     `p.writeRead(&p)` reports `&p`.
 //  2. Each loan a slot of the call holds is released, and a loan nothing else holds ends.
 //
-// Between the two, each argument a parameter keeps for 'static keeps its closures' loans of
-// their captures, as keepCaptureLoans does.
+// Between the two, checkContentsBorrowed checks the call's mutable slots against live borrows
+// of their contents, and each argument a parameter keeps for 'static keeps its closures' loans
+// of their captures, as keepCaptureLoans does.
 func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowState) {
 	// Step 1 checks each receiver this call reserved, scanning the loans in sorted order.
 	// Most calls reserve no receiver, and those skip the sort.
@@ -1465,6 +1466,8 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 		}
 	}
 
+	d.checkContentsBorrowed(ev, at, s)
+
 	// A parameter that keeps a closure for 'static keeps the closure's loans of its captures
 	// before the call releases the loans its arguments hold.
 	for _, store := range d.storesAt[at] {
@@ -1486,6 +1489,118 @@ func (d *bodyDataflow) callEnd(ev *callEvent, at liveness.StmtRef, s *dataflowSt
 			delete(s.loans, k)
 		}
 	}
+}
+
+// checkContentsBorrowed reports a mutable slot of ev.call that holds a borrow of a place while
+// a mutable borrow of that place's contents is live. A slot holds the borrow itself when it is
+// a receiver or an argument such as the `&mut arr` of `shrink(&mut arr)`. The borrow of the
+// contents is live when a holder of it is used after the call, later in the statement, or by
+// another slot of a call that has not returned, as contentsHold decides.
+//
+// A callee that takes `&mut Array<T>` can remove an element and hand it to a new owner, as
+// `pop` does. A live borrow of that element would then reach a value the new owner can move
+// into an immutable binding, so a write through the borrow changes what a `&` observes. The
+// check applies to every mutable slot rather than to the methods that remove, since a callee
+// such as `fn shrink(a: &mut Array<Flat>) { a.pop() }` removes behind its own signature.
+func (d *bodyDataflow) checkContentsBorrowed(ev *callEvent, at liveness.StmtRef, s *dataflowState) {
+	// Most calls take nothing mutably, and those skip the sort.
+	var loans []*liveLoan
+	for _, l := range s.loans {
+		if l.ev.borrow == mutableBorrow && l.ownSlotOf(ev.call) {
+			loans = d.sortedLoans(s)
+			break
+		}
+	}
+
+	for _, r := range loans {
+		if r.ev.borrow != mutableBorrow || !r.checked() || r.closure() || !r.ownSlotOf(ev.call) {
+			continue
+		}
+
+		for _, m := range loans {
+			// A borrow of the contents of `r.ev.place` is a mutable loan of an overlapping place.
+			// An immutable one already conflicts with r under E2. A closure's capture names a
+			// place the closure reads again on each call, so it reaches whatever the place
+			// holds by then rather than a value the call can remove.
+			if m == r || !m.checked() || m.closure() || m.ev.borrow != mutableBorrow || !placesOverlap(m.ev.place, r.ev.place) {
+				continue
+			}
+			held, live := d.contentsHold(m, r.ev.place, ev, at)
+			if !live {
+				continue
+			}
+
+			d.report(&ContentsBorrowedError{Place: d.placeName(r.ev.place), node: r.ev.node, borrow: held.Span()})
+			break
+		}
+	}
+}
+
+// ownSlotOf reports whether a slot of `call` holds l's borrow itself.
+func (l *liveLoan) ownSlotOf(call *ast.CallExpr) bool {
+	for slot := range l.ownSlots {
+		if slot.call == call {
+			return true
+		}
+	}
+	return false
+}
+
+// contentsHold reports whether the loan m holds a borrow of the contents of `container` that
+// is live once ev.call returns, and returns the expression that made the borrow. m overlaps
+// `container`. It holds a borrow of the contents in one of two ways:
+//
+//   - m borrows a place below `container`, such as `&mut arr[0]` or `&mut arr[i]` under `arr`.
+//     Each holder of m then holds the contents.
+//   - A holder of m does not hold m's borrow itself, as heldPlace.own and liveLoan.ownSlots
+//     record. The result of `first(&mut arr)` holds what the callee hands back through the
+//     borrow of arr, which can be an element of arr.
+func (d *bodyDataflow) contentsHold(m *liveLoan, container movePlace, ev *callEvent, at liveness.StmtRef) (ast.Node, bool) {
+	if d.borrowDepth(m) > len(container.path) {
+		return m.ev.node, d.loanLive(m, at, false) || d.usedLaterAt(m, ev, at)
+	}
+
+	for slot := range m.slots {
+		if !m.ownSlots.Contains(slot) {
+			return m.ev.node, true
+		}
+	}
+	for _, k := range slices.Sorted(maps.Keys(m.holders)) {
+		h := m.holders[k]
+		if !h.own && (d.heldPlaceLive(h, at, false) || d.placeUsedLaterAt(h.place, ev, at)) {
+			return h.node, true
+		}
+	}
+	return nil, false
+}
+
+// borrowDepth returns how many links below its root the borrow of l reaches. That is the
+// length of l's place, except that a borrow written through a dynamic index counts each link
+// of its operand. `&mut arr[i]` has the place `arr` and a depth of 1.
+func (d *bodyDataflow) borrowDepth(l *liveLoan) int {
+	if be, ok := l.ev.node.(*ast.BorrowExpr); ok {
+		if chain := chainOf(be.Arg, d.indexSegment); chain.firstDynamic() >= 0 {
+			return len(chain.links)
+		}
+	}
+	return len(l.ev.place.path)
+}
+
+// placeUsedLaterAt reports whether an event after ev at the point `at` reads a place that
+// overlaps p.
+func (d *bodyDataflow) placeUsedLaterAt(p movePlace, ev ownershipEvent, at liveness.StmtRef) bool {
+	events := d.events[at]
+	i := slices.Index(events, ev)
+	if i < 0 {
+		return false
+	}
+
+	for _, later := range events[i+1:] {
+		if placesOverlap(later.base().place, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // `run` applies the runEvent `ev`. The call uses each capture of each closure it runs or may
@@ -1809,18 +1924,9 @@ func (d *bodyDataflow) usedWhereWritten(l *liveLoan, at liveness.StmtRef) bool {
 // usedLaterAt reports whether an event after ev at the point `at` reads a place a holder of l
 // overlaps, so l is used later in the same statement.
 func (d *bodyDataflow) usedLaterAt(l *liveLoan, ev ownershipEvent, at liveness.StmtRef) bool {
-	events := d.events[at]
-	i := slices.Index(events, ev)
-	if i < 0 {
-		return false
-	}
-
-	for _, later := range events[i+1:] {
-		p := later.base().place
-		for _, h := range l.holders {
-			if placesOverlap(h.place, p) {
-				return true
-			}
+	for _, h := range l.holders {
+		if d.placeUsedLaterAt(h.place, ev, at) {
+			return true
 		}
 	}
 	return false

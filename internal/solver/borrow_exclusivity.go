@@ -98,6 +98,24 @@ func kindName(mut bool) string {
 	return "immutable"
 }
 
+// ContentsBorrowedError reports a call that takes a place mutably while a mutable borrow of
+// the place's contents is live. A borrow of the contents reaches a value stored in one of the
+// place's slots rather than the place itself. `&mut arr[0]` is one, and so is the result of
+// `first(&mut arr)` with `declare fn first<'a>(a: &'a mut Array<Flat>) -> &'a mut Flat`.
+type ContentsBorrowedError struct {
+	// Place names what the call takes mutably, `arr` for `arr.pop()`.
+	Place  string
+	node   ast.Node
+	borrow ast.Span
+}
+
+func (*ContentsBorrowedError) isSolverError()        {}
+func (e *ContentsBorrowedError) Span() ast.Span      { return e.node.Span() }
+func (e *ContentsBorrowedError) Related() []ast.Span { return []ast.Span{e.borrow} }
+func (e *ContentsBorrowedError) Message() string {
+	return fmt.Sprintf("cannot borrow '%s' as mutable for this call while a borrow of its contents is live", e.Place)
+}
+
 // MoveWhileBorrowedError reports a move of data a live borrow still reaches. After
 // `val y = b` the new owner y holds the data, and a borrow taken from b still points at it.
 type MoveWhileBorrowedError struct {

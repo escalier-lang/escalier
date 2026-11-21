@@ -915,6 +915,17 @@ The form also decides what the body may do with the source:
   paths be live at once. The elements stay `&mut T`. Narrowing one to `&T`, by
   T4, makes it an immutable path, so a write to `arr` while that borrow is
   live is rejected.
+- **A call that takes `arr` mutably waits until `f` is dead.** `f` borrows the
+  contents of `arr`, meaning a value stored in one of its slots rather than
+  `arr` itself. A mutable use of `arr` conflicts with such a borrow while the
+  borrow is live. A mutable use is a `&mut self` method call on `arr` or a call
+  that passes `&mut arr`. `pop`, `shift` and `splice` take `&mut self` and hand
+  back the removed element as an owned `T`. The new owner can move it into an
+  immutable binding, and a write through `f` would then change what that
+  binding reads. The rule covers every mutable use, since a callee that takes
+  `&mut Array<T>` can remove an element behind its own signature. A write
+  through `f` or to `arr[i]` stays allowed, since neither hands an element to
+  a new owner. Two mutable borrows of `arr` itself may still be live together.
 
 ```esc
 fn inside(arr: Array<Flat>) -> undefined {
@@ -934,8 +945,15 @@ fn grow(mut arr: Array<Flat>) -> undefined {
     for f in &mut arr {
         val n = f.x
         if n > 0 {
-            arr.push({x: n - 1})   // accepted, since the loop's borrow and this one are both mutable, and warns by question 3 in section 11
+            arr.push({x: n - 1})   // accepted, since f is dead here, and warns by question 3 in section 11
         }
+    }
+}
+
+fn loopPop(mut arr: Array<Flat>) -> undefined {
+    for f in &mut arr {
+        val owned = arr.pop()   // error: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live
+        f.x = 1                 // f is still live here, and owned can name the same Flat
     }
 }
 
@@ -1725,18 +1743,20 @@ None blocks the first PR.
    generator could not be spread or collected, as section 8.1 explains, and
    that pattern is too common to give up.
 3. **Whether to warn when a loop changes the shape of its own source.** In
-   `for f in &mut arr`, E2 lets the body call `arr.push(…)`, since several
-   mutable paths may be live at once. That is sound, but the loop then visits
-   the new elements, and `splice` or `shift` makes it skip some. One option is
-   a borrow that is mutable for the elements and immutable for the container's
-   slots, which would need E2 to tell the slots of `arr` apart from the values
-   they hold. The other is a lint that warns, inside `for f in &mut arr`, on a
-   call on the loop source that changes its length or order: `push`, `pop`,
-   `shift`, `unshift`, `splice`, `sort`, `reverse`, `copyWithin`, `fill`, and a
-   write to `length`. A write through `f` or to `arr[i]` stays silent, since
-   neither changes which elements the loop visits. Decision: the lint. A
-   loop that changes the collection it iterates is hard to reason about even
-   when the checker accepts it. [#2624](https://github.com/escalier-lang/escalier/issues/2624) adds it. The other two loop forms
+   `for f in &mut arr`, the body may call `arr.push(…)` once `f` is dead. While
+   `f` is live, section 5.1 rejects the call, since a callee such as `pop` can
+   remove the element `f` borrows and hand it to a new owner. With `f` dead the
+   call is sound, but the loop then visits the new elements, and `splice` or
+   `shift` makes it skip some. One option is a borrow that is mutable for the
+   elements and immutable for the container's slots, which would need E2 to
+   tell the slots of `arr` apart from the values they hold. The other is a lint
+   that warns, inside `for f in &mut arr`, on a call on the loop source that
+   changes its length or order: `push`, `pop`, `shift`, `unshift`, `splice`,
+   `sort`, `reverse`, `copyWithin`, `fill`, and a write to `length`. A write
+   through `f` or to `arr[i]` stays silent, since neither changes which
+   elements the loop visits. Decision: the lint, for a call made while `f` is
+   dead. A loop that changes the collection it iterates is hard to reason
+   about even when the checker accepts it. [#2624](https://github.com/escalier-lang/escalier/issues/2624) adds it. The other two loop forms
    need neither, since a loop over `arr` moves it and
    a loop over `&arr` already rejects writes.
 4. **Whether to lint `yield await` or a bare `yield` of a promise in an async

@@ -483,6 +483,266 @@ func TestBorrowExclusivity(t *testing.T) {
 	}
 }
 
+// TestContentsBorrowedByMutableCall covers the rule that a call taking a place mutably
+// conflicts with a live mutable borrow of the place's contents. A borrow of the contents
+// reaches a value stored in one of the place's slots, such as `&mut arr[0]` or the result of
+// `first(&mut arr)` below. A callee that takes `&mut Array<Flat>` can remove that element and
+// hand it to a new owner, so the borrow must be dead by the time of the call. Two mutable
+// borrows of the whole place may still be live together.
+//
+// Each case checks against the standard library tree, which declares `pop` and `shift`.
+func TestContentsBorrowedByMutableCall(t *testing.T) {
+	const decls = `
+		type Flat = {x: number}
+		declare fn first<'a>(a: &'a mut Array<Flat>) -> &'a mut Flat
+		declare fn shrink(a: &mut Array<Flat>) -> Flat | undefined
+		declare fn same<'a>(a: &'a mut Array<Flat>) -> &'a mut Array<Flat>
+	`
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// The pop hands the element f reaches to popped, which moves it into the immutable
+		// binding r. The write through f would then change what r reads.
+		"PopWhileAnElementBorrowIsLive": {
+			src: `
+				export fn popAlias(mut arr: Array<Flat>) -> number {
+					val f = first(&mut arr)
+					val popped = arr.pop()
+					return match popped {
+						frozen: Flat => {
+							val r = &frozen
+							f.x = 99
+							r.x
+						},
+						_ => 0,
+					}
+				}
+			`,
+			want: []string{"9:19-9:22: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+		},
+		// shrink can remove an element behind its signature, so passing `&mut arr` to it is a
+		// mutable use like a call of pop.
+		"PassingTheContainerToACallee": {
+			src: `
+				fn viaHelper(mut arr: Array<Flat>) -> undefined {
+					val f = first(&mut arr)
+					val owned = shrink(&mut arr)
+					f.x = 1
+				}
+			`,
+			want: []string{"9:25-9:33: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+		},
+		// A push removes nothing, but the rule covers every mutable use, since the checker
+		// cannot tell from a signature which callees remove.
+		"PushWhileAnElementBorrowIsLive": {
+			src: `
+				fn g(mut arr: Array<Flat>) -> undefined {
+					val f = first(&mut arr)
+					arr.push({x: 0})
+					f.x = 1
+				}
+			`,
+			want: []string{"9:6-9:9: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+		},
+		// A second call that takes `&mut arr` is a mutable use too, even one that returns an
+		// element borrow of its own.
+		"SecondElementBorrowWhileTheFirstIsLive": {
+			src: `
+				fn g(mut arr: Array<Flat>) -> undefined {
+					val f = first(&mut arr)
+					val h = first(&mut arr)
+					f.x = 1
+					h.x = 2
+				}
+			`,
+			want: []string{"9:20-9:28: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+		},
+		// An argument of an enclosing call that has not returned holds f during the pop.
+		"ElementBorrowInAPendingArgument": {
+			src: `
+				declare fn keep(f: &mut Flat, popped: Flat | undefined) -> undefined
+
+				fn g(mut arr: Array<Flat>) -> undefined {
+					val f = first(&mut arr)
+					keep(f, arr.pop())
+				}
+			`,
+			want: []string{"11:14-11:17: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+		},
+		// An element borrow written with a constant index borrows a place below arr.
+		"ConstantIndexBorrow": {
+			src: `
+				fn g(mut arr: Array<Flat>) -> undefined {
+					val f = &mut arr[0]
+					val popped = arr.shift()
+					f.x = 1
+				}
+			`,
+			want: []string{"9:19-9:22: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+		},
+		// A dynamic index stands for the whole array, and the borrow still reaches an element.
+		"DynamicIndexBorrow": {
+			src: `
+				fn g(mut arr: Array<Flat>, i: number) -> undefined {
+					val f = &mut arr[i]
+					val popped = arr.pop()
+					f.x = 1
+				}
+			`,
+			want: []string{"9:19-9:22: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+		},
+		// A borrow parameter is the container when the body takes elements through it.
+		"ContainerReachedThroughABorrowParameter": {
+			src: `
+				fn g(r: &mut Array<Flat>) -> undefined {
+					val f = first(r)
+					val popped = r.pop()
+					f.x = 1
+				}
+			`,
+			want: []string{"9:19-9:20: cannot borrow 'r' as mutable for this call while a borrow of its contents is live"},
+		},
+		// a borrows the whole array, so the pop through a reaches the element f borrows.
+		"PopThroughAWholeBorrow": {
+			src: `
+				fn g(mut arr: Array<Flat>) -> undefined {
+					val a = &mut arr
+					val f = first(a)
+					val popped = a.pop()
+					f.x = 1
+				}
+			`,
+			want: []string{"10:19-10:20: cannot borrow 'a' as mutable for this call while a borrow of its contents is live"},
+		},
+		// A field is a slot too, so a call that takes b mutably conflicts with a borrow of
+		// b.inner.
+		"FieldBorrowWhileTheOwnerIsPassed": {
+			src: `
+				type Box = {inner: Flat, n: number}
+				declare fn reset(b: &mut Box) -> undefined
+
+				fn g(mut b: Box) -> undefined {
+					val f = &mut b.inner
+					reset(&mut b)
+					f.x = 1
+				}
+			`,
+			want: []string{"12:12-12:18: cannot borrow 'b' as mutable for this call while a borrow of its contents is live"},
+		},
+		// A call result holds what the callee hands back through the borrow, which the
+		// checker cannot tell apart from the borrow itself. So the result of same counts as a
+		// borrow of the contents, though it reaches the whole array.
+		"ResultOfACallCountsAsContents": {
+			src: `
+				fn g(mut arr: Array<Flat>) -> undefined {
+					val a = same(&mut arr)
+					arr.push({x: 1})
+					a.push({x: 2})
+				}
+			`,
+			want: []string{"9:6-9:9: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+		},
+		// f is dead by the push, as in R1's grow example.
+		"PushAfterTheElementBorrowIsDeadOk": {
+			src: `
+				fn grow(mut arr: Array<Flat>) -> undefined {
+					val f = first(&mut arr)
+					val n = f.x
+					if n > 0 {
+						arr.push({x: n - 1})
+					}
+				}
+			`,
+			want: nil,
+		},
+		// The argument reads f before the push starts, and nothing reads f after it.
+		"ElementBorrowReadInTheArgumentsOk": {
+			src: `
+				fn g(mut arr: Array<Flat>) -> undefined {
+					val f = first(&mut arr)
+					arr.push({x: f.x})
+				}
+			`,
+			want: nil,
+		},
+		// Two mutable borrows of the whole array may be live together, as E2 allows.
+		"TwoWholeMutableBorrowsOk": {
+			src: `
+				fn g(mut arr: Array<Flat>) -> undefined {
+					val a = &mut arr
+					arr.push({x: 1})
+					a.push({x: 2})
+				}
+			`,
+			want: nil,
+		},
+		// b.other and b.inner are disjoint, so the pop cannot reach f.
+		"PopOfASiblingFieldOk": {
+			src: `
+				type Box = {inner: Flat, other: Array<Flat>}
+
+				fn g(mut b: Box) -> undefined {
+					val f = &mut b.inner
+					val popped = b.other.pop()
+					f.x = 1
+				}
+			`,
+			want: nil,
+		},
+		// DISABLED until #2444 binds the loop variable of `for f in &mut arr` as a borrow of
+		// the element. Each loop below then holds f across a mutable use of arr, and the call
+		// reports. Today f binds an owned Flat, and the write to it reports that its binding is
+		// immutable. The spans below are a guess; confirm them when re-enabling.
+		/*
+			"PopInsideALoopOverAMutableBorrow": {
+				src: `
+					fn loopPop(mut arr: Array<Flat>) -> undefined {
+						for f in &mut arr {
+							val owned = arr.pop()
+							f.x = 1
+						}
+					}
+				`,
+				want: []string{"10:19-10:22: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+			},
+			"HelperCallInsideALoopOverAMutableBorrow": {
+				src: `
+					fn viaHelper(mut arr: Array<Flat>) -> undefined {
+						for f in &mut arr {
+							val owned = shrink(&mut arr)
+							f.x = 1
+						}
+					}
+				`,
+				want: []string{"10:26-10:34: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+			},
+		*/
+		// R1's grow example. The checker does not yet bind the loop variable of
+		// `for f in &mut arr` as a borrow (#2444), so this case asserts only that the push
+		// checks while f is dead.
+		"GrowLoopOk": {
+			src: `
+				fn grow(mut arr: Array<Flat>) -> undefined {
+					for f in &mut arr {
+						val n = f.x
+						if n > 0 {
+							arr.push({x: n - 1})
+						}
+					}
+				}
+			`,
+			want: nil,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, errs := inferAgainstTreeWithSpans(t, decls+tc.src)
+			require.Equal(t, tc.want, errs)
+		})
+	}
+}
+
 // TestExplicitBorrowArgs covers #1541: a borrow parameter takes a borrow, so the call writes
 // one. What stays implicit is a method call's receiver, whose mode the signature already names.
 func TestExplicitBorrowArgs(t *testing.T) {
