@@ -22,14 +22,14 @@ class Pair__Of {
 }
 Pair.Of = Pair__Of;
 export const [temp3] = InvokeCustomMatcherOrThrow(Pair.Of, new Pair.Of([1, 2]), undefined);
-export const [first, temp4] = temp3;
-export function firstOf(temp5) {
-  const [temp6] = InvokeCustomMatcherOrThrow(Pair.Of, temp5, undefined);
-  const [a, temp7] = temp6;
+export const [first, ] = temp3;
+export function firstOf(temp4) {
+  const [temp5] = InvokeCustomMatcherOrThrow(Pair.Of, temp4, undefined);
+  const [a, ] = temp5;
   return a;
 }
-export const [temp8] = InvokeCustomMatcherOrThrow(Boxed.Of, new Boxed.Of({x: 3}), undefined);
-export const {x} = temp8;
+export const [temp6] = InvokeCustomMatcherOrThrow(Boxed.Of, new Boxed.Of({x: 3}), undefined);
+export const {x} = temp6;
 export const fromObject = x;
 export const fromTuple = first;
 //# sourceMappingURL=./index.js.map

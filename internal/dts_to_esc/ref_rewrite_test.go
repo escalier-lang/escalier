@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// rewriteRecovering runs rewrite the way ConvertModuleWithOverrides does, returning an
+// rewriteRecovering runs rewrite the way the conversion entry points do, returning an
 // unhandledNodeError panic as an error.
 func rewriteRecovering(rewrite func()) (err error) {
 	defer recoverUnhandledNode(&err)

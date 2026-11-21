@@ -193,57 +193,10 @@ func CheckBinScript(ctx context.Context, lib LibScope, src *ast.Source, config P
 	}
 }
 
+// Compile compiles source as a script with only the prelude in scope. Its output
+// holds one unit, `index`, whose JavaScript is named `./index.js`.
 func Compile(source *ast.Source) CompilerOutput {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	p := parser.NewParser(ctx, source)
-	inMod, parseErrors := p.ParseScript()
-
-	result := newBackend(PackageConfig{}).checkScript(ctx, inMod)
-	typeErrors := result.diagnostics
-
-	// namespace := scope.Namespace
-
-	builder := codegen.NewBuilder(result.jsTypes)
-	jsMod := builder.BuildScript(inMod)
-	// var decls []ast.Decl
-	// for _, d := range inMod.Stmts {
-	// 	if ds, ok := d.(*ast.DeclStmt); ok {
-	// 		decls = append(decls, ds.Decl)
-	// 	}
-	// }
-
-	// TODO: Create a separate version of BuildDefinitions that works with just
-	// the decls slice instead of the dep_graph.
-	// dtsMod := builder.BuildDefinitions(decls, namespace)
-
-	printer := codegen.NewPrinter()
-	jsOutput := printer.PrintModule(jsMod)
-
-	jsFile := "./index.js"
-	sourceMap, err := codegen.GenerateSourceMap([]*ast.Source{source}, jsMod, jsFile)
-	if err != nil {
-		typeErrors = append(typeErrors, &emitError{span: scriptSpan(inMod), err: err})
-	}
-
-	outmap := "./index.js.map"
-	jsOutput += "//# sourceMappingURL=" + outmap + "\n"
-
-	// printer = codegen.NewPrinter()
-	// dtsOutput := printer.PrintModule(dtsMod)
-	dtsOutput := ""
-
-	return CompilerOutput{
-		ParseErrors: parseErrors,
-		TypeErrors:  typeErrors,
-		CompUnits: map[string]CompUnitOutput{
-			"index": {
-				JS:        jsOutput,
-				SourceMap: sourceMap,
-				DTS:       dtsOutput,
-			},
-		},
-	}
+	return compileScript(newBackend(PackageConfig{}), nil, source, "index", "./index.js")
 }
 
 // CompilePackage compiles a package's lib/ and bin/ sources, checking them as config
@@ -345,7 +298,7 @@ func CompilePackage(sources []*ast.Source, config PackageConfig) CompilerOutput 
 		// compileScript names its own phases, so this step names the script only for
 		// a panic outside them.
 		step.enter(src.Path, "compiling")
-		scriptOutput := compileScript(selected, libScope, src)
+		scriptOutput := compileScript(selected, libScope, src, "bin/index", scriptJSFile(src))
 		output.ParseErrors = append(output.ParseErrors, scriptOutput.ParseErrors...)
 		output.TypeErrors = append(output.TypeErrors, scriptOutput.TypeErrors...)
 
@@ -403,11 +356,19 @@ func collectUsedLibSymbols(script *ast.Script, lib LibScope) []string {
 // TODO: Update this so that we inject an `import` statement at the start of
 // each script source to import the `lib` namespace.
 func CompileScript(lib LibScope, source *ast.Source) CompilerOutput {
-	return compileScript(newBackend(PackageConfig{}), lib, source)
+	return compileScript(newBackend(PackageConfig{}), lib, source, "bin/index", scriptJSFile(source))
 }
 
-// compileScript is CompileScript with the backend that checks a script when lib is nil.
-func compileScript(b backend, lib LibScope, source *ast.Source) CompilerOutput {
+// scriptJSFile returns the path, relative to the build directory, of the JavaScript
+// emitted for the script source, so `bin/main.esc` emits `./main.js`.
+func scriptJSFile(source *ast.Source) string {
+	return "./" + strings.TrimSuffix(filepath.Base(source.Path), filepath.Ext(source.Path)) + ".js"
+}
+
+// compileScript compiles source with lib in scope, using b to check it when lib is nil.
+// The output holds one unit named unitName, whose JavaScript is named jsFile, or no
+// unit when the script holds an enum spread.
+func compileScript(b backend, lib LibScope, source *ast.Source, unitName, jsFile string) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -467,8 +428,6 @@ func compileScript(b backend, lib LibScope, source *ast.Source) CompilerOutput {
 	jsOutput := printer.PrintModule(jsMod)
 
 	step.enter(source.Path, "generating a source map for")
-	baseName := strings.TrimSuffix(filepath.Base(source.Path), filepath.Ext(source.Path)) + ".js"
-	jsFile := "./" + baseName
 	sourceMap, err := codegen.GenerateSourceMap([]*ast.Source{source}, jsMod, jsFile)
 	if err != nil {
 		typeErrors = append(typeErrors, &emitError{span: scriptSpan(inMod), err: err})
@@ -485,7 +444,7 @@ func compileScript(b backend, lib LibScope, source *ast.Source) CompilerOutput {
 		ParseErrors: parseErrors,
 		TypeErrors:  typeErrors,
 		CompUnits: map[string]CompUnitOutput{
-			"bin/index": {
+			unitName: {
 				JS:        jsOutput,
 				SourceMap: sourceMap,
 				DTS:       dtsOutput,

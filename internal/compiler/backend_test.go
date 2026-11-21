@@ -44,6 +44,29 @@ func TestCheckLibReportsATypeError(t *testing.T) {
 	require.Contains(t, messages(out.TypeErrors), `cannot constrain "hello" <: number`)
 }
 
+// TestAnEnumSpreadSkipsCodegen asserts that each entry point that emits JavaScript
+// reports an enum spread as unsupported and emits no unit for it, rather than
+// panicking in codegen.
+func TestAnEnumSpreadSkipsCodegen(t *testing.T) {
+	const src = "enum A { X(n: number) }\nenum B { ...A, Y(s: string) }\nval b = B.Y(\"s\")\n"
+
+	tests := map[string]func() CompilerOutput{
+		"Compile":        func() CompilerOutput { return Compile(binSource(src)) },
+		"CompileScript":  func() CompilerOutput { return CompileScript(nil, binSource(src)) },
+		"CompilePackage": func() CompilerOutput { return CompilePackage(libSources(src), PackageConfig{}) },
+	}
+
+	for name, compile := range tests {
+		t.Run(name, func(t *testing.T) {
+			var out CompilerOutput
+			require.NotPanics(t, func() { out = compile() })
+			require.Empty(t, out.ParseErrors)
+			require.Equal(t, []string{"Unsupported: EnumSpread"}, messages(out.TypeErrors))
+			require.Empty(t, out.CompUnits)
+		})
+	}
+}
+
 // TestCheckBinScriptReadsTheLibrary checks the lib/ to bin/ seam: a script resolves a
 // name the library declared, and reports one neither declared.
 func TestCheckBinScriptReadsTheLibrary(t *testing.T) {

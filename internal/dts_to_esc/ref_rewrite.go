@@ -10,8 +10,8 @@ import (
 
 // unhandledNodeError is the value refRewriter panics with on a node variant its
 // switches don't list. A switch panics rather than skipping the node, so a newly
-// added variant cannot bypass the rewrite unnoticed. ConvertModuleWithOverrides
-// returns it as an error.
+// added variant cannot bypass the rewrite unnoticed. ConvertModuleWithOverrides,
+// convertStandaloneModule and convertFusedBucket return it as an error.
 type unhandledNodeError struct {
 	// construct names the kind of node, such as `type annotation`.
 	construct string

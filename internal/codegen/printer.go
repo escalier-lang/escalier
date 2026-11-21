@@ -771,6 +771,9 @@ func (p *Printer) printPattern(pat Pat) {
 	case *RestPat:
 		p.print("...")
 		p.printPattern(pat.Pattern)
+	case *WildcardPat:
+		// A hole in an array pattern prints nothing, so `[, b]` skips the first
+		// element.
 	}
 	end := p.location
 	pat.SetSpan(&Span{Start: start, End: end})

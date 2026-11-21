@@ -247,6 +247,8 @@ func (s *SourceMapGenerator) TraversePattern(pattern Pat) {
 		}
 	case *RestPat:
 		s.TraversePattern(pk.Pattern)
+	case *WildcardPat:
+		// A hole maps no source of its own beyond the segment added above.
 	default:
 		panic("TODO - TraversePattern")
 	}

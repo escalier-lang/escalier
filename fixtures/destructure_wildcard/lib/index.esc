@@ -23,3 +23,15 @@ export fn sumSeconds(pairs: Array<[number, number]>) -> number {
     }
     return sum
 }
+
+export fn yOf({x: _, y}: {x: number, y: number}) -> number {
+    return y
+}
+
+export fn othersOf({x: _, ...others}: {x: number, y: number}) -> {y: number} {
+    return others
+}
+
+export fn yWhenXIsOne({x: 1, y}: {x: number, y: number}) -> number {
+    return y
+}

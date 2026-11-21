@@ -472,9 +472,19 @@ func (b *Builder) buildPattern(
 						)
 					}
 
+					value := buildPatternRec(e.Value, newTarget)
+					if _, hole := value.(*WildcardPat); hole {
+						// An object pattern has no hole, so a property that binds
+						// nothing is left out. A rest element would then collect it, so
+						// with one present the property binds an unused temp instead.
+						if !hasObjRest(p) {
+							continue
+						}
+						value = NewIdentPat(b.NewTempId(), nil, e.Value)
+					}
 					elems = append(elems, NewObjKeyValuePat(
 						fullyQualifyName(e.Key.Name, nsName),
-						buildPatternRec(e.Value, newTarget),
+						value,
 						nil,
 						e,
 					))
@@ -551,9 +561,12 @@ func (b *Builder) buildPattern(
 				case *ast.RestPat:
 					// For rest patterns, wrap the IdentPat in a RestPat
 					tempVarPat = NewRestPat(NewIdentPat(tempId, nil, p), arg)
+				case *ast.WildcardPat:
+					// The argument binds nothing, so its slot is a hole.
+					tempVarPat = NewWildcardPat(arg)
 				default:
-					// A nested pattern such as `E.V([a, b])` or `E.V(_)` binds the
-					// argument to the temp, and the loop below destructures the temp.
+					// A nested pattern such as `E.V([a, b])` binds the argument to the
+					// temp, and the loop below destructures the temp.
 					tempVarPat = NewIdentPat(tempId, init, p)
 				}
 
@@ -626,10 +639,9 @@ func (b *Builder) buildPattern(
 		case *ast.LitPat:
 			// The checker accepts a literal the value's type admits, so
 			// `val [1, b] = xs` checks with `xs: [number, number]`. A JS destructuring
-			// has no literal form, so the slot binds a temp and a test after the
-			// declaration throws when the temp differs from the literal. The test uses
-			// `!=`, the negation of the `==` a match arm's literal test uses.
-			tempId := b.NewTempId()
+			// has no literal form, so the slot is a hole and a test after the
+			// declaration throws when the slot's value differs from the literal. The
+			// test uses `!=`, the negation of the `==` a match arm's literal test uses.
 			litExpr, _ := b.buildExpr(&ast.LiteralExpr{Lit: p.Lit}, nil)
 			mismatch := NewThrowStmt(
 				NewNewExpr(
@@ -640,19 +652,33 @@ func (b *Builder) buildPattern(
 				p,
 			)
 			litTests = append(litTests, NewIfStmt(
-				NewBinaryExpr(NewIdentExpr(tempId, "", nil), NotEqual, litExpr, p),
+				NewBinaryExpr(target, NotEqual, litExpr, p),
 				NewBlockStmt([]Stmt{mismatch}, p),
 				nil,
 				p,
 			))
-			return NewIdentPat(tempId, nil, p)
+			return NewWildcardPat(p)
 		case *ast.WildcardPat:
-			// A JS destructuring has no wildcard form, so the slot binds an unused temp.
-			return NewIdentPat(b.NewTempId(), nil, p)
+			// The slot binds nothing, so it is a hole, as in `[, b]`.
+			return NewWildcardPat(p)
 		default:
 			// TODO
 		}
 		panic("TODO - buildPattern - default case")
+	}
+
+	// A literal's test reads its slot from the target after the declaration, so a
+	// target other than a name is first held in a temp that is evaluated once. The
+	// temp is never exported.
+	if _, named := target.(*IdentExpr); !named && target != nil && containsLitPat(p) {
+		tempId := b.NewTempId()
+		stmts = append(stmts, &DeclStmt{
+			Decl: &VarDecl{
+				Kind:  ValKind,
+				Decls: []*Declarator{{Pattern: NewIdentPat(tempId, nil, p), Init: target}},
+			},
+		})
+		target = NewIdentExpr(tempId, "", nil)
 	}
 
 	// TODO: Assign the target to a temp variable and pass the temp variable
@@ -660,6 +686,11 @@ func (b *Builder) buildPattern(
 	// the target may be a complex expression that needs to be evaluated only
 	// once.
 	pat := buildPatternRec(p, target)
+
+	// A pattern that is a hole binds nothing, so it declares nothing.
+	if _, hole := pat.(*WildcardPat); hole {
+		pat = nil
+	}
 
 	if pat != nil {
 		decls := []*Declarator{
@@ -687,6 +718,36 @@ func (b *Builder) buildPattern(
 	stmts = append(stmts, litTests...)
 
 	return checks, stmts
+}
+
+// litPatFinder is an ast.Visitor that records whether it reached a literal pattern.
+type litPatFinder struct {
+	ast.DefaultVisitor
+	found bool
+}
+
+func (v *litPatFinder) EnterPat(p ast.Pat) bool {
+	if _, lit := p.(*ast.LitPat); lit {
+		v.found = true
+	}
+	return !v.found
+}
+
+// containsLitPat reports whether p holds a literal pattern at any depth.
+func containsLitPat(p ast.Pat) bool {
+	finder := &litPatFinder{}
+	p.Accept(finder)
+	return finder.found
+}
+
+// hasObjRest reports whether p holds a rest element, as in `{a, ...rest}`.
+func hasObjRest(p *ast.ObjectPat) bool {
+	for _, elem := range p.Elems {
+		if _, rest := elem.(*ast.ObjRestPat); rest {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *Builder) buildStmt(stmt ast.Stmt) []Stmt {
