@@ -50,12 +50,12 @@ test.describe('Hover', () => {
                 timeout: 2_000,
             });
         }).toPass({ timeout: 30_000 });
-        await expect(hover).toContainText('= number');
+        await expect(hover).toContainText('= number | undefined');
         await expect(increase).toHaveClass(/enabled/);
         await expect(decrease).toHaveClass(/disabled/);
 
         await increase.click();
-        await expect(hover).toContainText('type Y = number');
+        await expect(hover).toContainText('type Y = number | undefined');
         await expect(hover).not.toContainText('Point');
         await expect(increase).toHaveClass(/disabled/);
         await expect(decrease).toHaveClass(/enabled/);
