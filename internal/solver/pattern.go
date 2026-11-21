@@ -1546,8 +1546,7 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 // `val [mut p] = [{y: 1}]` binds `p: {y: number}`.
 //
 // When the projected type is not statically known, concrete is nil. The leaf type then flows
-// into a fresh widenable variable as a lower bound, and widening at coalesce time turns a
-// literal field into its primitive.
+// into the variable mutableSlotOf returns.
 func (c *checker) widenOwnedLeaf(lvl int, node ast.Node, leafType, concrete soltype.Type) soltype.Type {
 	if concrete != nil {
 		widened := widen(concrete)
@@ -1558,9 +1557,21 @@ func (c *checker) widenOwnedLeaf(lvl int, node ast.Node, leafType, concrete solt
 		}
 		return widened
 	}
+	return c.mutableSlotOf(lvl, node, leafType)
+}
+
+// mutableSlotOf returns a fresh variable that t flows into, whose every lower bound has its
+// literals widened as T9 widens the owned layers of a `mut` binding. So `{a: 1}` flowing in
+// reads as `{a: number}`. The widening happens as each bound arrives, not when the variable
+// is coalesced, so a write later in the same body checks against the widened bound. A
+// primitive bound keeps its literal, as `val mut n = 1` does. The variable is also marked
+// Widenable, which widens such a primitive in the coalesced display. node blames a widened
+// bound that fails one of the variable's upper bounds.
+func (c *checker) mutableSlotOf(lvl int, node ast.Node, t soltype.Type) *soltype.TypeVarType {
 	v := c.freshAt(lvl)
 	v.Widenable = true
-	c.constrain(node, leafType, v)
+	c.ctx.setSlotMode(v, slotMode{mutable: true})
+	c.constrain(node, t, v)
 	return v
 }
 

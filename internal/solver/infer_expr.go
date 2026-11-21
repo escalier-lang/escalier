@@ -708,8 +708,13 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			}
 			if def := paramDefault(p); def != nil {
 				// A default sees only the parameters ahead of it, so it is inferred later in a
-				// scope holding just the bindings made so far.
-				defaults = append(defaults, paramDefaultSite{def: def, param: pt, scope: snapshotScope(declScope, fnScope)})
+				// scope holding just the bindings made so far. An unannotated `mut` parameter
+				// may write what the default fills it with, so its default widens as T9 widens
+				// a `mut` binding's initializer. An annotated one checks the default against
+				// the annotation as written.
+				ip, isIdent := pat.(*ast.IdentPat)
+				widens := isIdent && ip.Mutable && p.TypeAnn == nil
+				defaults = append(defaults, paramDefaultSite{def: def, param: pt, scope: snapshotScope(declScope, fnScope), widens: widens})
 			}
 			// A `mut p: T` parameter may mutate the `T` it owns. The caller moves its
 			// argument into `p` either way, so the signature keeps the plain `T`. An
@@ -3057,9 +3062,8 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 	// write is rejected here.
 	//
 	// A write through an immutable borrow skips this check, so the requirement reports the
-	// immutability. A variable whose lower bounds disagree is not checked either. It joins the
-	// values that flow into it, as `val {mut x} = p else { {x: {a: 1}} }` joins `p.x` with a
-	// literal.
+	// immutability. A variable that joins values of different members, as
+	// `val mut x = if c { a } else { b }` does, is checked as the union of what it joins.
 	if ref, isRef := recv.(*soltype.RefType); !isRef || ref.Mut {
 		if uw, ok := c.unionWriteReceiver(name, recv); ok {
 			return c.rejectUnionFieldWrite(e, object, name, recv, place, uw, source)
@@ -3167,19 +3171,17 @@ type unionFieldWrite struct {
 // unionWriteReceiver returns the union a write of field name through recv lands on. It reports
 // true when recv is a union with at least two members other than `undefined` and `null`, and
 // each of those members declares name as a property. It reports false for any other receiver,
-// including a union with a member that lacks the field. A borrow is looked through. An
-// inference variable reads as the union its lower bounds agree on, and a variable whose lower
-// bounds are several different types reports false.
+// including a union with a member that lacks the field. A borrow is looked through, and an
+// inference variable reads as the type writeReceiverCarrier returns.
 func (c *checker) unionWriteReceiver(name string, recv soltype.Type) (unionFieldWrite, bool) {
-	carrier, found := soleLowerBound(soltype.CarrierOf(recv), func(t soltype.Type) (soltype.Type, bool) {
-		t = soltype.CarrierOf(t)
-		_, isUnion := c.memberCarrier(t).(*soltype.UnionType)
-		return t, isUnion
-	})
+	carrier, found := c.writeReceiverCarrier(recv)
 	if !found {
 		return unionFieldWrite{}, false
 	}
-	u := c.memberCarrier(carrier).(*soltype.UnionType)
+	u, isUnion := c.memberCarrier(carrier).(*soltype.UnionType)
+	if !isUnion {
+		return unionFieldWrite{}, false
+	}
 	uw := unionFieldWrite{union: carrier}
 	for _, m := range u.Types {
 		switch m.(type) {
@@ -3199,6 +3201,34 @@ func (c *checker) unionWriteReceiver(name string, recv soltype.Type) (unionField
 		return unionFieldWrite{}, false
 	}
 	return uw, true
+}
+
+// writeReceiverCarrier returns the type of the value a field write through recv lands on,
+// with any borrow looked through. A type that is not an inference variable is returned as is.
+// A variable reads as the union of its lower bounds, each resolved through coalescing, so a
+// variable joining an `A` and a `B` reads as `A | B`, and one whose bounds are all `{a: number}`
+// reads as `{a: number}`. It returns false for a variable with no lower bound, and for one
+// with an immutable borrow among its lower bounds.
+func (c *checker) writeReceiverCarrier(recv soltype.Type) (soltype.Type, bool) {
+	carrier := soltype.CarrierOf(recv)
+	v, isVar := carrier.(*soltype.TypeVarType)
+	if !isVar {
+		return carrier, true
+	}
+	var bounds []soltype.Type
+	for _, lb := range v.LowerBounds {
+		if lb == soltype.Type(v) {
+			continue
+		}
+		if ref, isRef := lb.(*soltype.RefType); isRef && !ref.Mut {
+			return nil, false
+		}
+		bounds = append(bounds, groundedCarrier(lb))
+	}
+	if len(bounds) == 0 {
+		return nil, false
+	}
+	return newUnion(c.ctx, bounds), true
 }
 
 // rejectUnionFieldWrite reports a write of field name through a union receiver and returns the
@@ -5607,6 +5637,13 @@ func (c *checker) joinLeaf(
 		c.constrain(d, leaf.ty, fixed)
 		return false
 	}
+	// The success path widened a `mut` leaf as it bound it, in widenOwnedLeaf. The
+	// fallback's projection never reaches that step, so it widens here. Otherwise
+	// `val {mut x} = p else { {x: {a: 1}} }` would join `{a: number}` with `{a: 1}`, and a
+	// write of `2` to `x.a` would fail the literal half.
+	if leafMutable(leaf.node) && !isBorrowType(leaf.ty) {
+		leaf.ty = c.mutableSlotOf(lvl, d, leaf.ty)
+	}
 	// The two sources the name binds from have to agree on ownership.
 	mixed := branchesMixOwnership([]soltype.Type{matched, leaf.ty})
 	if mixed && reportMixed {
@@ -6732,13 +6769,19 @@ type paramDefaultSite struct {
 	def   ast.Expr
 	param soltype.Type
 	scope *Scope
+	// widens marks a default whose literals widen before it fills the parameter.
+	widens bool
 }
 
 // inferParamDefaults infers each default in its own scope and constrains it against its
 // parameter's type, since the default fills the parameter when a caller omits it.
 func (c *checker) inferParamDefaults(lvl int, defaults []paramDefaultSite) {
 	for _, d := range defaults {
-		c.constrain(d.def, c.inferExpr(d.scope, lvl, d.def), d.param)
+		defT := c.inferExpr(d.scope, lvl, d.def)
+		if d.widens {
+			defT = c.mutableSlotOf(lvl, d.def, defT)
+		}
+		c.constrain(d.def, defT, d.param)
 	}
 }
 
