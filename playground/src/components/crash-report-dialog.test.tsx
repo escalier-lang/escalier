@@ -72,6 +72,12 @@ test('the copy button goes back to "Copy report" two seconds after it shows "Cop
     ).toBeInTheDocument();
 });
 
+/** Clicks button and returns a resolved promise. */
+function clickAndSettle(button: HTMLElement): Promise<void> {
+    fireEvent.click(button);
+    return Promise.resolve();
+}
+
 test('a second copy shows "Copied" for two seconds from the second press', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     vi.stubGlobal('navigator', {
@@ -80,16 +86,21 @@ test('a second copy shows "Copied" for two seconds from the second press', async
     render(<CrashReportDialog report={report} onClose={() => {}} />);
     const copyButton = screen.getByRole('button', { name: 'Copy report' });
 
-    // act(async …) lets the clipboard write each click starts settle before the next step.
-    /* oxlint-disable typescript/require-await */
-    await act(async () => fireEvent.click(copyButton));
-    await act(async () => vi.advanceTimersByTime(1500));
-    await act(async () => fireEvent.click(copyButton));
-    await act(async () => vi.advanceTimersByTime(1500));
+    // Given a promise, act waits for the microtasks queued by the clipboard write the
+    // click starts, so the label has changed before the next step.
+    await act(() => clickAndSettle(copyButton));
+    act(() => {
+        vi.advanceTimersByTime(1500);
+    });
+    await act(() => clickAndSettle(copyButton));
+    act(() => {
+        vi.advanceTimersByTime(1500);
+    });
     expect(copyButton).toHaveTextContent('Copied');
 
-    await act(async () => vi.advanceTimersByTime(600));
-    /* oxlint-enable typescript/require-await */
+    act(() => {
+        vi.advanceTimersByTime(600);
+    });
     expect(copyButton).toHaveTextContent('Copy report');
 });
 

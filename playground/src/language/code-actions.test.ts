@@ -1,6 +1,9 @@
-import type * as monaco from 'monaco-editor-core';
+import * as monaco from 'monaco-editor-core';
 import { describe, expect, test, vi } from 'vitest';
 import type * as lsp from 'vscode-languageserver-protocol';
+
+// The mock supplies the Monaco enums the test names, without loading Monaco.
+vi.mock('monaco-editor-core');
 
 import {
     convertCodeActions,
@@ -14,8 +17,7 @@ const resource = { toString: () => uri } as monaco.Uri;
 
 // The marker Monaco shows for diagnostic, which covers 1:8-3:1 in LSP terms.
 const marker: monaco.editor.IMarkerData = {
-    // oxlint-disable-next-line typescript/no-unsafe-enum-assignment -- the test imports only Monaco's types, so it writes MarkerSeverity.Error by value
-    severity: 8,
+    severity: monaco.MarkerSeverity.Error,
     startLineNumber: 2,
     startColumn: 9,
     endLineNumber: 4,
@@ -176,8 +178,7 @@ describe('createCodeActionProvider', () => {
     } as monaco.Range;
     const context = {
         markers: [marker],
-        // oxlint-disable-next-line typescript/no-unsafe-enum-assignment -- CodeActionTriggerType.Invoke, by value for the same reason
-        trigger: 1,
+        trigger: monaco.languages.CodeActionTriggerType.Invoke,
         only: 'quickfix',
     } as monaco.languages.CodeActionContext;
     const token = {} as monaco.CancellationToken;
