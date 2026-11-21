@@ -11,6 +11,7 @@ import {
 
 import type { ServerLauncher, ServerProcess } from './server-process';
 import {
+    OutputStream,
     STDERR_TAIL_CHARS,
     SimpleStream,
     describeError,
@@ -39,7 +40,7 @@ const neverFires = () => Disposable.create(() => {});
  * Returns stream as the readable stream a jsonrpc message reader takes. The reader
  * splits the bytes the server writes to stdout into messages.
  */
-function readableOf(stream: SimpleStream): RAL.ReadableStream {
+function readableOf(stream: OutputStream): RAL.ReadableStream {
     return {
         onData: (listener) =>
             stream.on('data', (chunk) => listener(asNodeBuffer(chunk))),
@@ -253,7 +254,7 @@ export class Client {
     // The streams the connection writes to and reads from, which createRuntime()
     // replaces for each server. A launched server reads stdin and writes stdout.
     private stdin!: SimpleStream;
-    private stdout!: SimpleStream;
+    private stdout!: OutputStream;
     /** Sends requests and notifications over stdin and reads the replies from stdout. */
     private connection!: MessageConnection;
     /** Set by `stop()`. Drops notifications from then on. */
@@ -303,7 +304,7 @@ export class Client {
      */
     private createRuntime() {
         this.stdin = new SimpleStream();
-        this.stdout = new SimpleStream();
+        this.stdout = new OutputStream();
         this.connection = createMessageConnection(
             new ReadableStreamMessageReader(readableOf(this.stdout)),
             new WriteableStreamMessageWriter(writableOf(this.stdin)),

@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { expect, test, vi } from 'vitest';
 
 import {
+    OutputStream,
     STDERR_TAIL_CHARS,
     ServerRuntime,
     SimpleStream,
@@ -21,7 +22,7 @@ function idleRuntime(module: WebAssembly.Module): ServerRuntime {
         fs: {} as never,
         env: {},
         stdin: new SimpleStream(),
-        stdout: new SimpleStream(),
+        stdout: new OutputStream(),
     });
 }
 
@@ -66,6 +67,44 @@ test('a runtime refuses to run while another in the same thread is running', asy
         ),
     );
     await running;
+});
+
+test('a stdin read still waiting when the server ends stops listening to stdin', async () => {
+    const { runtime, shim, stdin } = await shimmedRuntime();
+    // @ts-expect-error: emitter is private
+    const listeners = () => stdin.emitter.listenerCount('data');
+    shim.read(0, new Uint8Array(4), 0, 4, null, vi.fn());
+    expect(listeners()).toBe(1);
+
+    // A server that ends at once, as one that panics in another goroutine would
+    // while its stdin read waits.
+    // @ts-expect-error: go is private
+    runtime.go.run = async () => {};
+    await runtime.run();
+
+    expect(listeners()).toBe(0);
+});
+
+test('the fs shim answers a read of no bytes from stdin at once', async () => {
+    const { shim } = await shimmedRuntime();
+    const buffer = new Uint8Array(4);
+    const callback = vi.fn();
+
+    shim.read(0, buffer, 0, 0, null, callback);
+
+    expect(callback).toHaveBeenCalledWith(null, 0, buffer);
+});
+
+test('OutputStream passes each chunk to its listeners', () => {
+    const stream = new OutputStream();
+    const heard: number[][] = [];
+    const subscription = stream.on('data', (chunk) => heard.push([...chunk]));
+
+    stream.write(new Uint8Array([1, 2]));
+    subscription.dispose();
+    stream.write(new Uint8Array([3]));
+
+    expect(heard).toEqual([[1, 2]]);
 });
 
 test('StderrTail keeps the last STDERR_TAIL_CHARS of what it records', () => {
@@ -126,7 +165,7 @@ test.each<[string, unknown[], string, unknown[]]>([
             fs: fsMock,
             env: {},
             stdin: new SimpleStream(),
-            stdout: new SimpleStream(),
+            stdout: new OutputStream(),
         });
         // @ts-expect-error: fsShim is private
         const shim = runtime.fsShim as Record<
@@ -149,7 +188,7 @@ test.each<[string, unknown[], string, unknown[]]>([
 async function shimmedRuntime() {
     const fsMock = mockFS();
     const stdin = new SimpleStream();
-    const stdout = new SimpleStream();
+    const stdout = new OutputStream();
     const stderr: string[] = [];
     const runtime = new ServerRuntime(await WebAssembly.compile(wasm), {
         cwd: '/',
@@ -166,7 +205,7 @@ async function shimmedRuntime() {
 
 const bytes = (text: string) => new TextEncoder().encode(text);
 
-test('the fs shim reads stdin from the stream, and answers EAGAIN on a timer when it is empty', async () => {
+test('the fs shim reads stdin from the stream, and waits for a chunk when it is empty', async () => {
     vi.useFakeTimers();
     try {
         const { shim, stdin } = await shimmedRuntime();
@@ -175,17 +214,10 @@ test('the fs shim reads stdin from the stream, and answers EAGAIN on a timer whe
 
         shim.read(0, buffer, 2, 4, null, callback);
         expect(callback).not.toHaveBeenCalled();
-        vi.runAllTimers();
-        expect(callback).toHaveBeenCalledWith(
-            expect.objectContaining({ code: 'EAGAIN' }),
-            0,
-            buffer,
-        );
-
         stdin.write(bytes('abcdef'));
-        shim.read(0, buffer, 2, 4, null, callback);
+        vi.runAllTimers();
 
-        expect(callback).toHaveBeenLastCalledWith(null, 4, buffer);
+        expect(callback).toHaveBeenCalledWith(null, 4, buffer);
         expect(new TextDecoder().decode(buffer.subarray(2, 6))).toBe('abcd');
         // The rest of the chunk stays queued for the next read.
         shim.read(0, buffer, 0, 8, null, callback);

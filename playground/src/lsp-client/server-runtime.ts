@@ -59,6 +59,23 @@ export class SimpleStream {
     }
 }
 
+/**
+ * Passes each byte chunk written to it to the listeners on `data`, and keeps none. The
+ * server writes its stdout to one.
+ */
+export class OutputStream {
+    private emitter = new EventEmitter();
+
+    on(event: 'data', listener: (chunk: Uint8Array) => void): Disposable {
+        this.emitter.on(event, listener);
+        return Disposable.create(() => this.emitter.off(event, listener));
+    }
+
+    write(chunk: Uint8Array) {
+        this.emitter.emit('data', chunk);
+    }
+}
+
 /** How much of a server's stderr a StderrTail keeps. */
 export const STDERR_TAIL_CHARS = 64 * 1024;
 
@@ -101,7 +118,7 @@ export type ServerRuntimeOptions = {
     /** The bytes the server reads from stdin. */
     stdin: SimpleStream;
     /** Takes the bytes the server writes to stdout. */
-    stdout: SimpleStream;
+    stdout: OutputStream;
     /** Called with each piece of text the server writes to stderr. */
     onStderr?: (text: string) => void;
 };
@@ -114,13 +131,16 @@ export class ServerRuntime {
     private go: any;
     private module: WebAssembly.Module;
     private stdin: SimpleStream;
-    private stdout: SimpleStream;
+    private stdout: OutputStream;
     private stderr = new StderrTail();
     private onStderr: (text: string) => void;
     /** The stderr text since the last newline, which writeSync prints as one line. */
     private errorBuffer = '';
     /** Set by silence(). Keeps the server's stderr out of the console. */
     private silenced = false;
+
+    /** The listener an empty stdin read waits on, until a chunk arrives. */
+    private pendingStdinRead: Disposable | undefined;
 
     // Go resolves `globalThis.fs` and `globalThis.process` on every syscall,
     // so whichever value is installed last serves every runtime in the thread
@@ -180,7 +200,9 @@ export class ServerRuntime {
                 ) => void,
             ) => {
                 if (fd === 1) {
-                    this.stdout.write(buffer);
+                    // The caller reuses buffer once the callback runs, so the stream
+                    // gets a copy.
+                    this.stdout.write(buffer.slice(0, length));
                     setTimeout(() => {
                         callback(null, length, buffer);
                     }, 0);
@@ -269,23 +291,38 @@ export class ServerRuntime {
                     // that sourcegraph/jsonrpc2 creates, and a message can be longer.
                     // Reading at most length bytes leaves the rest of the chunk
                     // queued for the next call.
-                    const srcBuf = this.stdin.read(length);
-                    if (srcBuf) {
-                        buffer.set(srcBuf, offset);
-                        callback(null, srcBuf.length, buffer);
+                    //
+                    // A read of no bytes answers at once rather than waiting for data
+                    // it didn't ask for.
+                    if (length === 0) {
+                        callback(null, 0, buffer);
                         return;
                     }
-
-                    // An empty stdin answers EAGAIN on a timer rather than at once.
-                    // The server reads again as soon as it is answered, so an
-                    // immediate answer would keep every other callback and promise
-                    // from running.
-                    setTimeout(() => {
-                        const error = new Error();
-                        // @ts-ignore
-                        error.code = 'EAGAIN';
-                        callback(error, 0, buffer);
-                    }, 0);
+                    // An empty stdin answers once the next chunk arrives, so an idle
+                    // server waits without polling. That answer goes on a timer
+                    // because a chunk arrives inside the writer's call, and the
+                    // callback runs the server.
+                    const answer = () => {
+                        // The server can exit between a chunk arriving and this timer.
+                        if (this.go.exited) {
+                            return;
+                        }
+                        const srcBuf = this.stdin.read(length);
+                        if (!srcBuf) {
+                            this.pendingStdinRead = this.stdin.on(
+                                'data',
+                                () => {
+                                    this.pendingStdinRead?.dispose();
+                                    this.pendingStdinRead = undefined;
+                                    setTimeout(answer, 0);
+                                },
+                            );
+                            return;
+                        }
+                        buffer.set(srcBuf, offset);
+                        callback(null, srcBuf.length, buffer);
+                    };
+                    answer();
                 } else {
                     return fs.read(
                         fd,
@@ -424,6 +461,10 @@ export class ServerRuntime {
             );
             await this.go.run(instance);
         } finally {
+            // A read still waiting on stdin would otherwise run the ended server on
+            // the next write, and keep this runtime reachable from the stream.
+            this.pendingStdinRead?.dispose();
+            this.pendingStdinRead = undefined;
             runtimeRunning = false;
         }
     }

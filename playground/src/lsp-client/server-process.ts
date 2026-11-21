@@ -1,6 +1,10 @@
 import type { FSAPI } from '#fs/fs-api';
 
-import { ServerRuntime, type SimpleStream } from './server-runtime';
+import {
+    type OutputStream,
+    ServerRuntime,
+    type SimpleStream,
+} from './server-runtime';
 
 /** A language server that a ServerLauncher started. */
 export interface ServerProcess {
@@ -24,7 +28,7 @@ export interface ServerLauncher {
      * stdout. Rejects when the server can't be started, such as when its WebAssembly
      * doesn't compile.
      */
-    launch(stdin: SimpleStream, stdout: SimpleStream): Promise<ServerProcess>;
+    launch(stdin: SimpleStream, stdout: OutputStream): Promise<ServerProcess>;
 }
 
 /** What a launcher passes the server besides its streams. */
