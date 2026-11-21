@@ -256,14 +256,14 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	// constrains its own projected type into its binding var.
 	destructured := map[*ast.VarDecl]*moduleDestructure{}
 	// The walk visits a class's value key before the declarations that read its members.
-	// Those declarations depend only on the class's type key, so g.Components alone may
-	// place them first.
+	// Those declarations depend only on the class's type key, so g.CheckComponents alone
+	// may place them first.
 	//
 	// A class's type key builds a signature stub for every method before any body is
-	// inferred. An unannotated method's stub has no return type yet. Its return is a fresh
-	// variable, which gets bounds only when linkMemberSig runs after the value key infers
-	// that method's body. seedStubReturn fills the stub from an annotated return, so only
-	// unannotated returns are at risk.
+	// inferred. A member whose signature is complete gets that signature as its stub. Any
+	// other member's stub returns a fresh variable, which gets bounds only when
+	// linkMemberSig runs after the value key infers that member's body, so only those
+	// members are at risk.
 	//
 	// Inside one class the stubs are enough. A method reading a sibling's stub return adds
 	// constraints to that variable, and the class's types are finalized only after all its
@@ -274,7 +274,7 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	// no error.
 	//
 	//	fn f(b: B) { return b.m() }
-	//	class B { m(&self) { return 1 } }
+	//	class B { m(&self) { return 1 }, }
 	for _, component := range classBodiesFirst(g) {
 		c.inferComponent(scope, lvl, module, g, component, handled, destructured)
 	}
@@ -319,10 +319,11 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	return soltype.ModuleSymbols{Minted: declaredSymbols(module, c.info), Owners: c.symbolOwners}
 }
 
-// classBodiesFirst returns g.CheckComponents reordered so that a component naming a
-// class's type comes after the component holding that class's value key, wherever the dep
-// graph allows it. A signature-bound function's key reads no member's type, so it takes
-// no such edge. Every component still comes after the components it depends on. Components
+// classBodiesFirst returns g.CheckComponents reordered so that a component naming the
+// type of a class with an inferred member comes after the component holding that class's
+// value key, wherever the dep graph allows it. A member is inferred when its signature is
+// not complete. A signature-bound function's key reads no member's type, so it takes no
+// such edge. Every component still comes after the components it depends on. Components
 // that cannot be ordered that way are merged into one component, with their keys in their
 // original relative order.
 func classBodiesFirst(g *dep_graph.DepGraph) [][]dep_graph.BindingKey {
@@ -350,7 +351,7 @@ func classBodiesFirst(g *dep_graph.DepGraph) [][]dep_graph.BindingKey {
 				if j, found := index[dep]; found && j != i {
 					out = append(out, j)
 				}
-				if dep.Kind() != dep_graph.DepKindType || !declaresClass(g, dep) || g.IsSignatureBound(key) {
+				if dep.Kind() != dep_graph.DepKindType || !declaresClassWithInferredMember(g, dep) || g.IsSignatureBound(key) {
 					continue
 				}
 				if j, found := index[dep_graph.ValueBindingKey(dep.Name())]; found && j != i {
@@ -382,11 +383,29 @@ func classBodiesFirst(g *dep_graph.DepGraph) [][]dep_graph.BindingKey {
 	return ordered
 }
 
-// declaresClass reports whether a class declaration contributes to key.
-func declaresClass(g *dep_graph.DepGraph, key dep_graph.BindingKey) bool {
+// declaresClassWithInferredMember reports whether a class declaration that contributes
+// to key has a method, getter or setter whose signature is not complete.
+func declaresClassWithInferredMember(g *dep_graph.DepGraph, key dep_graph.BindingKey) bool {
 	for _, d := range g.GetDecls(key) {
-		if _, ok := d.(*ast.ClassDecl); ok {
-			return true
+		decl, ok := d.(*ast.ClassDecl)
+		if !ok {
+			continue
+		}
+		for _, elem := range decl.Body {
+			switch elem := elem.(type) {
+			case *ast.MethodElem:
+				if !elem.Fn.IsComplete() {
+					return true
+				}
+			case *ast.GetterElem:
+				if !elem.Fn.IsComplete() {
+					return true
+				}
+			case *ast.SetterElem:
+				if !elem.Fn.IsCompleteExceptReturn() {
+					return true
+				}
+			}
 		}
 	}
 	return false

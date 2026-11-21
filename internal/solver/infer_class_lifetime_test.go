@@ -455,6 +455,20 @@ func TestClassLifetimeStoreEdge(t *testing.T) {
 // of its signature. The class body, printed with the class's own parameters as its quantifier
 // prefix, renders each method's lifetime under that method's own `<…>`, and a binder the body
 // elides, because the lifetime connects nothing, is dropped with its uses.
+// DISABLED until #2721 reports a method body that makes a class lifetime outlive a
+// lifetime the method's signature writes. `pick` binds from its signature, where the
+// caller chooses `'b`, but its body returns a borrow that lives only as long as `'a`.
+func TestMethodBodyReturningAClassLifetimeAsItsOwnIsRejected(t *testing.T) {
+	/*
+		src := "class Holder<'a> {\n\tpeer: &'a mut {value: number},\n" +
+			"\tpick<'b>(&self) -> &'b {value: number} { return self.peer },\n}"
+		_, errs := inferAgainstTreeWithSpans(t, src)
+		require.Equal(t, []string{
+			"1:14-1:16: the body requires 'a to outlive 'b, but the signature does not declare it; add the bound 'a: 'b",
+		}, errs)
+	*/
+}
+
 func TestMethodLifetimeBindersRenderOnTheMethod(t *testing.T) {
 	t.Parallel()
 

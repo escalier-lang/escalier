@@ -24,9 +24,13 @@ func (d *FuncDecl) FuncBody() *Block { return d.Body }
 // parameter and the return type are written, and no type in it is the `_` placeholder.
 // A complete signature gives the function its type without its body.
 func (sig *FuncSig) IsComplete() bool {
-	if sig.Return == nil {
-		return false
-	}
+	return sig.Return != nil && sig.IsCompleteExceptReturn()
+}
+
+// IsCompleteExceptReturn is IsComplete for a function whose return type is not written,
+// such as a setter's. It reports whether every parameter is written and no type the
+// signature writes is the `_` placeholder.
+func (sig *FuncSig) IsCompleteExceptReturn() bool {
 	anns := []TypeAnn{sig.Return, sig.Throws}
 	for _, p := range sig.Params {
 		if p.TypeAnn == nil {
