@@ -297,7 +297,13 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 
 	var items []protocol.CompletionItem
 
-	if keys, ok := emptyIndexKeyCompletions(node, parent, loc, info); ok {
+	// The parser drops a half-typed `th` after a return type or reads it as the next
+	// statement, so the node at the cursor doesn't show a `throws` position.
+	// throwsCompletions reads the text before the cursor instead, so it runs before
+	// the checks that read the node.
+	if keywords, ok := throwsCompletions(script.Accept, doc.Text, loc, s.snippetSupport); ok {
+		items = keywords
+	} else if keys, ok := emptyIndexKeyCompletions(node, parent, loc, info); ok {
 		items = keys
 	} else if values, ok := extractorNameCompletions(node, loc, scriptView, info); ok {
 		items = values
@@ -382,7 +388,14 @@ func (s *Server) moduleCompletion(
 
 	var items []protocol.CompletionItem
 
-	if keys, ok := emptyIndexKeyCompletions(node, parent, loc, info); ok {
+	// The parser drops a half-typed `th` after a return type or reads it as the next
+	// statement, so the node at the cursor doesn't show a `throws` position.
+	// throwsCompletions reads the text before the cursor instead, so it runs before
+	// the checks that read the node.
+	walkFile := func(v ast.Visitor) { walkModuleFile(v, module, sourceID) }
+	if keywords, ok := throwsCompletions(walkFile, docText, loc, s.snippetSupport); ok {
+		items = keywords
+	} else if keys, ok := emptyIndexKeyCompletions(node, parent, loc, info); ok {
 		items = keys
 	} else if values, ok := extractorNameCompletions(node, loc, nsView, info); ok {
 		items = values

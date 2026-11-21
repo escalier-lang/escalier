@@ -122,6 +122,11 @@ type Server struct {
 	// behind the document version.
 	validated *sync.Cond
 	rootURI   string // workspace root URI (from InitializeParams)
+
+	// snippetSupport records whether the client advertised
+	// textDocument.completion.completionItem.snippetSupport, so a completion item
+	// may carry insert text in LSP snippet syntax.
+	snippetSupport bool
 }
 
 func NewServer() *Server {
@@ -221,12 +226,24 @@ func workspaceRootURI(params *protocol.InitializeParams) string {
 	return ""
 }
 
+// clientSupportsSnippets reports whether caps advertises snippet syntax in completion
+// items.
+func clientSupportsSnippets(caps protocol.ClientCapabilities) bool {
+	textDoc := caps.TextDocument
+	if textDoc == nil || textDoc.Completion == nil || textDoc.Completion.CompletionItem == nil {
+		return false
+	}
+	support := textDoc.Completion.CompletionItem.SnippetSupport
+	return support != nil && *support
+}
+
 func (s *Server) initialize(context *glsp.Context, params *protocol.InitializeParams) (any, error) {
-	// TODO: store the client capabilities so that we can use them to customize
-	// repsonses.
-	// x := params.Capabilities.TextDocument.CodeAction.IsPreferredSupport
+	// TODO: read the other client capabilities, such as
+	// params.Capabilities.TextDocument.CodeAction.IsPreferredSupport, to customize
+	// responses.
 
 	s.rootURI = workspaceRootURI(params)
+	s.snippetSupport = clientSupportsSnippets(params.Capabilities)
 
 	capabilities := s.handler.CreateServerCapabilities()
 	capabilities.TextDocumentSync = protocol.TextDocumentSyncKindFull
