@@ -76,3 +76,11 @@ func TestInferredErrorTypesSolveTogether(t *testing.T) {
 	require.Equal(t, `fn (n: number) -> number throws "b" | "a"`, values["a"])
 	require.Equal(t, `fn (n: number) -> number throws "b" | "a"`, values["b"])
 }
+
+// TestTypeofSignatureBoundFunctionInItsComponent asserts that a type reading `typeof f`
+// resolves when it shares a component with `f`, whose complete signature names that type.
+func TestTypeofSignatureBoundFunctionInItsComponent(t *testing.T) {
+	values, errs := inferAgainstTreeWithSpans(t, "type F = typeof f\nfn f(x: number, g: F) -> number { return x }")
+	require.Empty(t, errs)
+	require.Equal(t, "fn (x: number, g: F) -> number", values["f"])
+}

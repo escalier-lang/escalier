@@ -459,14 +459,14 @@ type componentBinding struct {
 	// so the variables they carry are weak. Every function that reads the binding shares
 	// them, and no later component quantifies them.
 	weak bool
-	// signatureBound marks an overload set whose arms are ALL fully annotated, so phase
-	// 1 could build their signatures body-free and pre-bind the whole set in scope.
-	// b.arms then holds those signature types. A reference WITHIN the component — a
-	// recursive call or a value capture — resolves against the set rather than against a
-	// single first-arm var, and phase 2 only checks each arm's body. A set with any
-	// un-annotated arm has no signature to build without inferring the body, so it stays
-	// on the group-var path, where fuseOverloadArms records the whole set as one lower
-	// bound on that var. See annotatedOverloadArms.
+	// signatureBound marks a binding whose type its functions' signatures give, built
+	// without their bodies: a key dep_graph.DepGraph.IsSignatureBound reports, or an
+	// overload set whose arms are all fully annotated. b.arms then holds those signature
+	// types. A reference WITHIN the component, such as a recursive call or a value
+	// capture, resolves against the whole set rather than against a single first-arm var.
+	// An overload set with any un-annotated arm has no signature to build without
+	// inferring the body, so it stays on the group-var path, where fuseOverloadArms
+	// records the whole set as one lower bound on that var. See annotatedOverloadArms.
 	signatureBound bool
 	// bodiesAtBodyKey marks a signature-bound binding whose bodies are checked at the
 	// graph's body key for it, in a later component, rather than in phase 2 of this one.
@@ -534,14 +534,12 @@ func (c *checker) inferComponent(
 		if key.Kind() != dep_graph.DepKindValue {
 			continue
 		}
-		// PR6: a fully-annotated overload set is pre-bound to the whole SET, built from
-		// arm signatures alone (body-free), so references within the component resolve
-		// against every arm via resolveOverload instead of seeing only a single
-		// first-arm binding var (which would make a recursive arm — or a value capture —
-		// type-check against the wrong overload). Each recursive call then picks an arm
-		// and gets that arm's own return type, which is sharper than what the fused
-		// lower bound below derives. A set with any un-annotated arm cannot be built
-		// body-free, so it takes the fused path instead.
+		// A signature-bound key and a fully annotated overload set are both bound from their
+		// signatures alone. A reference within the component then resolves against every
+		// arm through resolveOverload, so a recursive call picks an arm and gets that arm's
+		// own return type. That is sharper than what the fused lower bound below derives. An
+		// overload set with any un-annotated arm cannot be built without its bodies, so it
+		// takes the fused path instead.
 		atBodyKey := g.IsSignatureBound(key)
 		armDecls := annotatedOverloadArms(g, key)
 		if atBodyKey {
@@ -549,10 +547,14 @@ func (c *checker) inferComponent(
 		}
 		if armDecls != nil {
 			// The signatures are built once every type the component declares is bound,
-			// since a signature can name a class whose type key shares this component.
+			// since a signature can name a class whose type key shares this component. Until
+			// then the name binds to a placeholder var, which bindFromSignatures bounds by the
+			// signature, so a `typeof` that a type in the component reads finds the name.
 			sortArmDecls(module, armDecls)
-			bindings[key] = &componentBinding{bound: true, signatureBound: true, bodiesAtBodyKey: atBodyKey}
+			placeholder := c.freshAt(inner)
+			bindings[key] = &componentBinding{v: placeholder, bound: true, signatureBound: true, bodiesAtBodyKey: atBodyKey}
 			sigKeys = append(sigKeys, signatureKey{key: key, decls: armDecls})
+			scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{monoScheme(placeholder)}})
 			continue
 		}
 		// A weak binding's var sits at lvl with the variables its initializer mints, so
@@ -1362,7 +1364,8 @@ type signatureKey struct {
 }
 
 // bindFromSignatures builds the signature of each function sk names, without its body,
-// records them on b as its arms, and binds sk's name in scope to the whole set.
+// records them on b as its arms, and binds sk's name in scope to the whole set. b.v is
+// the placeholder phase 1 bound the name to.
 //
 // Each signature's errors are dropped when a later pass infers the function with its
 // body and reports them: phase 2 of the same component, or the key's body key. A key
@@ -1399,6 +1402,11 @@ func (c *checker) bindFromSignatures(
 			handled.Add(fd)
 			b.sources = append(b.sources, &ast.NodeProvenance{Node: fd})
 		}
+	}
+	// A lone function's placeholder takes its signature. A reader of an overload set's
+	// placeholder sees no arm, since one var cannot stand for the whole set.
+	if len(b.arms) == 1 {
+		c.constrain(sk.decls[0], b.arms[0].t, b.v)
 	}
 	scope.defineValue(sk.key.Name(), ValueBinding{Schemes: schemes})
 }

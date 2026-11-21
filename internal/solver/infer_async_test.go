@@ -181,7 +181,7 @@ func TestInferAwaitOfNonPromiseFails(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:4-3:11: cannot constrain number <: Promise<t0, t1>", msgWithSpan(t, errs[0]))
+	require.Equal(t, "3:4-3:11: cannot constrain number <: Promise<t1, t2>", msgWithSpan(t, errs[0]))
 }
 
 // `await` inside an async fn nested under a non-async outer must still resolve

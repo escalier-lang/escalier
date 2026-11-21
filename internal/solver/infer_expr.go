@@ -1136,14 +1136,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		} else {
 			// A written type that is not a promise recovers as the value the promise
 			// resolves to, so `async fn f() -> number` binds as `fn () -> Promise<number>`
-			// whether or not the body is walked.
+			// whether or not the body is walked. The body is not checked against it, since
+			// the annotation already drew this one error.
 			if sig.Return != nil && asyncAnnOK {
 				c.report(&AsyncReturnNotPromiseError{Return: sig.Return, Fn: node})
-				if hasBody {
-					for _, rp := range returnPoints {
-						c.constrain(rp.site, rp.t, asyncAnnT)
-					}
-				}
 				ret = asyncAnnT
 			}
 			ret = c.wrapPromise(node, ret, throws)
