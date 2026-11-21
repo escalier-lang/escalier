@@ -198,7 +198,7 @@ func (w *writtenLifetimes) widenedError(sub, super *soltype.LifetimeVar) *Writte
 		if sources == "" {
 			return nil
 		}
-		return &WrittenLifetimeWidenedError{From: from, Into: h.output, BorrowsFrom: sources, At: h.span}
+		return &WrittenLifetimeWidenedError{From: from, Into: h.output, BorrowsFrom: sources, Named: w.names[super], At: h.span}
 	}
 	if !w.exposed.Contains(super) {
 		return nil
@@ -408,12 +408,15 @@ func (e *WrittenLifetimeKeptForStaticError) Message() string {
 // signature holds outlive another lifetime of the signature, which the signature does not
 // say. From names the input, quoted as `'b'`, or "the receiver". Into names where the borrow
 // flows: "the return type", "the thrown type", or another input. BorrowsFrom names what an
-// output borrows from as the signature writes it, and is empty when Into is an input. At is
-// the span of the part of the signature the error blames.
+// output borrows from as the signature writes it, and is empty when Into is an input. Named
+// is the name the signature gives the output's lifetime, without its quote, and is empty
+// when the signature leaves it unnamed. At is the span of the part of the signature the
+// error blames.
 type WrittenLifetimeWidenedError struct {
 	From        string
 	Into        string
 	BorrowsFrom string
+	Named       string
 	At          ast.Span
 }
 
@@ -424,7 +427,13 @@ func (e *WrittenLifetimeWidenedError) Message() string {
 	if e.BorrowsFrom == "" {
 		return e.From + " flows into " + e.Into + ", but the signature does not relate their lifetimes; name a lifetime on each and add a bound"
 	}
-	return e.From + " flows into " + e.Into + ", but " + e.Into + " borrows only from " + e.BorrowsFrom
+	// A named output lifetime is fixed by writing that name on the input too. An unnamed one
+	// needs a name written on the input, on what the output borrows from, and on the output.
+	fix := "write '" + e.Named + " on " + e.From
+	if e.Named == "" {
+		fix = "name a lifetime and write it on " + e.From + ", on " + e.BorrowsFrom + " and on " + e.Into
+	}
+	return e.From + " flows into " + e.Into + ", but " + e.Into + " borrows only from " + e.BorrowsFrom + "; " + fix
 }
 
 // enclosingLifetimeVars returns the variables of the lifetimes an enclosing class or

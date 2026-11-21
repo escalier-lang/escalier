@@ -31,7 +31,7 @@ func TestWrittenLifetimeWidened(t *testing.T) {
 				type Flat = {x: number}
 				fn pick<'x>(a: &'x Flat, b: &Flat) -> &'x Flat { return b }
 			`,
-			want: []string{"3:43-3:51: 'b' flows into the return type, but the return type borrows only from 'x"},
+			want: []string{"3:43-3:51: 'b' flows into the return type, but the return type borrows only from 'x; write 'x on 'b'"},
 		},
 		// The body returns a into the member that names 'a, so it relates 'a to no other
 		// lifetime of the signature.
@@ -51,7 +51,7 @@ func TestWrittenLifetimeWidened(t *testing.T) {
 				type Flat = {x: number}
 				fn pick<'x>(a: &'x Flat, b: &Flat) -> never throws &'x Flat { throw b }
 			`,
-			want: []string{"3:56-3:64: 'b' flows into the thrown type, but the thrown type borrows only from 'x"},
+			want: []string{"3:56-3:64: 'b' flows into the thrown type, but the thrown type borrows only from 'x; write 'x on 'b'"},
 		},
 		"StoresAnInputIntoAnother": {
 			src: `
@@ -81,7 +81,7 @@ func TestWrittenLifetimeWidened(t *testing.T) {
 					peek(&self, other: &{x: number}) -> &{x: number} { return other }
 				}
 			`,
-			want: []string{"4:42-4:54: 'other' flows into the return type, but the return type borrows only from the receiver"},
+			want: []string{"4:42-4:54: 'other' flows into the return type, but the return type borrows only from the receiver; name a lifetime and write it on 'other', on the receiver and on the return type"},
 		},
 	}
 	for name, tc := range tests {
