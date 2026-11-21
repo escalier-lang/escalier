@@ -177,3 +177,90 @@ func TestClientSupportsSnippets(t *testing.T) {
 		})
 	}
 }
+
+// TestPositionalKeywordCompletion covers which keywords the list holds at each kind of
+// position. Each case types the start of a word, since an unfiltered list is cut to
+// maxCompletionItems before the keywords sort in.
+func TestPositionalKeywordCompletion(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		// paths are the files the case runs in, and default to keywordTestPaths.
+		paths    []string
+		includes []string
+		excludes []string
+	}{
+		{name: "StatementInBody", src: "fn f() {\n    va‸\n}\n", includes: []string{"val", "var"}},
+		{name: "ReturnInBody", src: "fn f() {\n    re‸\n}\n", includes: []string{"return"}},
+		{name: "StatementAfterStatement", src: "fn f() {\n    val a = 1\n    i‸\n}\n", includes: []string{"if", "interface"}, excludes: []string{"import"}},
+		{name: "StatementInIfBlock", src: "fn f(c: boolean) {\n    if c {\n        fo‸\n    }\n}\n", includes: []string{"for"}},
+		{name: "StatementInMethod", src: "class C {\n    m(self) -> number {\n        re‸\n    }\n}\n", includes: []string{"return"}},
+		{name: "TopLevelScript", src: "val a = 1\ni‸\n", paths: []string{"bin/main.esc"}, includes: []string{"if", "import", "interface"}, excludes: []string{"export"}},
+		{name: "TopLevelDeclareScript", src: "de‸\n", paths: []string{"bin/main.esc"}, includes: []string{"declare"}},
+		{name: "NoReturnAtTopLevel", src: "val a = 1\nre‸\n", paths: []string{"bin/main.esc"}, excludes: []string{"return"}},
+		{name: "TopLevelLib", src: "val a = 1\ni‸\n", paths: []string{"lib/index.esc"}, includes: []string{"import", "interface"}, excludes: []string{"if"}},
+		{name: "ExportInLib", src: "ex‸\n", paths: []string{"lib/index.esc"}, includes: []string{"export"}},
+		{name: "NoExportInScript", src: "ex‸\n", paths: []string{"bin/main.esc"}, excludes: []string{"export"}},
+		{name: "Expression", src: "fn f() {\n    val x = tr‸\n}\n", includes: []string{"true", "try"}},
+		{name: "NoStatementInExpression", src: "fn f() {\n    val x = va‸\n}\n", excludes: []string{"val", "var"}},
+		{name: "NoReturnInExpression", src: "fn f() {\n    val x = re‸\n}\n", excludes: []string{"return"}},
+		{name: "ExpressionOnContinuationLine", src: "fn g(x: boolean) {}\nfn f() {\n    g(\n        va‸\n    )\n}\n", excludes: []string{"val", "var"}},
+		{name: "AwaitInAsync", src: "async fn f() {\n    val x = aw‸\n}\n", includes: []string{"await"}},
+		{name: "NoAwaitOutsideAsync", src: "fn f() {\n    val x = aw‸\n}\n", excludes: []string{"await"}},
+		{name: "NoAwaitInNestedFunc", src: "async fn f() {\n    val g = fn () {\n        val x = aw‸\n    }\n}\n", excludes: []string{"await"}},
+		{name: "YieldInGen", src: "gen fn f() {\n    yi‸\n}\n", includes: []string{"yield"}},
+		{name: "NoYieldOutsideGen", src: "fn f() {\n    yi‸\n}\n", excludes: []string{"yield"}},
+		{name: "ElseAfterIf", src: "fn f(c: boolean) {\n    if c {\n    } el‸\n}\n", includes: []string{"else"}},
+		{name: "ElseOnNextLine", src: "fn f(c: boolean) {\n    if c {\n    }\n    el‸\n}\n", includes: []string{"else"}},
+		{name: "NoElseAfterElse", src: "fn f(c: boolean) {\n    if c {\n    } else {\n    } el‸\n}\n", excludes: []string{"else"}},
+		{name: "NoElseWithoutIf", src: "fn f() {\n    el‸\n}\n", excludes: []string{"else"}},
+		{name: "CatchAfterTry", src: "fn f() {\n    try {\n    } ca‸\n}\n", includes: []string{"catch"}},
+		{name: "FieldInitializerOnOwnLine", src: "val foo = 1\nclass C {\n    static x: number =\n        fo‸\n}\n", includes: []string{"foo"}, excludes: []string{"static"}},
+		{name: "TypeKeyword", src: "val p: num‸ = 1\n", includes: []string{"number"}},
+		{name: "TypeKeywordInAlias", src: "type T = ke‸\n", includes: []string{"keyof"}},
+		{name: "NoTypeKeywordInExpression", src: "fn f() {\n    val x = num‸\n}\n", excludes: []string{"number"}},
+		{name: "NoKeywordAfterDot", src: "val p = {value: 1}\nfn f() {\n    val q = p.va‸\n}\n", excludes: []string{"val", "var"}},
+		{name: "NoKeywordInComment", src: "fn f() {\n    // va‸\n}\n", excludes: []string{"val", "var"}},
+		{name: "NoKeywordInTopLevelComment", src: "// va‸\nval a = 1\n", excludes: []string{"val", "var"}},
+		{name: "NoKeywordInString", src: "val s = \"va‸\"\n", excludes: []string{"val", "var"}},
+	}
+	for _, tt := range tests {
+		paths := tt.paths
+		if paths == nil {
+			paths = keywordTestPaths
+		}
+		for _, path := range paths {
+			t.Run(tt.name+"/"+path, func(t *testing.T) {
+				labels := getCompletionLabels(completionItemsAtMark(t, path, tt.src, false))
+				for _, label := range tt.includes {
+					require.Contains(t, labels, label)
+				}
+				for _, label := range tt.excludes {
+					require.NotContains(t, labels, label)
+				}
+			})
+		}
+	}
+}
+
+// TestClassBodyKeywordCompletion asserts that a class body lists the member modifiers
+// alone, since a member's name is new and no name in scope fits there.
+func TestClassBodyKeywordCompletion(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		expected []string
+	}{
+		{name: "BlankLine", src: "class C {\n    x: number,\n    ‸\n}\n", expected: []string{"async", "constructor", "gen", "get", "private", "readonly", "set", "static"}},
+		{name: "Partial", src: "class C {\n    st‸\n}\n", expected: []string{"static"}},
+		{name: "PartialGetOrGen", src: "class C {\n    ge‸\n}\n", expected: []string{"gen", "get"}},
+	}
+	for _, tt := range tests {
+		for _, path := range keywordTestPaths {
+			t.Run(tt.name+"/"+path, func(t *testing.T) {
+				items := completionItemsAtMark(t, path, tt.src, false)
+				require.Equal(t, tt.expected, getCompletionLabels(items))
+			})
+		}
+	}
+}

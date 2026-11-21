@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -137,5 +138,318 @@ func (f *returnTypeEndFinder) EnterClassElem(e ast.ClassElem) bool {
 	return f.visits(e.Span())
 }
 func (f *returnTypeEndFinder) EnterObjTypeAnnElem(e ast.ObjTypeAnnElem) bool {
+	return f.visits(e.Span())
+}
+
+// expressionKeywords start an expression, so they fit any position that takes one.
+var expressionKeywords = []string{
+	"async", "do", "false", "fn", "gen", "if", "match", "null", "throw", "true", "try",
+	"undefined",
+}
+
+// statementKeywords start a statement but not an expression. A statement start offers
+// them beside expressionKeywords.
+var statementKeywords = []string{"class", "enum", "for", "interface", "type", "val", "var"}
+
+// libDeclKeywords start a declaration at the top level of a `lib/` file. A module
+// holds only declarations there, so a statement such as `if` or `for` doesn't fit.
+var libDeclKeywords = []string{
+	"async", "class", "declare", "enum", "export", "fn", "gen", "import", "interface",
+	"type", "val", "var",
+}
+
+// classBodyKeywords are the modifiers a class member can start with, and
+// `constructor`, which names a member rather than a binding.
+var classBodyKeywords = []string{
+	"async", "constructor", "gen", "get", "private", "readonly", "set", "static",
+}
+
+// typeKeywords name a type or start a type annotation.
+var typeKeywords = []string{
+	"any", "bigint", "boolean", "false", "function", "keyof", "never", "null", "number",
+	"string", "symbol", "true", "typeof", "undefined", "unique", "unknown", "void",
+}
+
+// typeKeywordCompletions returns an item for each of typeKeywords.
+func typeKeywordCompletions() []protocol.CompletionItem {
+	return keywordItems(typeKeywords)
+}
+
+// keywordItems returns a plain Keyword item for each of keywords.
+func keywordItems(keywords []string) []protocol.CompletionItem {
+	items := make([]protocol.CompletionItem, 0, len(keywords))
+	for _, keyword := range keywords {
+		items = append(items, keywordCompletion(keyword, "", "", false))
+	}
+	return items
+}
+
+// keywordSite classifies the cursor's position by the keywords that fit there.
+type keywordSite int
+
+const (
+	// noKeywordSite takes no keyword, as in a member name after `.` or a string.
+	noKeywordSite keywordSite = iota
+	// expressionSite takes an expression, as in `val x = tr|`.
+	expressionSite
+	// statementSite starts a statement inside a block, as in a function body.
+	statementSite
+	// topLevelSite starts a statement at the top level of a file.
+	topLevelSite
+	// classBodySite starts a class member.
+	classBodySite
+)
+
+// positionalKeywords returns the keyword items that fit the cursor at loc, unfiltered
+// by the word before it. node is the deepest node at loc and ancestors are its
+// ancestors, outermost first. text is the file's contents, comments are its comments,
+// and walk runs a visitor over the file. isModule is true for a `lib/` file.
+//
+// exclusive is true when no name in scope can be written at loc, so the caller lists
+// the keywords alone. That holds in a class body, where a member's name is new.
+func positionalKeywords(
+	node ast.Node,
+	ancestors []ast.Node,
+	text string,
+	loc ast.Location,
+	comments []*ast.Comment,
+	walk func(ast.Visitor),
+	isModule bool,
+) (items []protocol.CompletionItem, exclusive bool) {
+	if loc.Offset < 0 || loc.Offset > len(text) || inComment(comments, loc) {
+		return nil, false
+	}
+	prefix := wordAtCursor(text, loc)
+	wordStart := loc.Offset - len(prefix)
+
+	var keywords []string
+	site := keywordSiteAt(node, ancestors, text, loc, wordStart)
+	switch site {
+	case noKeywordSite:
+	case classBodySite:
+		return keywordItems(classBodyKeywords), true
+	case topLevelSite:
+		if isModule {
+			keywords = append(keywords, libDeclKeywords...)
+		} else {
+			keywords = append(keywords, statementKeywords...)
+			keywords = append(keywords, expressionKeywords...)
+			keywords = append(keywords, "declare", "import")
+		}
+	case statementSite:
+		keywords = append(keywords, statementKeywords...)
+		keywords = append(keywords, expressionKeywords...)
+	case expressionSite:
+		keywords = append(keywords, expressionKeywords...)
+	}
+	if site == statementSite || site == expressionSite {
+		if fn := enclosingFunc(node, ancestors, loc); fn != nil {
+			if site == statementSite {
+				keywords = append(keywords, "return")
+			}
+			if fn.Async {
+				keywords = append(keywords, "await")
+			}
+			if fn.Gen {
+				keywords = append(keywords, "yield")
+			}
+		}
+	}
+
+	// A half-typed `el` or `ca` after a block parses as a statement of its own, so the
+	// `if` or `try` it continues is found from the block's end instead.
+	blockEnd := len(strings.TrimRight(text[:wordStart], " \t\r\n"))
+	finder := &openBlockFinder{end: blockEnd}
+	walk(finder)
+	if finder.ifWithoutElse {
+		keywords = append(keywords, "else")
+	}
+	if finder.tryWithoutCatch {
+		keywords = append(keywords, "catch")
+	}
+	return keywordItems(keywords), false
+}
+
+// keywordSiteAt returns where the word that starts at byte offset wordStart sits. node
+// and ancestors are as positionalKeywords takes them.
+func keywordSiteAt(node ast.Node, ancestors []ast.Node, text string, loc ast.Location, wordStart int) keywordSite {
+	// A statement or class member starts its own line, so a word with other text in
+	// front of it on its line continues something else.
+	lineStart := strings.LastIndexByte(text[:wordStart], '\n') + 1
+	startsLine := strings.TrimSpace(text[lineStart:wordStart]) == ""
+
+	var parent ast.Node
+	if len(ancestors) > 0 {
+		parent = ancestors[len(ancestors)-1]
+	}
+	switch n := node.(type) {
+	case nil:
+		// Only the top level of a file has no node around the cursor.
+		if startsLine {
+			return topLevelSite
+		}
+		return noKeywordSite
+	case *ast.IdentExpr:
+		switch p := parent.(type) {
+		case *ast.MemberExpr:
+			return noKeywordSite
+		case *ast.ClassDecl:
+			// The walk records no node for a class member, so a name in a field's
+			// initializer also has the class as its parent. A modifier starts its
+			// member, and a word anywhere else in one is inside an expression.
+			if member := classMemberAt(p, loc); member != nil && member.Span().Start.Offset != wordStart {
+				return expressionSite
+			}
+			if startsLine {
+				return classBodySite
+			}
+			return noKeywordSite
+		case *ast.PropertyExpr:
+			// The name of a property is a key, and only its value is an expression.
+			if p.Value == n {
+				return expressionSite
+			}
+			return noKeywordSite
+		case *ast.ExprStmt:
+			if p.Expr == n && startsLine {
+				// A script's top-level statement has its statement as its only ancestor.
+				if len(ancestors) == 1 {
+					return topLevelSite
+				}
+				return statementSite
+			}
+			return expressionSite
+		default:
+			return expressionSite
+		}
+	case *ast.ClassDecl:
+		// The class's header ends at the body's `{`.
+		if startsLine && strings.Contains(text[n.Span().Start.Offset:wordStart], "{") {
+			return classBodySite
+		}
+		return noKeywordSite
+	default:
+		if startsLine && inStatementList(node, loc) {
+			return statementSite
+		}
+		return noKeywordSite
+	}
+}
+
+// classMemberAt returns the member of class whose span contains loc, or nil.
+func classMemberAt(class *ast.ClassDecl, loc ast.Location) ast.ClassElem {
+	for _, member := range class.Body {
+		if member.Span().Contains(loc) {
+			return member
+		}
+	}
+	return nil
+}
+
+// inStatementList reports whether loc sits between the braces of a block that node
+// holds directly, such as a function's body or an `if`'s branch.
+func inStatementList(node ast.Node, loc ast.Location) bool {
+	var blocks []*ast.Block
+	switch n := node.(type) {
+	case *ast.FuncDecl:
+		blocks = append(blocks, n.Body)
+	case *ast.FuncExpr:
+		blocks = append(blocks, n.Body)
+	case *ast.IfElseExpr:
+		blocks = append(blocks, &n.Cons)
+		if n.Alt != nil {
+			blocks = append(blocks, n.Alt.Block)
+		}
+	case *ast.ForInStmt:
+		blocks = append(blocks, &n.Body)
+	case *ast.DoExpr:
+		blocks = append(blocks, &n.Body)
+	case *ast.TryCatchExpr:
+		blocks = append(blocks, &n.Try)
+		for _, c := range n.Catch {
+			blocks = append(blocks, c.Body.Block)
+		}
+	case *ast.MatchExpr:
+		for _, c := range n.Cases {
+			blocks = append(blocks, c.Body.Block)
+		}
+	}
+	for _, block := range blocks {
+		if block != nil && block.Span.Start.Offset < loc.Offset && loc.Offset < block.Span.End.Offset {
+			return true
+		}
+	}
+	return false
+}
+
+// enclosingFunc returns the signature of the innermost function whose body holds loc,
+// or nil at the top level. node and ancestors are as positionalKeywords takes them.
+func enclosingFunc(node ast.Node, ancestors []ast.Node, loc ast.Location) *ast.FuncSig {
+	chain := append(slices.Clone(ancestors), node)
+	for i := len(chain) - 1; i >= 0; i-- {
+		switch n := chain[i].(type) {
+		case *ast.FuncDecl:
+			if n.Body != nil && n.Body.Span.Contains(loc) {
+				return &n.FuncSig
+			}
+		case *ast.FuncExpr:
+			if n.Body != nil && n.Body.Span.Contains(loc) {
+				return &n.FuncSig
+			}
+		}
+	}
+	return nil
+}
+
+// inComment reports whether loc sits inside one of comments. A line comment runs to
+// the end of its line, so the cursor at its end is inside it.
+func inComment(comments []*ast.Comment, loc ast.Location) bool {
+	for _, c := range comments {
+		span := c.Span()
+		if span.Start.Offset < loc.Offset && loc.Offset < span.End.Offset {
+			return true
+		}
+		if c.Kind == ast.LineCommentKind && loc.Offset == span.End.Offset {
+			return true
+		}
+	}
+	return false
+}
+
+// openBlockFinder looks for an `if` with no `else` and a `try` with no `catch` whose
+// block ends at byte offset end. It descends only into nodes whose span contains end.
+type openBlockFinder struct {
+	ast.DefaultVisitor
+	end             int
+	ifWithoutElse   bool
+	tryWithoutCatch bool
+}
+
+func (f *openBlockFinder) visits(span ast.Span) bool {
+	return span.Start.Offset <= f.end && f.end <= span.End.Offset
+}
+
+func (f *openBlockFinder) EnterExpr(e ast.Expr) bool {
+	if !f.visits(e.Span()) {
+		return false
+	}
+	switch n := e.(type) {
+	case *ast.IfElseExpr:
+		if n.Alt == nil && n.Cons.Span.End.Offset == f.end {
+			f.ifWithoutElse = true
+		}
+	case *ast.TryCatchExpr:
+		if len(n.Catch) == 0 && n.Try.Span.End.Offset == f.end {
+			f.tryWithoutCatch = true
+		}
+	}
+	return true
+}
+
+func (f *openBlockFinder) EnterDecl(d ast.Decl) bool     { return f.visits(d.Span()) }
+func (f *openBlockFinder) EnterStmt(s ast.Stmt) bool     { return f.visits(s.Span()) }
+func (f *openBlockFinder) EnterBlock(b ast.Block) bool   { return f.visits(b.Span) }
+func (f *openBlockFinder) EnterTypeAnn(ast.TypeAnn) bool { return false }
+func (f *openBlockFinder) EnterClassElem(e ast.ClassElem) bool {
 	return f.visits(e.Span())
 }

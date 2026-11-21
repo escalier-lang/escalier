@@ -293,7 +293,12 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 		return nil, nil
 	}
 
-	node, parent := findNodeAndParent(script, loc)
+	node, ancestors := findNodeWithAncestors(script, loc)
+	var parent ast.Node
+	if len(ancestors) > 0 {
+		parent = ancestors[len(ancestors)-1]
+	}
+	keywords, onlyKeywords := positionalKeywords(node, ancestors, doc.Text, loc, script.Comments, script.Accept, false)
 
 	var items []protocol.CompletionItem
 
@@ -301,8 +306,10 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 	// statement, so the node at the cursor doesn't show a `throws` position.
 	// throwsCompletions reads the text before the cursor instead, so it runs before
 	// the checks that read the node.
-	if keywords, ok := throwsCompletions(script.Accept, doc.Text, loc, s.snippetSupport); ok {
-		items = keywords
+	if throws, ok := throwsCompletions(script.Accept, doc.Text, loc, s.snippetSupport); ok {
+		items = throws
+	} else if onlyKeywords {
+		items = filterByPrefix(keywords, wordAtCursor(doc.Text, loc))
 	} else if keys, ok := emptyIndexKeyCompletions(node, parent, loc, info); ok {
 		items = keys
 	} else if values, ok := extractorNameCompletions(node, loc, scriptView, info); ok {
@@ -310,6 +317,9 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 	} else if node == nil {
 		// Cursor on whitespace/blank — provide scope-based completions
 		items = s.completionsFromScope(script, scriptView, info, loc, string(uri))
+		// The list is cut to maxCompletionItems after sorting, so a keyword such as
+		// `val` survives only when the list is filtered by the word first.
+		items = filterByPrefix(append(items, keywords...), wordAtCursor(doc.Text, loc))
 	} else {
 		switch n := node.(type) {
 		case *ast.MemberExpr:
@@ -328,7 +338,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 			} else {
 				// Case C: standalone identifier — scope-based completions
 				items = s.completionsFromScope(script, scriptView, info, loc, string(uri))
-				items = filterByPrefix(items, n.Name)
+				items = filterByPrefix(append(items, keywords...), n.Name)
 			}
 		case *ast.ErrorTypeAnn:
 			// The cursor sits between the empty brackets of an index access such as
@@ -343,6 +353,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 			}
 			// Cursor is in a type annotation — return only type completions.
 			items = typeCompletionsFromScope(scriptView, "script", string(uri))
+			items = append(items, typeKeywordCompletions()...)
 			if n.Name != nil {
 				if ident, ok := n.Name.(*ast.Ident); ok && ident.Name != "" {
 					items = filterByPrefix(items, ident.Name)
@@ -351,6 +362,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 		default:
 			// Other node types — provide scope-based completions
 			items = s.completionsFromScope(script, scriptView, info, loc, string(uri))
+			items = append(items, keywords...)
 			if prefix := wordAtCursor(doc.Text, loc); prefix != "" {
 				items = filterByPrefix(items, prefix)
 			}
@@ -384,7 +396,13 @@ func (s *Server) moduleCompletion(
 		nsView = moduleView
 	}
 
-	node, parent := findNodeAndParentInFile(module, sourceID, loc)
+	node, ancestors := findNodeWithAncestorsInFile(module, sourceID, loc)
+	var parent ast.Node
+	if len(ancestors) > 0 {
+		parent = ancestors[len(ancestors)-1]
+	}
+	walkFile := func(v ast.Visitor) { walkModuleFile(v, module, sourceID) }
+	keywords, onlyKeywords := positionalKeywords(node, ancestors, docText, loc, module.Comments[sourceID], walkFile, true)
 
 	var items []protocol.CompletionItem
 
@@ -392,15 +410,19 @@ func (s *Server) moduleCompletion(
 	// statement, so the node at the cursor doesn't show a `throws` position.
 	// throwsCompletions reads the text before the cursor instead, so it runs before
 	// the checks that read the node.
-	walkFile := func(v ast.Visitor) { walkModuleFile(v, module, sourceID) }
-	if keywords, ok := throwsCompletions(walkFile, docText, loc, s.snippetSupport); ok {
-		items = keywords
+	if throws, ok := throwsCompletions(walkFile, docText, loc, s.snippetSupport); ok {
+		items = throws
+	} else if onlyKeywords {
+		items = filterByPrefix(keywords, wordAtCursor(docText, loc))
 	} else if keys, ok := emptyIndexKeyCompletions(node, parent, loc, info); ok {
 		items = keys
 	} else if values, ok := extractorNameCompletions(node, loc, nsView, info); ok {
 		items = values
 	} else if node == nil {
 		items = s.completionsFromModuleScope(module, sourceID, fileView, moduleView, info, loc)
+		// The list is cut to maxCompletionItems after sorting, so a keyword such as
+		// `val` survives only when the list is filtered by the word first.
+		items = filterByPrefix(append(items, keywords...), wordAtCursor(docText, loc))
 	} else {
 		switch n := node.(type) {
 		case *ast.MemberExpr:
@@ -414,7 +436,7 @@ func (s *Server) moduleCompletion(
 				items = filterByPrefix(items, n.Name)
 			} else {
 				items = s.completionsFromModuleScope(module, sourceID, fileView, moduleView, info, loc)
-				items = filterByPrefix(items, n.Name)
+				items = filterByPrefix(append(items, keywords...), n.Name)
 			}
 		case *ast.ErrorTypeAnn:
 			// The cursor sits between the empty brackets of an index access such as
@@ -439,6 +461,7 @@ func (s *Server) moduleCompletion(
 			collectFileImportBindings(module, sourceID, fileView, seen, &items)
 			// Filter out value-only imports (keep types and namespaces).
 			items = filterTypeItems(items)
+			items = append(items, typeKeywordCompletions()...)
 			if n.Name != nil {
 				if ident, ok := n.Name.(*ast.Ident); ok && ident.Name != "" {
 					items = filterByPrefix(items, ident.Name)
@@ -446,6 +469,7 @@ func (s *Server) moduleCompletion(
 			}
 		default:
 			items = s.completionsFromModuleScope(module, sourceID, fileView, moduleView, info, loc)
+			items = append(items, keywords...)
 			if prefix := wordAtCursor(docText, loc); prefix != "" {
 				items = filterByPrefix(items, prefix)
 			}
