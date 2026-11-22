@@ -1,6 +1,5 @@
 {
   "name": "@escalier/cli",
-  "private": true,
   "version": "0.0.1",
   "description": "Command-line interface for the Escalier programming language compiler",
   "type": "module",

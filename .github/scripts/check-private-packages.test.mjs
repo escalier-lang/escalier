@@ -10,14 +10,14 @@ import {
 describe('isPublished', () => {
     const cases = [
         ['@escalier/runtime', true],
-        ['@escalier/escalier', true],
-        ['@escalier/lsp-server', true],
-        ['@escalier/escalier-linux-x64', true],
-        ['@escalier/escalier-linux-arm', true],
-        ['@escalier/lsp-server-win32-arm64', true],
-        ['@escalier/escalier-plugin-vite', false],
-        ['@escalier/lsp-server-freebsd-x64', false],
-        ['@escalier/cli', false],
+        ['@escalier/cli', true],
+        ['@escalier/cli-linux-x64', true],
+        ['@escalier/cli-linux-arm', true],
+        ['@escalier/cli-win32-arm64', true],
+        ['@escalier/cli-plugin-vite', false],
+        ['@escalier/cli-freebsd-x64', false],
+        ['@escalier/escalier', false],
+        ['@escalier/lsp-server', false],
         ['escalier', false],
         ['async_await', false],
     ];
@@ -38,8 +38,8 @@ describe('findUnmarkedPackages', () => {
                 private: false,
             },
             {
-                name: '@escalier/escalier-darwin-arm64',
-                path: '/repo/packages/platforms/escalier-darwin-arm64',
+                name: '@escalier/cli-darwin-arm64',
+                path: '/repo/packages/platforms/cli-darwin-arm64',
                 private: false,
             },
             {

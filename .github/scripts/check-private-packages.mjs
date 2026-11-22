@@ -16,17 +16,13 @@ import { relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Packages released to npm under these exact names.
-export const PUBLISHED_NAMES = [
-    '@escalier/runtime',
-    '@escalier/escalier',
-    '@escalier/lsp-server',
-];
+export const PUBLISHED_NAMES = ['@escalier/runtime', '@escalier/cli'];
 
-// Per-platform binary packages, such as `@escalier/escalier-linux-x64`. The
+// Per-platform binary packages, such as `@escalier/cli-linux-x64`. The
 // platform and architecture parts use Node's `process.platform` and
 // `process.arch` names.
 export const PLATFORM_PACKAGE =
-    /^@escalier\/(escalier|lsp-server)-(darwin|linux|win32)-(x64|arm64|arm)$/;
+    /^@escalier\/cli-(darwin|linux|win32)-(x64|arm64|arm)$/;
 
 // Returns true when a package with this name is released to npm.
 export function isPublished(name) {
