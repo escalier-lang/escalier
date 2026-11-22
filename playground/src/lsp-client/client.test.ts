@@ -232,7 +232,7 @@ test('initialize', async () => {
         },
         "serverInfo": {
           "name": "escalier",
-          "version": "0.0.1",
+          "version": "dev",
         },
       }
     `);
