@@ -91,6 +91,38 @@ jobs:
             ./bin/dts_to_esc generate --overlay internal/interop/overlay \
             node_modules/typescript/lib internal/interop/data
 
+  # `changeset publish` publishes every workspace package that isn't
+  # private. The job fails when a package outside the publish list in
+  # check-private-packages.mjs lacks "private": true, so a new fixture
+  # can't reach npm by accident.
+  check_private_packages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      # setup-node's pnpm cache needs pnpm on PATH before this step runs.
+      # The job installs no dependencies, so it turns the cache off.
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      # `pnpm ls` reads the workspace manifests, so the job needs pnpm on
+      # PATH but no installed dependencies.
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      - name: Test the check
+        run: node --test .github/scripts/check-private-packages.test.mjs
+
+      - name: Check that unpublished packages are private
+        run: node .github/scripts/check-private-packages.mjs
+
   # Rates each change to the committed fixture outputs by review risk and
   # posts the report as a PR comment, which later runs edit in place. The
   # fixture tests in check_go confirm the committed outputs match the

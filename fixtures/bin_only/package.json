@@ -1,5 +1,6 @@
 {
     "name": "bin_only",
+    "private": true,
     "version": "0.0.1",
     "type": "module",
     "bin": {
