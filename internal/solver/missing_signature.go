@@ -44,7 +44,13 @@ type MissingSignatureError struct {
 	// a parameter type is also left out, since the checker has nothing to suggest once it no
 	// longer infers parameter types.
 	Suggestion string
-	// Node is the name the function is declared under, which carries the blame span.
+	// Placeholder reports that the signature writes `_` outside its error type. Params then
+	// names the one parameter whose type writes it, or MissingReturn reports that the return
+	// type does, and neither is set when another part of the signature does. Suggestion holds
+	// the inferred type to write in its place, or is empty when the checker has none.
+	Placeholder bool
+	// Node is the name the function is declared under, or the misplaced `_` when Placeholder
+	// is set. It carries the blame span.
 	Node ast.Node
 }
 
@@ -67,6 +73,24 @@ func (e *MissingSignatureError) Message() string {
 		where, closure = "is a closure at a script's top level", true
 	}
 	msg := "'" + e.Name + "' " + where + ", so "
+	if e.Placeholder {
+		switch {
+		case len(e.Params) > 0:
+			msg += "parameter '" + e.Params[0] + "' needs a type in place of `_`"
+		case e.MissingReturn:
+			msg += "its return type may write `_` only for its error type"
+		default:
+			msg += "its signature may write `_` only for its error type"
+		}
+		if e.Suggestion == "" {
+			return msg
+		}
+		msg += "; write `" + e.Suggestion + "`"
+		if closure {
+			msg += " on the closure, or annotate '" + e.Name + "'"
+		}
+		return msg
+	}
 	if len(e.Params) > 0 {
 		quoted := make([]string, len(e.Params))
 		for i, p := range e.Params {
@@ -135,6 +159,9 @@ func (c *checker) checkDeclSignatures(d ast.Decl, funcSite, closureSite signatur
 			suggest = func() string { return writtenSignature("fn "+d.Name.Name, &d.FuncSig, sig) }
 		}
 		c.checkSignature(&d.FuncSig, true, d.Name.Name, funcSite, d.Name, suggest)
+		c.checkPlaceholders(&d.FuncSig, d.Name.Name, funcSite, func() (soltype.FuncSignature, bool) {
+			return sig.PrintWritten(), ok
+		})
 	case *ast.ClassDecl:
 		c.checkMemberSignatures(d)
 	case *ast.VarDecl:
@@ -146,10 +173,17 @@ func (c *checker) checkDeclSignatures(d ast.Decl, funcSite, closureSite signatur
 			return
 		}
 		suggest := func() string { return "" }
-		if ft, ok := c.info.TypeOf(d.Pattern).(*soltype.FuncType); ok {
+		ft, typed := c.info.TypeOf(d.Pattern).(*soltype.FuncType)
+		if typed {
 			suggest = func() string { return writtenSignature("fn ", &fn.FuncSig, DeclSignature{Type: ft}) }
 		}
 		c.checkSignature(&fn.FuncSig, true, ident.Name, closureSite, d.Pattern, suggest)
+		c.checkPlaceholders(&fn.FuncSig, ident.Name, closureSite, func() (soltype.FuncSignature, bool) {
+			if !typed {
+				return soltype.FuncSignature{}, false
+			}
+			return DeclSignature{Type: ft}.PrintWritten(), true
+		})
 	}
 }
 
@@ -160,11 +194,19 @@ func (c *checker) checkMemberSignatures(class *ast.ClassDecl) {
 		var key ast.ObjKey
 		var fn *ast.FuncExpr
 		suggest := func() string { return "" }
+		rendered := func() (soltype.FuncSignature, bool) { return soltype.FuncSignature{}, false }
 		// checkSignature calls suggest only for a member that leaves out just its return
 		// type, so the lookups of the member's registered type run for those members alone.
 		switch e := elem.(type) {
 		case *ast.MethodElem:
 			key, fn = e.Name, e.Fn
+			rendered = func() (soltype.FuncSignature, bool) {
+				sig, ok := c.info.MethodSignature(class, e)
+				if !ok {
+					return soltype.FuncSignature{}, false
+				}
+				return sig.PrintWritten(), true
+			}
 			suggest = func() string {
 				sig, ok := c.info.MethodSignature(class, e)
 				if !ok {
@@ -174,6 +216,10 @@ func (c *checker) checkMemberSignatures(class *ast.ClassDecl) {
 			}
 		case *ast.GetterElem:
 			key, fn = e.Name, e.Fn
+			rendered = func() (soltype.FuncSignature, bool) {
+				t, ok := c.getterType(class, e)
+				return soltype.FuncSignature{Ret: t}, ok
+			}
 			suggest = func() string {
 				t, ok := c.getterType(class, e)
 				if !ok {
@@ -191,6 +237,7 @@ func (c *checker) checkMemberSignatures(class *ast.ClassDecl) {
 		}
 		_, setter := elem.(*ast.SetterElem)
 		c.checkSignature(&fn.FuncSig, !setter, memberName(key), method, key, suggest)
+		c.checkPlaceholders(&fn.FuncSig, memberName(key), method, rendered)
 	}
 }
 

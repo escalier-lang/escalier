@@ -12,7 +12,7 @@ export fn getValueOrThrow(value: string) -> string throws _ {
 }
 
 // Throw in function expression
-export val throwingFunc = fn(condition: boolean) -> _ throws _ {
+export val throwingFunc = fn(condition: boolean) -> string throws _ {
     if condition {
         return "success"
     } else {

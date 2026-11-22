@@ -196,6 +196,10 @@ type checker struct {
 	// writes into it: both readers copy before minting, so a name one mints stays out of the
 	// declaration's scope and out of a sibling signature's.
 	declLifetimes map[string]*soltype.LifetimeVar
+	// placeholderTypes maps each `_` a signature or annotation writes outside a conditional
+	// type's pattern to the variable it resolved to. checkPlaceholders reads it to render
+	// what each `_` of a declaration's signature inferred.
+	placeholderTypes map[*ast.WildcardTypeAnn]soltype.Type
 	// enclosingLifetimes maps each lifetime name an enclosing function's `<…>` list binds, and
 	// that no nearer list rebinds, to the variable its parameter carries. A closure or a
 	// function type annotation written in a body may write such a name with no clause of its
