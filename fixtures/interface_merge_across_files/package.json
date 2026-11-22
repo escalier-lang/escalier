@@ -1,1 +1,7 @@
-{"name":"interface_merge_across_files","private":true,"version":"0.0.1","type":"module","main":"build/lib/index.js"}
+{
+    "name": "interface_merge_across_files",
+    "private": true,
+    "version": "0.0.1",
+    "type": "module",
+    "main": "build/lib/index.js"
+}
