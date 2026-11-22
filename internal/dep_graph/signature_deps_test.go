@@ -164,3 +164,22 @@ func keysString(keys btree.Set[BindingKey]) string {
 	}
 	return strings.Join(parts, " ")
 }
+
+// TestFindSignatureDependenciesReadsOnlyFunctions asserts that FindSignatureDependencies
+// reads only the function declarations under a key. A `val` sharing the function's name
+// contributes nothing, even though its annotation names a type.
+func TestFindSignatureDependenciesReadsOnlyFunctions(t *testing.T) {
+	module, errs := parser.ParseLibFiles(context.Background(), []*ast.Source{
+		{ID: 0, Path: "test.esc", Contents: `
+			type Shape = {w: number, h: number}
+			type Size = {n: number}
+			fn area(s: Shape) -> number { return s.w * s.h }
+			val area: Size = {n: 1}
+		`},
+	})
+	require.Empty(t, errs)
+	graph := BuildDepGraph(module)
+	key := ValueBindingKey("area")
+	require.False(t, graph.IsSignatureBound(key))
+	require.Equal(t, "type:Shape", keysString(FindSignatureDependencies(key, graph)))
+}
