@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"runtime/debug"
@@ -12,16 +13,12 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 	glsp_server "github.com/tliron/glsp/server"
 
+	"github.com/escalier-lang/escalier/internal/buildinfo"
 	"github.com/escalier-lang/escalier/internal/compiler"
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
 const lsName = "escalier"
-
-var (
-	version string = "0.0.1"
-	// handler protocol.Handler
-)
 
 func main() {
 	// Mirror cmd/escalier's `--stdlib-dir` plumbing so the LSP server
@@ -29,7 +26,12 @@ func main() {
 	// planning/builtins §2.2a). Editors that don't know how to pass
 	// flags can still use the ESCALIER_STDLIB_DIR env var.
 	stdlibDir := flag.String("stdlib-dir", "", "directory containing the stdlib `.esc` files (std/, dom/, node/)")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
+	if *showVersion {
+		writeVersion(os.Stdout)
+		return
+	}
 	if *stdlibDir != "" {
 		_ = os.Setenv("ESCALIER_STDLIB_DIR", *stdlibDir)
 	}
@@ -303,11 +305,23 @@ func (s *Server) initialize(context *glsp.Context, params *protocol.InitializePa
 
 	return protocol.InitializeResult{
 		Capabilities: capabilities,
-		ServerInfo: &protocol.InitializeResultServerInfo{
-			Name:    lsName,
-			Version: &version,
-		},
+		ServerInfo:   serverInfo(),
 	}, nil
+}
+
+// serverInfo returns the name and version the server reports in its
+// `initialize` response.
+func serverInfo() *protocol.InitializeResultServerInfo {
+	serverVersion := buildinfo.Version
+	return &protocol.InitializeResultServerInfo{
+		Name:    lsName,
+		Version: &serverVersion,
+	}
+}
+
+// writeVersion writes the binary's version and a newline to w.
+func writeVersion(w io.Writer) {
+	_, _ = fmt.Fprintln(w, buildinfo.Version)
 }
 
 func (*Server) initialized(context *glsp.Context, params *protocol.InitializedParams) error {
