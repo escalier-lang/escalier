@@ -34,6 +34,7 @@ const PLATFORMS_DIR = join(ROOT, 'packages', 'platforms');
 // shares with `@escalier/cli` from `cli`, the parsed packages/cli/package.json.
 export function platformManifest(target, cli) {
     const name = platformPackageName(target.suffix);
+    const binary = `bin/${binaryName(target)}`;
     return {
         name,
         version: cli.version,
@@ -50,6 +51,12 @@ export function platformManifest(target, cli) {
         cpu: [target.cpu],
         files: ['bin/'],
         preferUnplugged: true,
+        scripts: {
+            // bin/ is gitignored and filled by the cross-compile script, so
+            // this stops a publish that would ship the package without its
+            // binary. npm never lets a published version be replaced.
+            prepublishOnly: `node -e "if (!require('fs').existsSync('${binary}')) { console.error('${binary} is missing. Run node tools/build-binaries.mjs first.'); process.exit(1); }"`,
+        },
         publishConfig: {
             access: 'public',
             provenance: true,
