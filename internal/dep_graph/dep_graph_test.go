@@ -1339,6 +1339,16 @@ func TestBindingKey_Methods(t *testing.T) {
 			expectedKind: DepKindType,
 			expectedName: "models.User",
 		},
+		"BodyBindingKey": {
+			key:          BodyBindingKey("area"),
+			expectedKind: DepKindBody,
+			expectedName: "area",
+		},
+		"BodyBindingKey_Qualified": {
+			key:          BodyBindingKey("geom.area"),
+			expectedKind: DepKindBody,
+			expectedName: "geom.area",
+		},
 	}
 
 	for name, test := range tests {
