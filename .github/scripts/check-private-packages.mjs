@@ -15,18 +15,20 @@ import { execFileSync } from 'node:child_process';
 import { relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Packages released to npm under these exact names.
-export const PUBLISHED_NAMES = ['@escalier/runtime', '@escalier/cli'];
+import { TARGETS, platformPackageName } from '../../tools/platforms.mjs';
 
-// Per-platform binary packages, such as `@escalier/cli-linux-x64`. The
-// platform and architecture parts use Node's `process.platform` and
-// `process.arch` names.
-export const PLATFORM_PACKAGE =
-    /^@escalier\/cli-(darwin|linux|win32)-(x64|arm64|arm)$/;
+// Packages released to npm. The platform packages, such as
+// `@escalier/cli-linux-x64`, come from the target list in
+// tools/platforms.mjs.
+export const PUBLISHED_NAMES = [
+    '@escalier/runtime',
+    '@escalier/cli',
+    ...TARGETS.map((target) => platformPackageName(target.suffix)),
+];
 
 // Returns true when a package with this name is released to npm.
 export function isPublished(name) {
-    return PUBLISHED_NAMES.includes(name) || PLATFORM_PACKAGE.test(name);
+    return PUBLISHED_NAMES.includes(name);
 }
 
 // Returns the packages in `packages` that are neither private nor

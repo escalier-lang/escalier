@@ -1,0 +1,30 @@
+{
+    "name": "@escalier/cli-darwin-arm64",
+    "version": "0.0.1",
+    "description": "The escalier compiler binary for macOS on Apple silicon. Install @escalier/cli instead of depending on this package.",
+    "license": "MIT",
+    "author": "escalier-lang",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/escalier-lang/escalier.git",
+        "directory": "packages/platforms/cli-darwin-arm64"
+    },
+    "homepage": "https://github.com/escalier-lang/escalier#readme",
+    "bugs": {
+        "url": "https://github.com/escalier-lang/escalier/issues"
+    },
+    "os": [
+        "darwin"
+    ],
+    "cpu": [
+        "arm64"
+    ],
+    "files": [
+        "bin/"
+    ],
+    "preferUnplugged": true,
+    "publishConfig": {
+        "access": "public",
+        "provenance": true
+    }
+}
