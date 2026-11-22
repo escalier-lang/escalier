@@ -49,7 +49,8 @@
     "overrides": [
         {
             "files": [
-                ".github/scripts/*.test.mjs"
+                ".github/scripts/*.test.mjs",
+                "tools/*.test.mjs"
             ],
             "rules": {
                 "typescript/no-floating-promises": "off"
