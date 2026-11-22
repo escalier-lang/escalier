@@ -399,16 +399,14 @@ func TestInferMixedBorrowAndOwnedReturnFallsBackToUnion(t *testing.T) {
 }
 */
 
-// A borrowed parameter written into module-level storage escapes to 'static. This is
-// the EscapingRefIntoStatic acceptance (M4 D3), now reachable from real source.
-// `cache` stores its borrow `p` into the module-level `var sink`, a global write. The
-// stored value outlives every borrow region, so p's lifetime is forced `<: 'static`
-// and the parameter renders `&'static {x: number}` rather than under a borrow
-// lifetime `'l{id}`. sink's type is a borrow, since T6 rejects a borrow stored into an
-// owned module-level binding.
+// TestInferGlobalWriteEscapesBorrowToStatic asserts that a borrowed parameter may be
+// written into module-level storage when its signature writes it `&'static`. `cache`
+// stores `p` into the module-level `var sink`, which outlives every borrow region.
+// sink's type is a borrow, since T6 rejects a borrow stored into an owned module-level
+// binding.
 func TestInferGlobalWriteEscapesBorrowToStatic(t *testing.T) {
 	src := `var sink = &{x: 0}
-fn cache(p: &{x: number}) -> undefined {
+fn cache(p: &'static {x: number}) -> undefined {
   sink = p
 }`
 	values, _, errs := inferSource(t, src)

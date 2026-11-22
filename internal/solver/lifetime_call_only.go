@@ -266,10 +266,23 @@ func (c *checker) checkCallOnlyParams() {
 // outlivedBy returns every lifetime lt is required to outlive, read through the upper bounds of
 // lt and of each variable reached. lt itself is not included.
 func outlivedBy(lt *soltype.LifetimeVar) []soltype.Lifetime {
+	return outlivedByWithin(lt, nil)
+}
+
+// outlivedByWithin is outlivedBy reading only part of each variable's upper bounds. When limit
+// is not nil it reads the first limit[v] upper bounds of each variable v, and none of a variable
+// limit leaves out, which is still returned when another variable's bounds reach it.
+func outlivedByWithin(lt *soltype.LifetimeVar, limit map[*soltype.LifetimeVar]int) []soltype.Lifetime {
+	bounds := func(v *soltype.LifetimeVar) []soltype.Lifetime {
+		if limit == nil {
+			return v.UpperBounds
+		}
+		return v.UpperBounds[:limit[v]]
+	}
 	var out []soltype.Lifetime
 	seen := set.NewSet[*soltype.LifetimeVar]()
 	seen.Add(lt)
-	pending := append([]soltype.Lifetime(nil), lt.UpperBounds...)
+	pending := append([]soltype.Lifetime(nil), bounds(lt)...)
 	for len(pending) > 0 {
 		cur := pending[len(pending)-1]
 		pending = pending[:len(pending)-1]
@@ -280,7 +293,7 @@ func outlivedBy(lt *soltype.LifetimeVar) []soltype.Lifetime {
 		out = append(out, cur)
 		if isVar {
 			seen.Add(v)
-			pending = append(pending, v.UpperBounds...)
+			pending = append(pending, bounds(v)...)
 		}
 	}
 	return out

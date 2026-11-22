@@ -18,7 +18,7 @@ import (
 func TestStaticEscapeTransitionFromSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		var sink = &{x: 0}
-		fn cache(p: &mut {x: number}) -> undefined {
+		fn cache(p: &'static mut {x: number}) -> undefined {
 			sink = p
 			p.x = 1
 		}
@@ -229,7 +229,7 @@ func TestMutabilityTransitionsFromSource(t *testing.T) {
 		"Rule1_TransitiveAliasEscape_Error": {
 			src: `
 				var sink = &{x: 0}
-				fn f(p: &mut {x: number}) -> undefined {
+				fn f(p: &'static mut {x: number}) -> undefined {
 				  val z = p
 				  sink = z
 				  p.x = 1

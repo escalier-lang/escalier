@@ -504,17 +504,6 @@ func TestMethodLifetimeBindersRenderOnTheMethod(t *testing.T) {
 			want:  "{p: {x: number}, m<'b>(&self, h: Holder<'b>) -> number}",
 		},
 		{
-			// The returned borrow is the class's `'a`, so the method's `'b` resolves to the
-			// class lifetime and binds nothing of its own.
-			name: "a method lifetime resolving to the class lifetime drops its binder",
-			src: `class Holder<'a> {
-				peer: &'a mut {value: number},
-				pick<'b>(&self) -> &'b {value: number} { return self.peer },
-			}`,
-			class: "Holder",
-			want:  "<'a> {peer: &'a mut {value: number}, pick(&self) -> &'a {value: number}}",
-		},
-		{
 			// `'b` resolves to `'a`, so it is dropped as a duplicate and `'a`'s bound on it,
 			// which would read `'a: 'a`, goes with it.
 			name: "a bound resolving to the parameter itself is dropped",

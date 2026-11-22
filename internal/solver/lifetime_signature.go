@@ -32,12 +32,18 @@ import (
 // `fn <'b>(g: 'b fn () -> undefined) { p.cb = g }` in its body needs 'b to outlive outer's 'a,
 // which `<'b: 'a>` declares.
 //
-// sig is the function's signature and ft its inferred type. outerScope and outerBounds are
-// the enclosing functions' lifetimes and their bounds, as enclosingLifetimes and
-// enclosingBounds held them before the signature hid the names it binds. outerOwners is
-// enclosingOwners at the same point. A lifetime the enclosing class declares is not checked
-// here.
-func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltype.FuncType, outerScope map[string]*soltype.LifetimeVar, outerBounds map[string]set.Set[string], outerOwners map[string]string) {
+// A relation from a lifetime the enclosing class declares to one of the signature's
+// lifetimes is checked too, since the class fixes its lifetimes for a member while the
+// member's caller chooses the member's own. `pick<'b>(&self) -> &'b T { return self.peer }`
+// in `class Holder<'a> { peer: &'a mut T }` needs 'a to outlive 'b. A receiver written
+// `&'b self` implies it, the way a parameter `h: &'b Holder<'a>` implies 'a: 'b.
+//
+// sig is the function's signature, recv its receiver, nil for a function that is not an
+// instance member, and ft its inferred type. outerScope and outerBounds are the enclosing
+// functions' lifetimes and their bounds, as enclosingLifetimes and enclosingBounds held
+// them before the signature hid the names it binds. outerOwners is enclosingOwners at the
+// same point. c.declLifetimes holds the enclosing class's lifetimes.
+func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, recv *ast.MethodReceiver, ft *soltype.FuncType, outerScope map[string]*soltype.LifetimeVar, outerBounds map[string]set.Set[string], outerOwners map[string]string) {
 	ltParams := sig.LifetimeParams
 	named := map[string]*soltype.LifetimeVar{}
 	binders := map[string]*ast.LifetimeParam{}
@@ -68,7 +74,16 @@ func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltyp
 
 	// Compare every ordered pair of named lifetimes. Each relation the body requires must
 	// follow from the written bounds or the bounds the signature's types imply.
-	declared := declaredOutlives(ltParams, impliedOutlives(sig))
+	classNames := slices.Sorted(maps.Keys(c.declLifetimes))
+	implied := impliedOutlives(sig)
+	if recv != nil {
+		if lt, ok := recv.Lifetime.(*ast.LifetimeAnn); ok && lt.Name != "static" {
+			for _, name := range classNames {
+				implied[name] = append(implied[name], lt.Name)
+			}
+		}
+	}
+	declared := declaredOutlives(ltParams, implied)
 	for _, sub := range order {
 		subVar := named[sub]
 		if forcedStatic(subVar) {
@@ -109,6 +124,16 @@ func (c *checker) checkSignatureImpliesBodyLifetimes(sig ast.FuncSig, ft *soltyp
 			}
 		}
 		return false
+	}
+	for _, super := range order {
+		for _, name := range classNames {
+			if own.Contains(name) || declared.implies(name, super) {
+				continue
+			}
+			if outlivesThrough(c.declLifetimes[name], named[super], nil) {
+				c.report(&ClassLifetimeRelationUndeclaredError{Class: name, Member: super, Param: binders[super]})
+			}
+		}
 	}
 	outerNames := slices.Sorted(maps.Keys(outerScope))
 	for _, sub := range order {

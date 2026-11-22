@@ -210,10 +210,22 @@ func TestSignatureAction(t *testing.T) {
 			diagnostics: []string{"4:1-4:5 'pick' is a method, so it needs a return type; write `pick<'s: 'b, 'a: 'b, 'b>(&'s self, other: &'a Flat) -> &'b Flat`"},
 		},
 		{
-			name:        "ThrowsGetsLifetime",
-			src:         "type Flat = {x: number}\nfn f(a: &Flat, b: &Flat, c: boolean) throws &Flat { if c { throw a } else { throw b } }",
+			// Elision cannot place a thrown borrow of two inputs, so the declaration has an error
+			// beside the missing signature and the action is not offered.
+			name:   "ThrownBorrowOfTwoInputsOffersNoAction",
+			src:    "type Flat = {x: number}\nfn f(a: &Flat, b: &Flat, c: boolean) throws &Flat { if c { throw a } else { throw b } }",
+			cursor: "f(",
+			diagnostics: []string{
+				"1:44-1:49 the thrown type borrows from 'a' or 'b', and elision cannot tell which; write a lifetime, " +
+					"as in `fn f<'x>(a: &'x Flat, b: &Flat, c: boolean) throws &'x Flat`",
+				"1:3-1:4 'f' is declared at a script's top level, so it needs a return type; write `-> never`",
+			},
+		},
+		{
+			name:        "ThrownBorrowOfOneInputElides",
+			src:         "type Flat = {x: number}\nfn f(a: &Flat, c: boolean) throws &Flat { throw a }",
 			cursor:      "f(",
-			expected:    "type Flat = {x: number}\nfn f<'a>(a: &'a Flat, b: &'a Flat, c: boolean) -> never throws &'a Flat { if c { throw a } else { throw b } }",
+			expected:    "type Flat = {x: number}\nfn f(a: &Flat, c: boolean) -> never throws &Flat { throw a }",
 			diagnostics: []string{"1:3-1:4 'f' is declared at a script's top level, so it needs a return type; write `-> never`"},
 		},
 		{

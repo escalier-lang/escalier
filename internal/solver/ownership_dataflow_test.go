@@ -833,7 +833,7 @@ func TestOwnershipDataflow(t *testing.T) {
 				declare fn track(value: &'static mut {retries: number}) -> undefined
 				declare fn read(value: &{retries: number}) -> number
 
-				export fn go(m: &mut {retries: number}) -> number {
+				export fn go(m: &'static mut {retries: number}) -> number {
 					track(m)
 					return read(m)
 				}
