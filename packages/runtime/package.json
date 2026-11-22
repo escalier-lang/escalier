@@ -8,17 +8,24 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "vite build && tsc --emitDeclarationOnly --declaration --outDir dist",
-    "test": "vitest run"
+    "build": "vite build && tsc -p tsconfig.build.json && node scripts/emit-cts-types.mjs",
+    "prepack": "pnpm build",
+    "test": "vitest run",
+    "lint:package": "publint --strict && attw --pack ."
   },
   "keywords": [
     "escalier",
@@ -39,5 +46,13 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "publint": "^0.3.25"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }
