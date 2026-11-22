@@ -1,5 +1,6 @@
 {
     "name": "fix_point_combinator",
+    "private": true,
     "version": "0.0.1",
     "type": "module",
     "main": "build/lib/index.js"
