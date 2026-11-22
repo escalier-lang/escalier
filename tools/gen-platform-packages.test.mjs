@@ -40,6 +40,9 @@ describe('platformManifest', () => {
             cpu: ['arm'],
             files: ['bin/'],
             preferUnplugged: true,
+            scripts: {
+                prepublishOnly: `node -e "if (!require('fs').existsSync('bin/escalier')) { console.error('bin/escalier is missing. Run node tools/build-binaries.mjs first.'); process.exit(1); }"`,
+            },
             publishConfig: { access: 'public', provenance: true },
         });
     });
