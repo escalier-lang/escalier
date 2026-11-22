@@ -5,8 +5,11 @@
 // against when it picks the package to install. `goos`, `goarch` and
 // `goarm` are the Go build settings that produce the binary.
 //
-// Issue #2886 records why these seven were chosen out of the targets
-// `go tool dist list` reports.
+// The list covers macOS, Linux and Windows on the x64 and ARM CPUs that
+// Node and VS Code ship builds for. The rest of the targets that
+// `go tool dist list` reports, such as the BSDs, 32-bit x86 and wasm, have
+// few or no Node users. Adding a target here and rerunning
+// tools/gen-platform-packages.mjs adds its package.
 export const TARGETS = [
     {
         suffix: 'darwin-arm64',
