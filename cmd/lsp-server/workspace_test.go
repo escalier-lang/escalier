@@ -121,10 +121,11 @@ func TestCompilePackageWritesDespiteATypeError(t *testing.T) {
 // codegen has no lowering for, so CompilePackage produces no compilation unit and the
 // artifacts from the last compile that parsed stay on disk.
 // TestCompilePackageSucceedsWithOnlyWarnings asserts that a compile reporting only a
-// warning, here a MissingSignatureError, succeeds, as the CLI's build does.
+// warning succeeds, as the CLI's build does. The source raises UnusedThrowsClauseError, since
+// its body never reaches the `throws string` it declares.
 func TestCompilePackageSucceedsWithOnlyWarnings(t *testing.T) {
 	s, root := newTestServer(t, []string{"lib/index.esc"})
-	writeLibFile(t, s, root, "export fn one() { return 1 }\n")
+	writeLibFile(t, s, root, "export fn one() -> number throws string { return 1 }\n")
 
 	result, err := s.compilePackage()
 	require.NoError(t, err)

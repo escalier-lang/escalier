@@ -101,7 +101,7 @@ func TestInferAsyncBareReturnAnnotationRejected(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t, "2:19-2:25: async function return type must be a Promise; write Promise<...> or Promise<_>", msgWithSpan(t, errs[0]))
-	require.Equal(t, "fn () -> Promise<5>", values["f"])
+	require.Equal(t, "fn () -> Promise<number>", values["f"])
 }
 
 // The bare-async-return error blames the offending annotation and relates the

@@ -8,7 +8,7 @@ import (
 
 // TestMissingSignature covers the functions whose signatures have to be written in full,
 // checked as a module and as a script with Options.RequireSignatures set. expected lists
-// every diagnostic the source reports.
+// every diagnostic the source reports, each led by its severity.
 func TestMissingSignature(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -20,28 +20,28 @@ func TestMissingSignature(t *testing.T) {
 			name: "UnannotatedParam",
 			src:  `fn read(p) { return p.x }`,
 			expected: []string{
-				"1:4-1:8: 'read' is declared at module level, so parameter 'p' needs a type and 'read' needs a return type",
+				"error 1:4-1:8: 'read' is declared at module level, so parameter 'p' needs a type and 'read' needs a return type",
 			},
 		},
 		{
 			name: "UnannotatedParams",
 			src:  `fn add(a, b, c: number) -> number { return a + b + c }`,
 			expected: []string{
-				"1:4-1:7: 'add' is declared at module level, so parameters 'a' and 'b' need types",
+				"error 1:4-1:7: 'add' is declared at module level, so parameters 'a' and 'b' need types",
 			},
 		},
 		{
 			name: "MissingReturnType",
 			src:  `fn count(xs: &Array<number>) { return xs.length }`,
 			expected: []string{
-				"1:4-1:9: 'count' is declared at module level, so it needs a return type; write `-> number`",
+				"error 1:4-1:9: 'count' is declared at module level, so it needs a return type; write `-> number`",
 			},
 		},
 		{
 			name: "ExportedReturnsNothing",
 			src:  `export fn log(x: number) { x }`,
 			expected: []string{
-				"1:11-1:14: 'log' is declared at module level, so it needs a return type; write `-> undefined`",
+				"error 1:11-1:14: 'log' is declared at module level, so it needs a return type; write `-> undefined`",
 			},
 		},
 		{
@@ -54,7 +54,7 @@ func TestMissingSignature(t *testing.T) {
 				}
 			`,
 			expected: []string{
-				"3:16-3:20: 'load' is a module-level closure, so it needs a return type; " +
+				"error 3:16-3:20: 'load' is a module-level closure, so it needs a return type; " +
 					"write `-> Promise<number>` on the closure, or annotate 'load'",
 			},
 		},
@@ -88,7 +88,7 @@ func TestMissingSignature(t *testing.T) {
 				}
 			`,
 			expected: []string{
-				"4:6-4:9: 'get' is a method, so it needs a return type; write `-> number`",
+				"error 4:6-4:9: 'get' is a method, so it needs a return type; write `-> number`",
 			},
 		},
 		{
@@ -98,7 +98,7 @@ func TestMissingSignature(t *testing.T) {
 				fn pick(a: &Flat, b: &Flat) { return a }
 			`,
 			expected: []string{
-				"3:8-3:12: 'pick' is declared at module level, so it needs a return type; " +
+				"error 3:8-3:12: 'pick' is declared at module level, so it needs a return type; " +
 					"write `fn pick<'a>(a: &'a Flat, b: &Flat) -> &'a Flat`",
 			},
 		},
@@ -109,7 +109,7 @@ func TestMissingSignature(t *testing.T) {
 				fn pick<T>(a: &Flat, b: &Flat, t: T, n?: number) { return a }
 			`,
 			expected: []string{
-				"3:8-3:12: 'pick' is declared at module level, so it needs a return type; " +
+				"error 3:8-3:12: 'pick' is declared at module level, so it needs a return type; " +
 					"write `fn pick<T, 'a>(a: &'a Flat, b: &Flat, t: T, n?: number) -> &'a Flat`",
 			},
 		},
@@ -124,16 +124,16 @@ func TestMissingSignature(t *testing.T) {
 				}
 			`,
 			expected: []string{
-				"5:6-5:10: 'pick' is a method, so it needs a return type; " +
+				"error 5:6-5:10: 'pick' is a method, so it needs a return type; " +
 					"write `pick<'a>(&self, a: &'a Flat, b: &Flat) -> &'a Flat`",
-				"6:17-6:21: 'zero' is a method, so it needs a return type; write `-> 0`",
+				"error 6:17-6:21: 'zero' is a method, so it needs a return type; write `-> 0`",
 			},
 		},
 		{
 			name: "ClosureMissingParamType",
 			src:  `val double = fn (x) { return x * 2 }`,
 			expected: []string{
-				"1:5-1:11: 'double' is a module-level closure, so parameter 'x' needs a type and 'double' " +
+				"error 1:5-1:11: 'double' is a module-level closure, so parameter 'x' needs a type and 'double' " +
 					"needs a return type; write them on the closure, or annotate 'double'",
 			},
 		},
@@ -147,8 +147,8 @@ func TestMissingSignature(t *testing.T) {
 				}
 			`,
 			expected: []string{
-				"4:10-4:11: 'v' is a method, so it needs a return type; write `-> number`",
-				"5:10-5:11: 'v' is a method, so parameter 'n' needs a type",
+				"error 4:10-4:11: 'v' is a method, so it needs a return type; write `-> number`",
+				"error 5:10-5:11: 'v' is a method, so parameter 'n' needs a type",
 			},
 		},
 		{
@@ -160,7 +160,7 @@ func TestMissingSignature(t *testing.T) {
 				}
 			`,
 			expected: []string{
-				"4:7-4:8: '[k]' is a method, so it needs a return type",
+				"error 4:7-4:8: '[k]' is a method, so it needs a return type",
 			},
 		},
 		{
@@ -168,7 +168,7 @@ func TestMissingSignature(t *testing.T) {
 			src:    `fn count(xs: &Array<number>) { return xs.length }`,
 			script: true,
 			expected: []string{
-				"1:4-1:9: 'count' is declared at a script's top level, so it needs a return type; write `-> number`",
+				"error 1:4-1:9: 'count' is declared at a script's top level, so it needs a return type; write `-> number`",
 			},
 		},
 		{
@@ -176,7 +176,7 @@ func TestMissingSignature(t *testing.T) {
 			src:    "class Box {\n\tx: number,\n\tget(&self) { return self.x },\n}",
 			script: true,
 			expected: []string{
-				"3:2-3:5: 'get' is a method, so it needs a return type; write `-> number`",
+				"error 3:2-3:5: 'get' is a method, so it needs a return type; write `-> number`",
 			},
 		},
 		{
@@ -184,7 +184,7 @@ func TestMissingSignature(t *testing.T) {
 			src:    `val count = fn (xs: &Array<number>) { return xs.length }`,
 			script: true,
 			expected: []string{
-				"1:5-1:10: 'count' is a closure at a script's top level, so it needs a return type; " +
+				"error 1:5-1:10: 'count' is a closure at a script's top level, so it needs a return type; " +
 					"write `-> number` on the closure, or annotate 'count'",
 			},
 		},
@@ -207,12 +207,13 @@ func TestMissingSignature(t *testing.T) {
 			}
 			var got []string
 			for _, e := range errs {
-				got = append(got, msgWithSpan(t, e))
+				severity := "error"
+				if isWarning(e) {
+					severity = "warning"
+				}
+				got = append(got, severity+" "+msgWithSpan(t, e))
 			}
 			require.Equal(t, tt.expected, got)
-			for _, e := range errs {
-				require.True(t, isWarning(e))
-			}
 		})
 	}
 }

@@ -1779,8 +1779,10 @@ type pendingMember struct {
 	// method may. A getter and a setter have no call site that could instantiate a binder,
 	// so one written there is reported as unsupported.
 	generic bool
-	// seeded marks a stub whose return var seedStubReturn bounded by the declared return.
-	seeded bool
+	// declared marks a member whose signature is complete, as ast.FuncSig.IsComplete
+	// decides. Its stub is that signature, which the body pass checks the body against and
+	// leaves in place.
+	declared bool
 }
 
 // buildMemberSigs is phase 1 of the member walk. It appends a signature stub for every
@@ -1803,9 +1805,12 @@ func (c *checker) buildMemberSigs(
 				continue
 			}
 			c.checkSelfReceiver(name, elem, elem.Static, elem.Receiver)
-			stub := c.memberSigStub(scope, lvl, elem.Fn)
-			stub.SelfParam = c.selfParam(lvl, elem.Receiver, elem.Static, self)
-			seeded := c.seedStubReturn(scope, lvl, elem.Fn, stub)
+			m := pendingMember{
+				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static,
+				generic: true, declared: elem.Fn.IsComplete(),
+			}
+			stub := c.memberStub(scope, lvl, m, self, body)
+			m.stub = stub
 			method, arm := appendMethodSig(targetBody(body, static, elem.Static), name, stub, elem.Static)
 			// An overloaded method dispatches on its value arguments, so its arms must agree
 			// on the receiver they take. The receiver check reads only the first arm, so a
@@ -1817,13 +1822,10 @@ func (c *checker) buildMemberSigs(
 				selfParamConsumes(stub.SelfParam) != selfParamConsumes(first)) {
 				c.report(&MethodOverloadReceiverMismatchError{Name: name, Elem: elem})
 			}
-			pending = append(pending, pendingMember{
-				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static, stub: stub,
-				generic: true, seeded: seeded,
-				apply: func(bodyFt *soltype.FuncType) {
-					method.Signatures[arm] = bodyFt
-				},
-			})
+			m.apply = func(bodyFt *soltype.FuncType) {
+				method.Signatures[arm] = bodyFt
+			}
+			pending = append(pending, m)
 		case *ast.GetterElem:
 			name, ok := c.memberKeyName(scope, lvl, elem.Name)
 			if !ok {
@@ -1835,25 +1837,26 @@ func (c *checker) buildMemberSigs(
 			if elem.Receiver != nil && elem.Receiver.Consumes() {
 				c.report(&GetterReceiverError{Name: name, Elem: elem})
 			}
-			stub := c.memberSigStub(scope, lvl, elem.Fn)
-			seeded := c.seedStubReturn(scope, lvl, elem.Fn, stub)
+			m := pendingMember{
+				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static,
+				declared: elem.Fn.IsComplete(),
+			}
+			stub := c.memberStub(scope, lvl, m, self, body)
+			m.stub = stub
 			getter := &soltype.GetterElem{
 				Name:      name,
-				SelfParam: c.selfParam(lvl, elem.Receiver, elem.Static, self),
+				SelfParam: stub.SelfParam,
 				Type:      stub.Ret,
 				Throws:    stub.Throws,
 			}
 			target := targetBody(body, static, elem.Static)
 			target.Elems = append(target.Elems, getter)
-			pending = append(pending, pendingMember{
-				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static, stub: stub,
-				seeded: seeded,
-				apply: func(bodyFt *soltype.FuncType) {
-					getter.SelfParam = bodyFt.SelfParam
-					getter.Type = bodyFt.Ret
-					getter.Throws = bodyFt.Throws
-				},
-			})
+			m.apply = func(bodyFt *soltype.FuncType) {
+				getter.SelfParam = bodyFt.SelfParam
+				getter.Type = bodyFt.Ret
+				getter.Throws = bodyFt.Throws
+			}
+			pending = append(pending, m)
 		case *ast.SetterElem:
 			name, ok := c.memberKeyName(scope, lvl, elem.Name)
 			if !ok {
@@ -1875,29 +1878,32 @@ func (c *checker) buildMemberSigs(
 			if len(elem.Fn.Params) != 1 {
 				c.report(&SetterArityError{Name: name, Elem: elem, Count: len(elem.Fn.Params)})
 			}
-			stub := c.memberSigStub(scope, lvl, elem.Fn)
+			m := pendingMember{
+				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static,
+				declared: elem.Fn.IsCompleteExceptReturn(),
+			}
+			stub := c.memberStub(scope, lvl, m, self, body)
+			m.stub = stub
 			param := &soltype.FuncParam{Type: &soltype.UnknownType{}}
 			if len(stub.Params) > 0 {
 				param = stub.Params[0]
 			}
 			setter := &soltype.SetterElem{
 				Name:      name,
-				SelfParam: c.selfParam(lvl, elem.Receiver, elem.Static, self),
+				SelfParam: stub.SelfParam,
 				Param:     param,
 				Throws:    stub.Throws,
 			}
 			target := targetBody(body, static, elem.Static)
 			target.Elems = append(target.Elems, setter)
-			pending = append(pending, pendingMember{
-				fn: elem.Fn, name: name, recv: elem.Receiver, class: self, static: elem.Static, stub: stub,
-				apply: func(bodyFt *soltype.FuncType) {
-					setter.SelfParam = bodyFt.SelfParam
-					if len(bodyFt.Params) > 0 {
-						setter.Param = bodyFt.Params[0]
-					}
-					setter.Throws = bodyFt.Throws
-				},
-			})
+			m.apply = func(bodyFt *soltype.FuncType) {
+				setter.SelfParam = bodyFt.SelfParam
+				if len(bodyFt.Params) > 0 {
+					setter.Param = bodyFt.Params[0]
+				}
+				setter.Throws = bodyFt.Throws
+			}
+			pending = append(pending, m)
 		}
 	}
 	return pending
@@ -1911,8 +1917,13 @@ func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectT
 		// Hand the member's name to the inferFunc call below, which sees only the member's
 		// *ast.FuncExpr and so cannot recover it. inferFunc takes and clears it.
 		c.memberName = m.name
-		bodyFt := c.inferMemberFunc(scope, lvl, m, body)
-		c.linkMemberSig(m.fn, bodyFt, m.stub, m.seeded)
+		bodyFt := c.inferMemberFunc(scope, lvl, m, body, m.fn.Body)
+		// A declared member's stub is its signature, so a sibling that read it already saw
+		// the member's type and the body adds nothing to it.
+		if m.declared {
+			continue
+		}
+		c.linkMemberSig(m.fn, bodyFt, m.stub)
 		m.apply(bodyFt)
 	}
 }
@@ -1921,10 +1932,7 @@ func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectT
 // `bodyFt <: stub` direction grounds both parameters (contravariant, so a sibling call's
 // argument flows stub → body) and the return (covariant, so the body's return flows body →
 // stub); SelfParam lives on the element and is not compared here.
-//
-// seeded marks a stub whose return var seedStubReturn already bounded by the declared
-// return type. The body's return is then linked against `unknown` rather than that var.
-func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType, seeded bool) {
+func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 	callable := func(ft *soltype.FuncType) *soltype.FuncType {
 		return &soltype.FuncType{Params: ft.Params, Ret: ft.Ret, Throws: ft.Throws, Inexact: ft.Inexact}
 	}
@@ -1938,14 +1946,7 @@ func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType, s
 	if len(bodyFt.TypeParams) > 0 {
 		bodyFt = c.ctx.instantiateFuncBinder(bodyFt, bodyFt.TypeParams[0].Var.Level)
 	}
-	target := callable(stub)
-	// The body pass checks a seeded member's return against the declaration the var is
-	// already bounded by. Linking the body's return into the var would add a second lower
-	// bound, and a read of the var would report one mismatch twice.
-	if seeded {
-		target.Ret = &soltype.UnknownType{}
-	}
-	c.constrain(node, callable(bodyFt), target)
+	c.constrain(node, callable(bodyFt), callable(stub))
 }
 
 // memberSigStub builds a member's signature stub. It has one value parameter per parameter
@@ -2018,62 +2019,6 @@ func (c *checker) stubParamType(scope *Scope, lvl int, fn *ast.FuncExpr, p *ast.
 	return t
 }
 
-// seedStubReturn adds a member's annotated return type as a lower bound on its stub's
-// return var, so a read of the stub before the member's body is walked sees the declared
-// type. It reports whether it bounded the var.
-//
-// A member keeps the fresh return var when it quantifies parameters of its own, is async
-// or a generator, or returns a type that mentions a borrow, a lifetime, or a type variable.
-// The body pass resolves each of those against state it sets up itself. The annotation
-// resolves again in the body pass, which reports any diagnostic it raises, so the ones
-// raised here are dropped.
-func (c *checker) seedStubReturn(scope *Scope, lvl int, fn *ast.FuncExpr, stub *soltype.FuncType) bool {
-	sig := fn.FuncSig
-	if sig.Return == nil || len(sig.TypeParams) > 0 || len(sig.LifetimeParams) > 0 || sig.Async || sig.Gen {
-		return false
-	}
-	errsLen := len(c.errs)
-	// Whether a function type in the return holds a borrow depends on the member's receiver
-	// and parameters, which the body pass resolves. Giving it a lifetime here makes the
-	// finder below leave the return to that pass.
-	restore := c.elideFuncsAs(elideFresh)
-	ret, ok := c.resolveTypeAnn(scope, sig.Return, lvl)
-	restore()
-	c.errs = c.errs[:errsLen]
-	if !ok {
-		return false
-	}
-	finder := &openTypeFinder{}
-	ret.Accept(finder, soltype.Positive)
-	if finder.found {
-		return false
-	}
-	c.constrain(fn, ret, stub.Ret)
-	return true
-}
-
-// openTypeFinder records whether a type mentions a borrow, a lifetime argument, or a type
-// variable.
-type openTypeFinder struct {
-	found bool
-}
-
-func (v *openTypeFinder) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
-	switch t := t.(type) {
-	case *soltype.RefType, *soltype.TypeVarType:
-		v.found = true
-	case *soltype.ClassType:
-		v.found = v.found || len(t.LifetimeArgs) > 0 || t.Lt != nil
-	case *soltype.AliasType:
-		v.found = v.found || len(t.LifetimeArgs) > 0
-	case *soltype.FuncType:
-		v.found = v.found || t.Lt != nil
-	}
-	return soltype.EnterResult{}
-}
-
-func (v *openTypeFinder) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
-
 // targetBody selects the static or instance body for a member.
 func targetBody(body, static *soltype.ObjectType, isStatic bool) *soltype.ObjectType {
 	if isStatic {
@@ -2096,7 +2041,7 @@ func (c *checker) checkSelfReceiver(name string, elem ast.ClassElem, static bool
 // resolves through the pre-declared member signature. It returns the inferred FuncType,
 // whose params and return the caller links into the member's signature stub. An instance
 // member's FuncType carries the receiver as its SelfParam.
-func (c *checker) inferMemberFunc(scope *Scope, lvl int, m pendingMember, body *soltype.ObjectType) *soltype.FuncType {
+func (c *checker) inferMemberFunc(scope *Scope, lvl int, m pendingMember, body *soltype.ObjectType, fnBody *ast.Block) *soltype.FuncType {
 	if !m.static {
 		// inferFunc binds `self` once it has opened the member's named-lifetime scope, which
 		// `&'a self` resolves its `'a` in.
@@ -2111,7 +2056,28 @@ func (c *checker) inferMemberFunc(scope *Scope, lvl int, m pendingMember, body *
 		c.memberFuncNames = map[*ast.FuncExpr]string{}
 	}
 	c.memberFuncNames[m.fn] = m.name
-	return c.inferFunc(scope.Child(), lvl, m.fn.FuncSig, m.fn.Body, m.fn, m.generic, true)
+	return c.inferFunc(scope.Child(), lvl, m.fn.FuncSig, fnBody, m.fn, m.generic, true)
+}
+
+// memberStub returns the signature stub m's element carries until the body pass. A
+// declared member's stub is its signature, built without its body. Any other member's
+// stub is memberSigStub's, with the receiver selfParam gives it.
+func (c *checker) memberStub(scope *Scope, lvl int, m pendingMember, self *soltype.ClassType, body *soltype.ObjectType) *soltype.FuncType {
+	if !m.declared {
+		stub := c.memberSigStub(scope, lvl, m.fn)
+		stub.SelfParam = c.selfParam(lvl, m.recv, m.static, self)
+		return stub
+	}
+	// The body pass infers the member again with its body and reports the signature's
+	// errors from there, so the ones raised here are dropped. The probe commits, so a
+	// bound a written `<T: C>` records on the parameter's variable stays.
+	p := c.openProbe()
+	errsLen := len(c.errs)
+	c.memberName = m.name
+	sig := c.inferMemberFunc(scope, lvl, m, c.ctx.selfView(self, body), nil)
+	c.closeProbe(p, true)
+	c.errs = c.errs[:errsLen]
+	return sig
 }
 
 // memberSelf is what inferFunc needs, beside the receiver memberReceiver carries, to bind

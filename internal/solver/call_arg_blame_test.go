@@ -71,7 +71,7 @@ func TestACallBlamesTheArgumentThatDoesNotFit(t *testing.T) {
 			name: "AnArgumentTypedByTheParameterItFills",
 			src: "class Point {\n\tx: number,\n}\n" +
 				"fn f(p: Exact<Point>) -> number { return f(p) }",
-			want: []string{"4:1-4:48: class Point is not final, so a subclass instance may carry " +
+			want: []string{"4:44-4:45: class Point is not final, so a subclass instance may carry " +
 				"members Point does not declare and Exact<Point> cannot close it; declare Point as " +
 				"`final` instead"},
 		},
