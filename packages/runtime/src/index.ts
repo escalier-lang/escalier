@@ -1,4 +1,4 @@
-import './polyfills'; // imported for side effects
+import './polyfills.js'; // imported for side effects
 
-export * from './extractor';
-export type { ValueType } from './value_type';
+export * from './extractor.js';
+export type { ValueType } from './value_type.js';
