@@ -76,7 +76,13 @@ export function platformPackageName(suffix) {
     return `@escalier/cli-${suffix}`;
 }
 
+// Returns the file name of the executable `name` on the target's OS, such
+// as `lsp-server.exe` for `lsp-server` on Windows.
+export function executableName(name, target) {
+    return target.os === 'win32' ? `${name}.exe` : name;
+}
+
 // Returns the file name of the escalier binary on the target's OS.
 export function binaryName(target) {
-    return target.os === 'win32' ? 'escalier.exe' : 'escalier';
+    return executableName('escalier', target);
 }

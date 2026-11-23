@@ -1,4 +1,4 @@
-.PHONY: all clean lsp-server lsp-server-wasm escalier escalier-wasm
+.PHONY: all clean lsp-server lsp-server-wasm escalier escalier-wasm npm-binaries
 
 # Default target
 all: lsp-server escalier
@@ -16,6 +16,11 @@ escalier-wasm:
 	GOOS=js GOARCH=wasm go build -o ./bin/escalier.wasm ./cmd/escalier
 
 all-targets: lsp-server lsp-server-wasm escalier escalier-wasm
+
+# Cross-compiles escalier into the @escalier/cli-<platform>-<arch> packages
+# and lsp-server into bin/<platform>-<arch>/ for every published target.
+npm-binaries:
+	node tools/build-binaries.mjs
 
 # Clean build artifacts
 clean:
