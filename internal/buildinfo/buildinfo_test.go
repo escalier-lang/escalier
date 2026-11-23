@@ -9,9 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestVersionFromLdflags asserts that each binary prints the version a
-// release build sets with -ldflags. The release scripts set it through the
-// import path of Version, so a rename or move of the variable fails here.
+// TestVersionFromLdflags asserts that each binary prints the version that
+// `-ldflags "-X github.com/escalier-lang/escalier/internal/buildinfo.Version=..."`
+// sets. The -X flag names Version by its import path, so the test fails if
+// the variable is renamed or moved.
 func TestVersionFromLdflags(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the binaries")
