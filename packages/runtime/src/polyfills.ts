@@ -1,3 +1,5 @@
+import './symbol';
+
 if (!Symbol.customMatcher) {
     Object.defineProperty(Symbol, 'customMatcher', {
         value: Symbol('Symbol.customMatcher'),
