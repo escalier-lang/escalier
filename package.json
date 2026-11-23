@@ -20,11 +20,14 @@
         "format": "oxfmt",
         "check": "oxfmt --check && oxlint",
         "test": "vitest run",
+        "changeset": "changeset",
+        "version-packages": "changeset version && pnpm install --lockfile-only",
         "test:ui": "vitest --ui --coverage",
         "coverage": "vitest run --coverage",
         "typecheck": "tsc -b"
     },
     "devDependencies": {
+        "@changesets/cli": "^2.31.1",
         "@storybook/addon-vitest": "^10.3.3",
         "@types/node": "^20",
         "@types/react": "catalog:",
