@@ -25,3 +25,11 @@ a changeset:
 always share a version, so a changeset for `@escalier/cli` bumps all of
 them. `pnpm version-packages` applies the pending changesets to the
 `package.json` and `CHANGELOG.md` files.
+
+The `check_changesets` CI job fails a PR that has no changeset for a
+package it changes. It treats changes to `cmd/escalier/`, `internal/`,
+`go.mod` and `go.sum` as changes to `@escalier/cli`, since they build into
+its binary. Test files, `cmd/lsp-server/` and the private fixture packages
+don't need a changeset. For a change that shouldn't release, such as a
+refactor, run `pnpm changeset --empty` and commit the empty changeset it
+creates.
