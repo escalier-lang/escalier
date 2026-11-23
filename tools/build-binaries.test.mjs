@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import { describe, test } from 'node:test';
 
 import {
@@ -78,24 +79,30 @@ describe('BINARIES', () => {
     test('puts escalier in its platform package and lsp-server under bin/', () => {
         assert.equal(
             escalier.outDir(winX64),
-            'packages/platforms/cli-win32-x64/bin',
+            join('packages', 'platforms', 'cli-win32-x64', 'bin'),
         );
-        assert.equal(lspServer.outDir(winX64), 'bin/win32-x64');
+        assert.equal(lspServer.outDir(winX64), join('bin', 'win32-x64'));
     });
 });
 
 describe('goEnv', () => {
-    test('disables cgo and sets GOARM only for 32-bit ARM', () => {
+    test('disables cgo, pins the CPU levels and sets GOARM only for 32-bit ARM', () => {
+        const pinned = {
+            CGO_ENABLED: '0',
+            GOAMD64: 'v1',
+            GOARM64: 'v8.0',
+            GOFLAGS: '-mod=readonly',
+        };
         assert.deepEqual(goEnv(linuxArm), {
             GOOS: 'linux',
             GOARCH: 'arm',
-            CGO_ENABLED: '0',
+            ...pinned,
             GOARM: '7',
         });
         assert.deepEqual(goEnv(winX64), {
             GOOS: 'windows',
             GOARCH: 'amd64',
-            CGO_ENABLED: '0',
+            ...pinned,
         });
     });
 });

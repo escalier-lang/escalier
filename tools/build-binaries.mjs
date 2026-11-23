@@ -7,8 +7,8 @@
 //
 // The escalier binary goes into packages/platforms/cli-<suffix>/bin/, where
 // the @escalier/cli-<suffix> package publishes it. The lsp-server binary
-// goes into bin/<suffix>/, where the VS Code packaging script picks it up.
-// Both paths are gitignored.
+// goes into bin/<suffix>/, the directory the per-platform VS Code extension
+// builds take it from. Both paths are gitignored.
 //
 // Every build sets CGO_ENABLED=0, so a single Linux machine can build all
 // targets and the Linux binaries are statically linked. -ldflags sets
@@ -105,11 +105,17 @@ export function selectBuilds(selection) {
 }
 
 // Returns the environment variables that point `go build` at `target`.
+// They override the caller's environment. GOAMD64, GOARM64 and GOFLAGS are
+// pinned so a value set in the shell or with `go env -w` can't raise the
+// minimum CPU the binary needs or add build flags such as -race.
 export function goEnv(target) {
     const env = {
         GOOS: target.goos,
         GOARCH: target.goarch,
         CGO_ENABLED: '0',
+        GOAMD64: 'v1',
+        GOARM64: 'v8.0',
+        GOFLAGS: '-mod=readonly',
     };
     if (target.goarm !== undefined) {
         env.GOARM = target.goarm;
@@ -157,9 +163,17 @@ function main() {
                 stdio: 'inherit',
             },
         );
+        if (result.error !== undefined) {
+            console.error(`failed to run go: ${result.error.message}`);
+            process.exit(1);
+        }
         if (result.status !== 0) {
+            const cause =
+                result.signal === null
+                    ? `exit status ${result.status}`
+                    : `signal ${result.signal}`;
             console.error(
-                `go build failed for ${binary.name} on ${target.suffix}`,
+                `go build failed for ${binary.name} on ${target.suffix} (${cause})`,
             );
             process.exit(result.status ?? 1);
         }
