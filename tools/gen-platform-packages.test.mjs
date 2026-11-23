@@ -1,7 +1,21 @@
 import assert from 'node:assert/strict';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    rmSync,
+    writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, test } from 'node:test';
 
-import { platformManifest, platformReadme } from './gen-platform-packages.mjs';
+import {
+    platformManifest,
+    platformReadme,
+    writePlatformPackages,
+} from './gen-platform-packages.mjs';
 import { TARGETS } from './platforms.mjs';
 
 const cli = {
@@ -41,7 +55,7 @@ describe('platformManifest', () => {
             files: ['bin/'],
             preferUnplugged: true,
             scripts: {
-                prepublishOnly: `node -e "if (!require('fs').existsSync('bin/escalier')) { console.error('bin/escalier is missing. Run node tools/build-binaries.mjs first.'); process.exit(1); }"`,
+                prepublishOnly: `node -e "if (!require('fs').existsSync('bin/escalier')) { console.error('bin/escalier is missing. Build the platform binaries before publishing.'); process.exit(1); }"`,
             },
             publishConfig: { access: 'public', provenance: true },
         });
@@ -68,5 +82,32 @@ describe('TARGETS', () => {
         for (const target of TARGETS) {
             assert.equal(target.suffix, `${target.os}-${target.cpu}`);
         }
+    });
+});
+
+describe('writePlatformPackages', () => {
+    test('removes cli-* directories for dropped targets and keeps bin/ of current ones', (t) => {
+        const dir = mkdtempSync(join(tmpdir(), 'platforms-'));
+        t.after(() => rmSync(dir, { recursive: true }));
+
+        // A package whose target was dropped, with a built binary in it.
+        mkdirSync(join(dir, 'cli-freebsd-x64', 'bin'), { recursive: true });
+        writeFileSync(join(dir, 'cli-freebsd-x64', 'bin', 'escalier'), '');
+        // A current target with a built binary, which must survive.
+        mkdirSync(join(dir, 'cli-linux-arm', 'bin'), { recursive: true });
+        writeFileSync(join(dir, 'cli-linux-arm', 'bin', 'escalier'), '');
+        // A directory that isn't a platform package, which must survive.
+        mkdirSync(join(dir, 'notes'));
+
+        const removed = writePlatformPackages(dir, [linuxArm], cli);
+
+        assert.deepEqual(removed, ['cli-freebsd-x64']);
+        assert.deepEqual(readdirSync(dir).sort(), ['cli-linux-arm', 'notes']);
+        assert.deepEqual(readdirSync(join(dir, 'cli-linux-arm')).sort(), [
+            'README.md',
+            'bin',
+            'package.json',
+        ]);
+        assert.ok(existsSync(join(dir, 'cli-linux-arm', 'bin', 'escalier')));
     });
 });

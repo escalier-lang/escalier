@@ -55,7 +55,7 @@ export function platformManifest(target, cli) {
             // bin/ is gitignored and filled by the cross-compile script, so
             // this stops a publish that would ship the package without its
             // binary. npm never lets a published version be replaced.
-            prepublishOnly: `node -e "if (!require('fs').existsSync('${binary}')) { console.error('${binary} is missing. Run node tools/build-binaries.mjs first.'); process.exit(1); }"`,
+            prepublishOnly: `node -e "if (!require('fs').existsSync('${binary}')) { console.error('${binary} is missing. Build the platform binaries before publishing.'); process.exit(1); }"`,
         },
         publishConfig: {
             access: 'public',
@@ -75,22 +75,24 @@ Install [\`@escalier/cli\`](https://www.npmjs.com/package/@escalier/cli) instead
 `;
 }
 
-function main() {
-    const cli = JSON.parse(
-        readFileSync(join(ROOT, 'packages', 'cli', 'package.json'), 'utf8'),
-    );
-    mkdirSync(PLATFORMS_DIR, { recursive: true });
+// Writes package.json and README.md for each entry in `targets` into
+// `platformsDir`/cli-<suffix>, and removes every other `cli-*` directory in
+// `platformsDir`. Files the function doesn't write, such as a target's bin/,
+// are left in place. Returns the names of the removed directories.
+export function writePlatformPackages(platformsDir, targets, cli) {
+    mkdirSync(platformsDir, { recursive: true });
 
-    const expected = new Set(TARGETS.map((target) => `cli-${target.suffix}`));
-    for (const entry of readdirSync(PLATFORMS_DIR)) {
+    const expected = new Set(targets.map((target) => `cli-${target.suffix}`));
+    const removed = [];
+    for (const entry of readdirSync(platformsDir)) {
         if (entry.startsWith('cli-') && !expected.has(entry)) {
-            rmSync(join(PLATFORMS_DIR, entry), { recursive: true });
-            console.log(`removed packages/platforms/${entry}`);
+            rmSync(join(platformsDir, entry), { recursive: true });
+            removed.push(entry);
         }
     }
 
-    for (const target of TARGETS) {
-        const dir = join(PLATFORMS_DIR, `cli-${target.suffix}`);
+    for (const target of targets) {
+        const dir = join(platformsDir, `cli-${target.suffix}`);
         if (!existsSync(dir)) {
             mkdirSync(dir);
         }
@@ -100,6 +102,16 @@ function main() {
             JSON.stringify(manifest, null, 4) + '\n',
         );
         writeFileSync(join(dir, 'README.md'), platformReadme(target));
+    }
+    return removed;
+}
+
+function main() {
+    const cli = JSON.parse(
+        readFileSync(join(ROOT, 'packages', 'cli', 'package.json'), 'utf8'),
+    );
+    for (const entry of writePlatformPackages(PLATFORMS_DIR, TARGETS, cli)) {
+        console.log(`removed packages/platforms/${entry}`);
     }
     console.log(`wrote ${TARGETS.length} packages under packages/platforms`);
 }
