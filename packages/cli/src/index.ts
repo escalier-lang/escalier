@@ -61,6 +61,19 @@ export function missingPackageMessage(
     ].join('\n');
 }
 
+// Returns the error message for a platform package that is installed but
+// holds no binary. A published package always has one, so this happens in
+// a checkout of the escalier repo before the binaries are built.
+export function missingBinaryMessage(
+    packageName: string,
+    fileName: string,
+): string {
+    return [
+        `${packageName} is installed but has no bin/${fileName}.`,
+        `In a checkout of the escalier repo, build it with \`node tools/build-binaries.mjs\`, or set ${BINARY_PATH_ENV} to the path of an escalier binary.`,
+    ].join('\n');
+}
+
 export interface BinaryPathOptions {
     // Defaults to `process.platform`.
     platform?: string;
@@ -76,8 +89,8 @@ export interface BinaryPathOptions {
 // Returns the path of the escalier binary to run. A non-empty
 // ESCALIER_BINARY_PATH wins. Otherwise the path points into the installed
 // `@escalier/cli-<platform>-<arch>` package. Throws an Error with the full
-// explanation when the platform has no package or its package isn't
-// installed.
+// explanation when the platform has no package, its package isn't
+// installed, or the package has no binary.
 export function getBinaryPath(options: BinaryPathOptions = {}): string {
     const platform = options.platform ?? process.platform;
     const arch = options.arch ?? process.arch;
@@ -93,9 +106,17 @@ export function getBinaryPath(options: BinaryPathOptions = {}): string {
     if (packageName === undefined) {
         throw new Error(unsupportedPlatformMessage(platform, arch));
     }
+    const fileName = binaryFileName(platform);
     try {
-        return resolve(`${packageName}/bin/${binaryFileName(platform)}`);
+        return resolve(`${packageName}/bin/${fileName}`);
     } catch {
-        throw new Error(missingPackageMessage(packageName, platform, arch));
+        // Resolving the package's manifest tells an uninstalled package apart
+        // from an installed one whose binary is missing.
+        try {
+            resolve(`${packageName}/package.json`);
+        } catch {
+            throw new Error(missingPackageMessage(packageName, platform, arch));
+        }
+        throw new Error(missingBinaryMessage(packageName, fileName));
     }
 }

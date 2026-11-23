@@ -86,6 +86,29 @@ describe('getBinaryPath', () => {
         );
     });
 
+    test('explains an installed platform package with no binary', () => {
+        expect(() =>
+            getBinaryPath({
+                platform: 'win32',
+                arch: 'arm64',
+                env: {},
+                resolve: (specifier) => {
+                    if (specifier.endsWith('/package.json')) {
+                        return `/node_modules/${specifier}`;
+                    }
+                    return notFound();
+                },
+            }),
+        ).toThrow(
+            new Error(
+                [
+                    '@escalier/cli-win32-arm64 is installed but has no bin/escalier.exe.',
+                    'In a checkout of the escalier repo, build it with `node tools/build-binaries.mjs`, or set ESCALIER_BINARY_PATH to the path of an escalier binary.',
+                ].join('\n'),
+            ),
+        );
+    });
+
     test('explains a missing platform package', () => {
         expect(() =>
             getBinaryPath({
