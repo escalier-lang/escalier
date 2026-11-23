@@ -145,8 +145,13 @@ jobs:
   # entry. `pnpm changeset --empty` opts a PR out.
   check_changesets:
     # The "Version Packages" PR that changesets/action opens consumes the
-    # changesets, so it changes package versions with none left to find.
-    if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main'
+    # changesets, so it changes package versions with none left to find. It
+    # comes from this repository, so a fork's branch with the same name
+    # still runs the check.
+    if: >-
+      github.event_name == 'pull_request' &&
+      !(github.head_ref == 'changeset-release/main' &&
+        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
       # `changeset status --since` diffs against the base branch, which
@@ -169,20 +174,15 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Test the compiler check
-        run: node --test .github/scripts/check-cli-changeset.test.mjs
+      - name: Test the check
+        run: node --test .github/scripts/check-changesets.test.mjs
 
       # The base ref reaches the shell through the environment, so a branch
       # name that contains shell syntax is passed as data and never runs.
       - name: Check changesets for changed packages
         env:
           BASE_REF: ${{ github.base_ref }}
-        run: pnpm changeset status --since="origin/${BASE_REF}"
-
-      - name: Check a changeset for compiler changes
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: node .github/scripts/check-cli-changeset.mjs "origin/${BASE_REF}"
+        run: node .github/scripts/check-changesets.mjs "origin/${BASE_REF}"
 
   # Rates each change to the committed fixture outputs by review risk and
   # posts the report as a PR comment, which later runs edit in place. The

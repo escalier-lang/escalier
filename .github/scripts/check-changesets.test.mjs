@@ -1,0 +1,150 @@
+import assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+
+import {
+    changedPackages,
+    formatReport,
+    isCliSource,
+    owningPackage,
+    unreleasedPackages,
+} from './check-changesets.mjs';
+
+const packages = [
+    { name: '@escalier/cli', dir: 'packages/cli' },
+    {
+        name: '@escalier/cli-linux-x64',
+        dir: 'packages/platforms/cli-linux-x64',
+    },
+    { name: '@escalier/runtime', dir: 'packages/runtime' },
+];
+
+describe('isCliSource', () => {
+    const cases = [
+        ['go.mod', true],
+        ['go.sum', true],
+        ['cmd/escalier/build.go', true],
+        ['internal/solver/infer.go', true],
+        ['internal/stdlibdir/std/prelude.esc', true],
+        ['internal/solver/infer_test.go', false],
+        ['internal/printer/__snapshots__/printer_test.snap', false],
+        ['internal/dts_parser/testdata/lib.d.ts', false],
+        ['cmd/lsp-server/hover.go', false],
+        ['fixtures/async_await/lib/async_await.esc', false],
+        ['README.md', false],
+    ];
+    for (const [path, expected] of cases) {
+        test(`${path} -> ${String(expected)}`, () => {
+            assert.equal(isCliSource(path), expected);
+        });
+    }
+});
+
+describe('owningPackage', () => {
+    const cases = [
+        ['internal/solver/infer.go', '@escalier/cli'],
+        ['packages/cli/src/index.ts', '@escalier/cli'],
+        [
+            'packages/platforms/cli-linux-x64/package.json',
+            '@escalier/cli-linux-x64',
+        ],
+        ['packages/runtime/src/index.ts', '@escalier/runtime'],
+        ['packages/runtime-extras/index.ts', undefined],
+        ['packages/vscode-escalier/src/extension.ts', undefined],
+        ['cmd/lsp-server/hover.go', undefined],
+    ];
+    for (const [path, expected] of cases) {
+        test(`${path} -> ${String(expected)}`, () => {
+            assert.equal(owningPackage(path, packages), expected);
+        });
+    }
+});
+
+describe('changedPackages', () => {
+    test('groups the changed files by the package they belong to', () => {
+        const byPackage = changedPackages(
+            [
+                'go.mod',
+                'README.md',
+                'packages/runtime/src/index.ts',
+                'internal/solver/infer.go',
+            ],
+            packages,
+        );
+        assert.deepEqual(
+            [...byPackage],
+            [
+                ['@escalier/cli', ['go.mod', 'internal/solver/infer.go']],
+                ['@escalier/runtime', ['packages/runtime/src/index.ts']],
+            ],
+        );
+    });
+});
+
+describe('unreleasedPackages', () => {
+    const cliRelease = { name: '@escalier/cli', type: 'patch' };
+    const runtimeRelease = { name: '@escalier/runtime', type: 'minor' };
+    const required = ['@escalier/cli', '@escalier/runtime'];
+
+    const cases = [
+        {
+            name: 'changesets that release every package',
+            status: {
+                changesets: [
+                    { id: 'a', releases: [cliRelease, runtimeRelease] },
+                ],
+                releases: [cliRelease, runtimeRelease],
+            },
+            expected: [],
+        },
+        {
+            name: 'an empty changeset',
+            status: { changesets: [{ id: 'a', releases: [] }], releases: [] },
+            expected: [],
+        },
+        {
+            name: 'a changeset for one of the two packages',
+            status: {
+                changesets: [{ id: 'a', releases: [runtimeRelease] }],
+                releases: [runtimeRelease],
+            },
+            expected: ['@escalier/cli'],
+        },
+        {
+            name: 'a release with type none',
+            status: {
+                changesets: [{ id: 'a', releases: [runtimeRelease] }],
+                releases: [runtimeRelease, { ...cliRelease, type: 'none' }],
+            },
+            expected: ['@escalier/cli'],
+        },
+        {
+            name: 'no changesets',
+            status: { changesets: [], releases: [] },
+            expected: required,
+        },
+    ];
+    for (const { name, status, expected } of cases) {
+        test(name, () => {
+            assert.deepEqual(unreleasedPackages(required, status), expected);
+        });
+    }
+});
+
+describe('formatReport', () => {
+    test('lists each unreleased package with its files and both fixes', () => {
+        const byPackage = new Map([
+            ['@escalier/cli', ['go.mod', 'internal/solver/infer.go']],
+            ['@escalier/runtime', ['packages/runtime/src/index.ts']],
+        ]);
+        assert.equal(
+            formatReport(['@escalier/cli'], byPackage),
+            [
+                'These packages changed, but no changeset releases them:',
+                '  @escalier/cli',
+                '    go.mod',
+                '    internal/solver/infer.go',
+                "Run `pnpm changeset` and select each package, or run `pnpm changeset --empty` if the changes shouldn't release.",
+            ].join('\n'),
+        );
+    });
+});
