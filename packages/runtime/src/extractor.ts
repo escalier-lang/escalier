@@ -1,3 +1,5 @@
+import './symbol';
+
 export interface Extractor<TSubject, TReceiver> {
     [Symbol.customMatcher]: (
         subject: TSubject,

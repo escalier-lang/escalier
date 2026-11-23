@@ -369,6 +369,12 @@ jobs:
       - name: Build
         working-directory: ./packages/runtime
         run: pnpm build
+
+      # publint checks the package.json fields and the packed file list.
+      # attw resolves the types for both the import and require conditions.
+      - name: Check the published package
+        working-directory: ./packages/runtime
+        run: pnpm lint:package
  
       - name: Run Tests
         working-directory: ./packages/runtime
