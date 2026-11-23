@@ -1,4 +1,4 @@
-import './symbol.js';
+import './symbol';
 
 if (!Symbol.customMatcher) {
     Object.defineProperty(Symbol, 'customMatcher', {

@@ -1,4 +1,4 @@
-import './symbol.js';
+import './symbol';
 
 export interface Extractor<TSubject, TReceiver> {
     [Symbol.customMatcher]: (
