@@ -274,6 +274,20 @@ importers:
 
   packages/cli: {}
 
+  packages/platforms/cli-darwin-arm64: {}
+
+  packages/platforms/cli-darwin-x64: {}
+
+  packages/platforms/cli-linux-arm: {}
+
+  packages/platforms/cli-linux-arm64: {}
+
+  packages/platforms/cli-linux-x64: {}
+
+  packages/platforms/cli-win32-arm64: {}
+
+  packages/platforms/cli-win32-x64: {}
+
   packages/runtime:
     devDependencies:
       '@arethetypeswrong/cli':

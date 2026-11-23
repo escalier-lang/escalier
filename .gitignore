@@ -28,6 +28,9 @@ node_modules
 out
 tsconfig.tsbuildinfo
 bin/**
+# The cross-compile script writes each platform package's binary here at
+# release time.
+packages/platforms/*/bin/
 .DS_Store
 coverage
 dist

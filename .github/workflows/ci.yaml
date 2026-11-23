@@ -91,11 +91,13 @@ jobs:
             ./bin/dts_to_esc generate --overlay internal/interop/overlay \
             node_modules/typescript/lib internal/interop/data
 
+  # Checks the workspace's npm packages before changesets publishes them.
   # `changeset publish` publishes every workspace package that isn't
-  # private. The job fails when a package outside the publish list in
-  # check-private-packages.mjs lacks "private": true, so a new fixture
-  # can't reach npm by accident.
-  check_private_packages:
+  # private, so the job fails when a package outside the publish list in
+  # check-private-packages.mjs lacks "private": true. It also fails when
+  # the committed packages under packages/platforms differ from what
+  # tools/gen-platform-packages.mjs writes from tools/platforms.mjs.
+  check_npm_packages:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -117,11 +119,25 @@ jobs:
         with:
           run_install: false
 
-      - name: Test the check
-        run: node --test .github/scripts/check-private-packages.test.mjs
+      - name: Test the scripts
+        run: |
+          node --test .github/scripts/check-private-packages.test.mjs \
+            tools/gen-platform-packages.test.mjs
 
       - name: Check that unpublished packages are private
         run: node .github/scripts/check-private-packages.mjs
+
+      # `git status --porcelain` lists modified, deleted and untracked
+      # files, so a package the generator adds or removes also fails.
+      - name: Check the platform packages against the target list
+        run: |
+          node tools/gen-platform-packages.mjs
+          changes=$(git status --porcelain -- packages/platforms)
+          if [ -n "$changes" ]; then
+            echo "$changes"
+            echo "Run node tools/gen-platform-packages.mjs and commit the result."
+            exit 1
+          fi
 
   # Rates each change to the committed fixture outputs by review risk and
   # posts the report as a PR comment, which later runs edit in place. The

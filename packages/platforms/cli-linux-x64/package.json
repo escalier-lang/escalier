@@ -1,0 +1,33 @@
+{
+    "name": "@escalier/cli-linux-x64",
+    "version": "0.0.1",
+    "description": "The escalier compiler binary for Linux on x64. Install @escalier/cli instead of depending on this package.",
+    "license": "MIT",
+    "author": "escalier-lang",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/escalier-lang/escalier.git",
+        "directory": "packages/platforms/cli-linux-x64"
+    },
+    "homepage": "https://github.com/escalier-lang/escalier#readme",
+    "bugs": {
+        "url": "https://github.com/escalier-lang/escalier/issues"
+    },
+    "os": [
+        "linux"
+    ],
+    "cpu": [
+        "x64"
+    ],
+    "files": [
+        "bin/"
+    ],
+    "preferUnplugged": true,
+    "scripts": {
+        "prepublishOnly": "node -e \"if (!require('fs').existsSync('bin/escalier')) { console.error('bin/escalier is missing. Build the platform binaries before publishing.'); process.exit(1); }\""
+    },
+    "publishConfig": {
+        "access": "public",
+        "provenance": true
+    }
+}
