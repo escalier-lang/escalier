@@ -6,6 +6,7 @@ import {
     formatReport,
     isCliSource,
     owningPackage,
+    parseStatusRun,
     unreleasedPackages,
 } from './check-changesets.mjs';
 
@@ -24,7 +25,11 @@ describe('isCliSource', () => {
         ['go.sum', true],
         ['cmd/escalier/build.go', true],
         ['internal/solver/infer.go', true],
-        ['internal/stdlibdir/std/prelude.esc', true],
+        ['internal/interop/data/std/prelude.esc', true],
+        ['internal/ecma262/curated.json', true],
+        ['internal/solver/README.md', false],
+        ['internal/codegen/fixtures/out.js.map', false],
+        ['cmd/escalier/README.md', false],
         ['internal/solver/infer_test.go', false],
         ['internal/printer/__snapshots__/printer_test.snap', false],
         ['internal/dts_parser/testdata/lib.d.ts', false],
@@ -128,6 +133,45 @@ describe('unreleasedPackages', () => {
             assert.deepEqual(unreleasedPackages(required, status), expected);
         });
     }
+});
+
+describe('parseStatusRun', () => {
+    test('parses the --output file when the run wrote one', () => {
+        assert.deepEqual(
+            parseStatusRun({
+                output: '{"changesets":[],"releases":[]}',
+                exitCode: 0,
+                stderr: '',
+            }),
+            { changesets: [], releases: [] },
+        );
+    });
+
+    test('reads a no-changesets failure as an empty status', () => {
+        assert.deepEqual(
+            parseStatusRun({
+                output: undefined,
+                exitCode: 1,
+                stderr: '🦋  error Some packages have been changed but no changesets were found. Run `changeset add` to resolve this error.\n',
+            }),
+            { changesets: [], releases: [] },
+        );
+    });
+
+    test('reports any other failure with its stderr', () => {
+        assert.throws(
+            () =>
+                parseStatusRun({
+                    output: undefined,
+                    exitCode: 1,
+                    stderr: "🦋  error fatal: bad revision 'origin/missing...HEAD'\n",
+                }),
+            {
+                message:
+                    "changeset status failed with exit code 1:\n🦋  error fatal: bad revision 'origin/missing...HEAD'",
+            },
+        );
+    });
 });
 
 describe('formatReport', () => {

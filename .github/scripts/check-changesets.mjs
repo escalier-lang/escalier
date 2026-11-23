@@ -27,10 +27,21 @@ import { fileURLToPath } from 'node:url';
 // The package whose binary the compiler sources build.
 export const CLI_PACKAGE = '@escalier/cli';
 
+// The kinds of file under cmd/escalier/ and internal/ that end up in the
+// escalier binary or ship with it: Go source, the stdlib `.esc` files, and
+// the `.json` files that internal/ecma262 embeds with go:embed.
+export const CLI_SOURCE_EXTENSIONS = ['.go', '.esc', '.json'];
+
 // Returns true when `path`, relative to the repo root, is source code that
-// ends up in the escalier binary. Tests, test data and snapshots don't, and
-// cmd/lsp-server ships in the VS Code extension instead.
+// ends up in the escalier binary. Docs, tests, test data and snapshots
+// don't, and cmd/lsp-server ships in the VS Code extension instead.
 export function isCliSource(path) {
+    if (path === 'go.mod' || path === 'go.sum') {
+        return true;
+    }
+    if (!path.startsWith('cmd/escalier/') && !path.startsWith('internal/')) {
+        return false;
+    }
     if (
         path.endsWith('_test.go') ||
         path.includes('/testdata/') ||
@@ -38,12 +49,7 @@ export function isCliSource(path) {
     ) {
         return false;
     }
-    return (
-        path === 'go.mod' ||
-        path === 'go.sum' ||
-        path.startsWith('cmd/escalier/') ||
-        path.startsWith('internal/')
-    );
+    return CLI_SOURCE_EXTENSIONS.some((extension) => path.endsWith(extension));
 }
 
 // Returns the published package that `path` belongs to, or `undefined`.
@@ -116,13 +122,18 @@ export function formatReport(missing, byPackage) {
     return lines.join('\n');
 }
 
+// Throws an Error that carries git's stderr when the diff fails, such as
+// for a base ref that wasn't fetched.
 function changedFiles(baseRef) {
-    const output = execFileSync(
-        'git',
-        ['diff', '--name-only', `${baseRef}...HEAD`],
-        { encoding: 'utf8' },
-    );
-    return output.split('\n').filter((line) => line !== '');
+    const run = spawnSync('git', ['diff', '--name-only', `${baseRef}...HEAD`], {
+        encoding: 'utf8',
+    });
+    if (run.status !== 0) {
+        throw new Error(
+            `git diff against ${baseRef} failed:\n${(run.stderr ?? '').trimEnd()}`,
+        );
+    }
+    return run.stdout.split('\n').filter((line) => line !== '');
 }
 
 function publishedPackages() {
@@ -139,13 +150,34 @@ function publishedPackages() {
         }));
 }
 
-// `changeset status` exits before writing --output when packages changed
-// and the PR has no changesets, so a missing file means no changesets.
+// The message `changeset status` prints when packages changed and the PR
+// has no changesets. It exits before writing --output in that case.
+export const NO_CHANGESETS_ERROR =
+    'Some packages have been changed but no changesets were found';
+
+// Returns the status a `changeset status --output` run describes. `output`
+// is the text of the --output file, or `undefined` when the run wrote none.
+// A run that wrote no file counts as "no changesets" only when `stderr`
+// holds NO_CHANGESETS_ERROR. Any other failure, such as a malformed config
+// or an unknown base ref, throws an Error that carries `stderr`, so the
+// report shows the real cause.
+export function parseStatusRun({ output, exitCode, stderr }) {
+    if (output !== undefined) {
+        return JSON.parse(output);
+    }
+    if (stderr.includes(NO_CHANGESETS_ERROR)) {
+        return { changesets: [], releases: [] };
+    }
+    throw new Error(
+        `changeset status failed with exit code ${String(exitCode)}:\n${stderr.trimEnd()}`,
+    );
+}
+
 function changesetStatus(baseRef) {
     const dir = mkdtempSync(join(tmpdir(), 'changeset-status-'));
     const outPath = join(dir, 'status.json');
     try {
-        spawnSync(
+        const run = spawnSync(
             'pnpm',
             [
                 'exec',
@@ -154,12 +186,15 @@ function changesetStatus(baseRef) {
                 `--since=${baseRef}`,
                 `--output=${outPath}`,
             ],
-            { stdio: 'ignore' },
+            { encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'] },
         );
-        if (!existsSync(outPath)) {
-            return { changesets: [], releases: [] };
-        }
-        return JSON.parse(readFileSync(outPath, 'utf8'));
+        return parseStatusRun({
+            output: existsSync(outPath)
+                ? readFileSync(outPath, 'utf8')
+                : undefined,
+            exitCode: run.status,
+            stderr: run.stderr ?? '',
+        });
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }
@@ -171,20 +206,28 @@ function main() {
         console.error('usage: check-changesets.mjs <base-ref>');
         process.exit(2);
     }
-    const byPackage = changedPackages(
-        changedFiles(baseRef),
-        publishedPackages(),
-    );
+    let files;
+    try {
+        files = changedFiles(baseRef);
+    } catch (err) {
+        console.error(err.message);
+        process.exit(1);
+    }
+    const byPackage = changedPackages(files, publishedPackages());
     if (byPackage.size === 0) {
         console.log(
             'No published package changed, so no changeset is required.',
         );
         return;
     }
-    const missing = unreleasedPackages(
-        [...byPackage.keys()],
-        changesetStatus(baseRef),
-    );
+    let status;
+    try {
+        status = changesetStatus(baseRef);
+    } catch (err) {
+        console.error(err.message);
+        process.exit(1);
+    }
+    const missing = unreleasedPackages([...byPackage.keys()], status);
     if (missing.length === 0) {
         console.log(
             `Every changed package has a changeset: ${[...byPackage.keys()].join(', ')}.`,
