@@ -10,7 +10,7 @@
 // ESCALIER_STDLIB_DIR. The `build` script of packages/cli runs this script,
 // and the copy is gitignored.
 
-import { cpSync, existsSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, rmSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,14 +24,18 @@ export const STDLIB_SOURCE_DIR = join('internal', 'interop', 'data');
 // repo root.
 export const STDLIB_PACKAGE_DIR = join('packages', 'cli', 'data');
 
-// Replaces `destDir` with a copy of `srcDir`. Throws when `srcDir` has no
-// `std/` subdirectory, the one the binary requires of a stdlib directory.
+// Replaces `destDir` with a copy of the directories and `.esc` files under
+// `srcDir`. Throws when `srcDir` has no `std/` subdirectory, the one the
+// binary requires of a stdlib directory.
 export function copyStdlib(srcDir, destDir) {
     if (!existsSync(join(srcDir, 'std'))) {
         throw new Error(`${srcDir} has no std/ subdirectory`);
     }
     rmSync(destDir, { recursive: true, force: true });
-    cpSync(srcDir, destDir, { recursive: true });
+    cpSync(srcDir, destDir, {
+        recursive: true,
+        filter: (src) => src.endsWith('.esc') || statSync(src).isDirectory(),
+    });
 }
 
 function main() {

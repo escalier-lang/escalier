@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -148,6 +147,5 @@ describe('getStdlibDir', () => {
     test('names the data directory at the package root', () => {
         const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
         expect(getStdlibDir()).toBe(join(packageRoot, 'data'));
-        expect(existsSync(join(packageRoot, 'package.json'))).toBe(true);
     });
 });

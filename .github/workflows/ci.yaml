@@ -420,7 +420,8 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           if git diff --quiet "origin/${BASE_REF}...HEAD" -- \
-            packages/cli packages/platforms internal/stdlibdir \
+            packages/cli packages/platforms cmd/escalier \
+            internal/stdlibdir internal/interop/data \
             fixtures/npm_e2e fixtures/npm_e2e_type_error \
             tools/build-binaries.mjs tools/copy-stdlib.mjs \
             tools/e2e-cli.mjs tools/platforms.mjs .github/workflows/ci.yaml
@@ -436,12 +437,13 @@ jobs:
   # stdlib by walking up to internal/interop/data, so only an install
   # elsewhere catches a package that leaves out a file the binary reads.
   # It runs on every push to main, and on a pull request when
-  # e2e_cli_changes finds a change to the packed CLI.
+  # e2e_cli_changes finds a change to the packed CLI. It also runs when
+  # e2e_cli_changes fails, so a broken diff can't skip it.
   e2e_cli:
     needs: e2e_cli_changes
     if: >-
       !cancelled() &&
-      (github.event_name != 'pull_request' ||
+      (needs.e2e_cli_changes.result != 'success' ||
         needs.e2e_cli_changes.outputs.run == 'true')
     runs-on: ubuntu-latest
     steps:

@@ -122,14 +122,12 @@ describe('binaryEnv', () => {
             { ESCALIER_STDLIB_DIR: '/opt/stdlib' },
         ],
         [
-            'leaves the stdlib lookup to a binary from ESCALIER_BINARY_PATH',
-            { ESCALIER_BINARY_PATH: '/src/escalier/bin/escalier' },
-            { ESCALIER_BINARY_PATH: '/src/escalier/bin/escalier' },
-        ],
-        [
-            'adds ESCALIER_STDLIB_DIR when ESCALIER_BINARY_PATH is empty',
-            { ESCALIER_BINARY_PATH: '' },
-            { ESCALIER_BINARY_PATH: '', ESCALIER_STDLIB_DIR: '/cli/data' },
+            'adds ESCALIER_STDLIB_DIR for a binary from ESCALIER_BINARY_PATH',
+            { ESCALIER_BINARY_PATH: '/opt/escalier' },
+            {
+                ESCALIER_BINARY_PATH: '/opt/escalier',
+                ESCALIER_STDLIB_DIR: '/cli/data',
+            },
         ],
     ])('%s', (_name, env: Env, expected: Env) => {
         expect(binaryEnv(env, '/cli/data')).toEqual(expected);

@@ -130,23 +130,9 @@ function assertSameTree(expectedDir, actualDir) {
     }
 }
 
-function main() {
-    const target = TARGETS.find(
-        (t) => t.os === process.platform && t.cpu === process.arch,
-    );
-    if (target === undefined) {
-        throw new Error(
-            `no target in tools/platforms.mjs for ${process.platform}-${process.arch}`,
-        );
-    }
-
-    const tmp = mkdtempSync(join(tmpdir(), 'escalier-e2e-'));
-    const fromRoot = relative(ROOT, tmp);
-    if (!fromRoot.startsWith('..') && !isAbsolute(fromRoot)) {
-        throw new Error(`${tmp} is inside the checkout at ${ROOT}`);
-    }
-    console.log(`working in ${tmp}`);
-
+// Runs the checks in the temporary directory `tmp` with the binary for
+// `target`, an entry of TARGETS. Throws on the first check that fails.
+function runChecks(target, tmp) {
     console.log(`building the ${target.suffix} binary`);
     runExpecting(
         0,
@@ -225,8 +211,30 @@ function main() {
         broken.stderr,
     );
     console.log('escalier build broken reported the expected type error');
+}
 
-    rmSync(tmp, { recursive: true, force: true });
+function main() {
+    const target = TARGETS.find(
+        (t) => t.os === process.platform && t.cpu === process.arch,
+    );
+    if (target === undefined) {
+        throw new Error(
+            `no target in tools/platforms.mjs for ${process.platform}-${process.arch}`,
+        );
+    }
+
+    const tmp = mkdtempSync(join(tmpdir(), 'escalier-e2e-'));
+    const fromRoot = relative(ROOT, tmp);
+    if (!fromRoot.startsWith('..') && !isAbsolute(fromRoot)) {
+        throw new Error(`${tmp} is inside the checkout at ${ROOT}`);
+    }
+    console.log(`working in ${tmp}`);
+
+    try {
+        runChecks(target, tmp);
+    } finally {
+        rmSync(tmp, { recursive: true, force: true });
+    }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

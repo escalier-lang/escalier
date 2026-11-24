@@ -39,8 +39,9 @@ yourself, set `ESCALIER_BINARY_PATH` to its path.
 The binary reads the standard library's `.esc` files from disk.
 `@escalier/cli` ships them in its `data` directory, and the `escalier`
 command sets `ESCALIER_STDLIB_DIR` to that directory unless you have set it
-yourself. It leaves the variable unset when `ESCALIER_BINARY_PATH` names your
-own binary, which then finds the standard library on its own.
+yourself. It does so for a binary from `ESCALIER_BINARY_PATH` too, so set
+`ESCALIER_STDLIB_DIR` as well to run your binary with another copy of the
+standard library.
 
 ## JavaScript API
 
@@ -52,7 +53,10 @@ import { getBinaryPath, getStdlibDir } from '@escalier/cli';
 // library directory to run it with, for tools that spawn the compiler
 // themselves.
 spawnSync(getBinaryPath(), ['build', '.'], {
-    env: { ...process.env, ESCALIER_STDLIB_DIR: getStdlibDir() },
+    env: {
+        ...process.env,
+        ESCALIER_STDLIB_DIR: process.env.ESCALIER_STDLIB_DIR || getStdlibDir(),
+    },
     stdio: 'inherit',
 });
 ```

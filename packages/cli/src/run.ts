@@ -1,12 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { constants } from 'node:os';
 
-import {
-    BINARY_PATH_ENV,
-    STDLIB_DIR_ENV,
-    getBinaryPath,
-    getStdlibDir,
-} from './index.js';
+import { STDLIB_DIR_ENV, getBinaryPath, getStdlibDir } from './index.js';
 
 // The outcome of running the binary, in the shape `spawnSync` returns it.
 export interface SpawnOutcome {
@@ -45,9 +40,9 @@ const defaultDeps: RunDeps = {
 
 // Returns the environment variables to run the binary with. They are `env`
 // with ESCALIER_STDLIB_DIR set to `stdlibDir`, unless `env` already sets
-// ESCALIER_STDLIB_DIR or ESCALIER_BINARY_PATH to a non-empty value.
+// ESCALIER_STDLIB_DIR to a non-empty value.
 export function binaryEnv(env: Env, stdlibDir: string): Env {
-    if (env[STDLIB_DIR_ENV] || env[BINARY_PATH_ENV]) {
+    if (env[STDLIB_DIR_ENV]) {
         return env;
     }
     return { ...env, [STDLIB_DIR_ENV]: stdlibDir };
@@ -76,10 +71,8 @@ export function runEscalier(
 
     // The binary in the platform package finds the stdlib only through
     // ESCALIER_STDLIB_DIR or `--stdlib-dir`, so the variable points it at
-    // this package's copy. The variable also overrides every lookup the
-    // binary does on its own. A binary from ESCALIER_BINARY_PATH keeps those
-    // lookups, so one built in an escalier checkout reads that checkout's
-    // stdlib.
+    // this package's copy. A binary from ESCALIER_BINARY_PATH gets the same
+    // copy, since one built with `go install` has no stdlib next to it.
     const env = binaryEnv(deps.env, deps.getStdlibDir());
     const result = deps.spawn(binaryPath, args, env);
     if (result.error !== undefined) {

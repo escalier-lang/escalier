@@ -22,11 +22,12 @@ describe('copyStdlib', () => {
         rmSync(tmp, { recursive: true, force: true });
     });
 
-    test('copies the tree and removes files the source no longer has', () => {
+    test('copies the .esc files and removes files the source no longer has', () => {
         const src = join(tmp, 'src');
         const dest = join(tmp, 'dest');
         mkdirSync(join(src, 'std'), { recursive: true });
         writeFileSync(join(src, 'std', 'math.esc'), 'declare val PI: number\n');
+        writeFileSync(join(src, 'std', 'README.md'), '# std\n');
         mkdirSync(join(dest, 'web'), { recursive: true });
         writeFileSync(join(dest, 'web', 'stale.esc'), '');
 
@@ -36,6 +37,7 @@ describe('copyStdlib', () => {
             readFileSync(join(dest, 'std', 'math.esc'), 'utf8'),
             'declare val PI: number\n',
         );
+        assert.equal(existsSync(join(dest, 'std', 'README.md')), false);
         assert.equal(existsSync(join(dest, 'web', 'stale.esc')), false);
     });
 

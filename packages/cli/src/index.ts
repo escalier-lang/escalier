@@ -28,8 +28,7 @@ export const BINARY_PATH_ENV = 'ESCALIER_BINARY_PATH';
 export const STDLIB_DIR_ENV = 'ESCALIER_STDLIB_DIR';
 
 // Returns the directory that holds the stdlib `.esc` files this package
-// ships. The escalier binary reads them at run time and finds them only
-// when ESCALIER_STDLIB_DIR or its `--stdlib-dir` flag names the directory.
+// ships.
 export function getStdlibDir(): string {
     return join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 }
