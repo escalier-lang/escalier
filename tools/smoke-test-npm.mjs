@@ -25,7 +25,8 @@
 //   package,
 // - `escalier --version` prints the version in packages/cli/package.json,
 // - `escalier build` compiles a one-file project that imports from `std:`,
-//   and another that imports from `web:`.
+//   and another that imports from `web:`,
+// - Node runs each compiled project and prints the expected result.
 //
 // --target names the platform to install for, such as `linux-arm`. It
 // defaults to this machine's platform. A target that differs from this
@@ -53,7 +54,9 @@ const CLI_PACKAGE = '@escalier/cli';
 // The projects that the build checks compile, one per stdlib directory.
 // Each `source` imports from that directory, so the build only succeeds
 // when the installed @escalier/cli carries it. `output` is a call that the
-// compiled lib/index.js must contain.
+// compiled lib/index.js must contain. `run` is a module that imports the
+// compiled lib/index.js as `lib` and prints one line, and `stdout` is that
+// line.
 const FIXTURES = [
     {
         name: 'std',
@@ -66,6 +69,8 @@ const FIXTURES = [
             '',
         ].join('\n'),
         output: 'Math.sqrt(',
+        run: 'console.log(lib.hypot(3, 4));',
+        stdout: '5',
     },
     {
         name: 'web',
@@ -78,6 +83,8 @@ const FIXTURES = [
             '',
         ].join('\n'),
         output: 'crypto.randomUUID()',
+        run: 'console.log(/^[0-9a-f-]{36}$/.test(lib.newID()));',
+        stdout: 'true',
     },
 ];
 
@@ -274,6 +281,20 @@ function installedPlatformPackages(projectDir) {
             return false;
         }
     });
+}
+
+// Runs `code` as an ES module with this machine's Node, from `cwd`, and
+// returns its exit status and output the way run() does. The compiled
+// JavaScript doesn't depend on the target, so the host's Node runs it for an
+// emulated target too.
+function runModule(code, cwd) {
+    const result = spawnSync(
+        process.execPath,
+        ['--input-type=module', '--eval', code],
+        { cwd, env: childEnv(), encoding: 'utf8' },
+    );
+    const output = `${result.stdout}${result.stderr}`.trim();
+    return { ok: result.status === 0, output, stdout: result.stdout.trim() };
 }
 
 // Returns `{ binaryPath, stdlibDir }`, the paths that getBinaryPath() for
@@ -490,6 +511,23 @@ function main() {
                 if (!js.includes(output)) {
                     throw new Error(
                         `${name}/build/lib/index.js has no ${output}:\n${js}`,
+                    );
+                }
+            },
+        })),
+        ...FIXTURES.map(({ name, run: code, stdout }) => ({
+            name: `node runs the compiled ${name}: project`,
+            check: () => {
+                const result = runModule(
+                    `import * as lib from './${name}/build/lib/index.js';\n${code}`,
+                    projectDir,
+                );
+                if (!result.ok) {
+                    throw new Error(result.output);
+                }
+                if (result.stdout !== stdout) {
+                    throw new Error(
+                        `expected ${JSON.stringify(stdout)}, got ${JSON.stringify(result.stdout)}`,
                     );
                 }
             },
