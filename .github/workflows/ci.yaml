@@ -122,7 +122,8 @@ jobs:
       - name: Test the scripts
         run: |
           node --test .github/scripts/check-private-packages.test.mjs \
-            tools/gen-platform-packages.test.mjs
+            tools/gen-platform-packages.test.mjs \
+            tools/build-binaries.test.mjs
 
       - name: Check that unpublished packages are private
         run: node .github/scripts/check-private-packages.mjs
