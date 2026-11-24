@@ -3,31 +3,36 @@
 // Installs @escalier/cli from packed tarballs into a project outside the
 // checkout and checks that `escalier build` compiles it.
 //
-//     node tools/e2e-cli.mjs
+//     node tools/e2e-cli.mjs --tarballs <dir>
+//
+// <dir> holds the tarballs that `pnpm pack` writes for packages/cli and for
+// the platform package of this machine. To build them in a checkout:
+//
+//     node tools/build-binaries.mjs --only linux-x64
+//     (cd packages/cli && pnpm pack --pack-destination /tmp/escalier-e2e)
+//     (cd packages/platforms/cli-linux-x64 &&
+//         pnpm pack --pack-destination /tmp/escalier-e2e)
 //
 // Inside the checkout the binary finds the stdlib by walking up to
 // internal/interop/data, so only an install elsewhere shows whether the
 // published packages carry everything the binary reads. The script:
 //
-//  1. builds the binary for this machine with tools/build-binaries.mjs,
-//  2. packs @escalier/cli and the platform package with `pnpm pack`,
-//  3. copies fixtures/npm_e2e into a new temporary directory and installs
+//  1. copies fixtures/npm_e2e into a new temporary directory and installs
 //     both tarballs there with npm, using `overrides` to point the platform
 //     package at its tarball,
-//  4. runs `escalier --version` and `escalier build .` with
+//  2. runs `escalier --version` and `escalier build .` with
 //     ESCALIER_STDLIB_DIR and ESCALIER_BINARY_PATH unset, and compares the
 //     build/ directory with the one fixtures/npm_e2e commits,
-//  5. builds the source of fixtures/npm_e2e_type_error and compares its
+//  3. builds the source of fixtures/npm_e2e_type_error and compares its
 //     stderr with the fixture's error.txt.
 //
 // The fixture tests in cmd/escalier keep both fixtures' expected output in
-// step with the compiler. The script needs Go, pnpm and npm on PATH and the
-// workspace's dependencies installed.
+// step with the compiler. The script needs only Node and npm.
 
 import { spawnSync } from 'node:child_process';
 import {
     cpSync,
-    mkdirSync,
+    existsSync,
     mkdtempSync,
     readdirSync,
     readFileSync,
@@ -35,8 +40,9 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 
 import { TARGETS, platformPackageName } from './platforms.mjs';
 
@@ -84,22 +90,14 @@ function listFiles(dir) {
         .sort();
 }
 
-// Packs the workspace package in `packageDir` into `destDir` and returns
-// the tarball's path.
-function pack(packageDir, destDir) {
-    mkdirSync(destDir, { recursive: true });
-    runExpecting(0, 'pnpm', ['pack', '--pack-destination', destDir], {
-        cwd: packageDir,
-    });
-    const tarballs = readdirSync(destDir).filter((name) =>
-        name.endsWith('.tgz'),
-    );
-    if (tarballs.length !== 1) {
-        throw new Error(
-            `expected one tarball in ${destDir}, found ${tarballs.length}`,
-        );
+// Returns the path of `fileName` in `tarballDir`. Throws when it's missing.
+function findTarball(tarballDir, fileName) {
+    const path = join(tarballDir, fileName);
+    if (!existsSync(path)) {
+        const found = readdirSync(tarballDir).join(', ') || 'nothing';
+        throw new Error(`${tarballDir} has no ${fileName}, found: ${found}`);
     }
-    return join(destDir, tarballs[0]);
+    return path;
 }
 
 // Throws when `actual` differs from `expected`, naming `what` and showing
@@ -130,22 +128,19 @@ function assertSameTree(expectedDir, actualDir) {
     }
 }
 
-// Runs the checks in the temporary directory `tmp` with the binary for
-// `target`, an entry of TARGETS. Throws on the first check that fails.
-function runChecks(target, tmp) {
-    console.log(`building the ${target.suffix} binary`);
-    runExpecting(
-        0,
-        process.execPath,
-        [join(ROOT, 'tools', 'build-binaries.mjs'), '--only', target.suffix],
-        { cwd: ROOT, stdio: 'inherit' },
+// Runs the checks in the temporary directory `tmp` with the tarballs in
+// `tarballDir` and the platform package for `target`, an entry of TARGETS.
+// Throws on the first check that fails.
+function runChecks(target, tarballDir, tmp) {
+    const { version } = JSON.parse(
+        readFileSync(join(CLI_DIR, 'package.json'), 'utf8'),
     );
-
-    console.log('packing @escalier/cli and its platform package');
-    const cliTarball = pack(CLI_DIR, join(tmp, 'packs', 'cli'));
-    const platformTarball = pack(
-        join(ROOT, 'packages', 'platforms', `cli-${target.suffix}`),
-        join(tmp, 'packs', 'platform'),
+    // `pnpm pack` names a tarball after the package, with the scope's `@`
+    // dropped and its `/` turned into `-`.
+    const cliTarball = findTarball(tarballDir, `escalier-cli-${version}.tgz`);
+    const platformTarball = findTarball(
+        tarballDir,
+        `escalier-cli-${target.suffix}-${version}.tgz`,
     );
 
     // The copy leaves out build/, so the comparison below sees only what
@@ -176,9 +171,6 @@ function runChecks(target, tmp) {
     delete env.ESCALIER_BINARY_PATH;
     const npxOptions = { cwd: projectDir, env };
 
-    const { version } = JSON.parse(
-        readFileSync(join(CLI_DIR, 'package.json'), 'utf8'),
-    );
     const versionResult = runExpecting(
         0,
         'npx',
@@ -214,6 +206,15 @@ function runChecks(target, tmp) {
 }
 
 function main() {
+    const { values } = parseArgs({
+        options: { tarballs: { type: 'string' } },
+        strict: true,
+        allowPositionals: false,
+    });
+    if (values.tarballs === undefined) {
+        throw new Error('usage: node tools/e2e-cli.mjs --tarballs <dir>');
+    }
+    const tarballDir = resolve(values.tarballs);
     const target = TARGETS.find(
         (t) => t.os === process.platform && t.cpu === process.arch,
     );
@@ -231,7 +232,7 @@ function main() {
     console.log(`working in ${tmp}`);
 
     try {
-        runChecks(target, tmp);
+        runChecks(target, tarballDir, tmp);
     } finally {
         rmSync(tmp, { recursive: true, force: true });
     }
