@@ -160,6 +160,24 @@ describe('projectManifest', () => {
             },
         });
     });
+
+    test('depends on each local package through a symlink', () => {
+        const localPackages = { 'smoke-std': './std' };
+        assert.deepEqual(
+            projectManifest(paths, 'npm', localPackages).dependencies,
+            {
+                '@escalier/cli': 'file:./tarballs/escalier-cli-0.0.1.tgz',
+                'smoke-std': 'file:./std',
+            },
+        );
+        assert.deepEqual(
+            projectManifest(paths, 'pnpm', localPackages).dependencies,
+            {
+                '@escalier/cli': 'file:./tarballs/escalier-cli-0.0.1.tgz',
+                'smoke-std': 'link:./std',
+            },
+        );
+    });
 });
 
 describe('installCommand', () => {

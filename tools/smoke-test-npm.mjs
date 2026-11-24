@@ -54,9 +54,10 @@ const CLI_PACKAGE = '@escalier/cli';
 // The projects that the build checks compile, one per stdlib directory.
 // Each `source` imports from that directory, so the build only succeeds
 // when the installed @escalier/cli carries it. `output` is a call that the
-// compiled lib/index.js must contain. `run` is a module that imports the
-// compiled lib/index.js as `lib` and prints one line, and `stdout` is that
-// line.
+// compiled lib/index.js must contain. Each project is the package
+// `smoke-<name>`, whose `main` is the compiled lib/index.js. `run` is a
+// module that imports that package as `lib` and prints one line, and
+// `stdout` is that line.
 const FIXTURES = [
     {
         name: 'std',
@@ -172,8 +173,11 @@ export function findTarballs(files) {
 // Returns the package.json of the project that installs @escalier/cli.
 // `paths` maps each package name to the path of its tarball or extracted
 // package, relative to the project. npm reads the top-level `overrides` and
-// pnpm reads `pnpm.overrides`.
-export function projectManifest(paths, packageManager) {
+// pnpm reads `pnpm.overrides`. `localPackages` maps the name of each
+// package in a subdirectory of the project to that directory, and the
+// project depends on each one through a symlink: `file:` for npm and
+// `link:` for pnpm.
+export function projectManifest(paths, packageManager, localPackages = {}) {
     const overrides = {};
     for (const [name, path] of Object.entries(paths)) {
         if (name !== CLI_PACKAGE) {
@@ -186,6 +190,12 @@ export function projectManifest(paths, packageManager) {
         version: '0.0.0',
         dependencies: { [CLI_PACKAGE]: `file:${paths[CLI_PACKAGE]}` },
     };
+    // pnpm copies a `file:` directory into node_modules at install time,
+    // before `escalier build` writes build/, so it needs `link:`.
+    const protocol = packageManager === 'pnpm' ? 'link:' : 'file:';
+    for (const [name, dir] of Object.entries(localPackages)) {
+        manifest.dependencies[name] = `${protocol}${dir}`;
+    }
     if (packageManager === 'pnpm') {
         manifest.pnpm = { overrides };
     } else {
@@ -413,16 +423,26 @@ function main() {
             paths[name] = `./${dir}`;
         }
     }
+    const localPackages = Object.fromEntries(
+        FIXTURES.map(({ name }) => [`smoke-${name}`, `./${name}`]),
+    );
     fs.writeFileSync(
         join(projectDir, 'package.json'),
-        `${JSON.stringify(projectManifest(paths, packageManager), null, 2)}\n`,
+        `${JSON.stringify(projectManifest(paths, packageManager, localPackages), null, 2)}\n`,
     );
     for (const { name, source } of FIXTURES) {
         const fixtureDir = join(projectDir, name);
         fs.mkdirSync(join(fixtureDir, 'lib'), { recursive: true });
+        const manifest = {
+            name: `smoke-${name}`,
+            private: true,
+            version: '0.0.0',
+            type: 'module',
+            main: 'build/lib/index.js',
+        };
         fs.writeFileSync(
             join(fixtureDir, 'package.json'),
-            `${JSON.stringify({ name, private: true, version: '0.0.0', type: 'module' }, null, 2)}\n`,
+            `${JSON.stringify(manifest, null, 2)}\n`,
         );
         fs.writeFileSync(join(fixtureDir, 'lib', 'index.esc'), source);
     }
@@ -519,7 +539,7 @@ function main() {
             name: `node runs the compiled ${name}: project`,
             check: () => {
                 const result = runModule(
-                    `import * as lib from './${name}/build/lib/index.js';\n${code}`,
+                    `import * as lib from 'smoke-${name}';\n${code}`,
                     projectDir,
                 );
                 if (!result.ok) {
