@@ -1,63 +1,50 @@
 #!/usr/bin/env node
 //
-// Cross-compiles the escalier and lsp-server binaries for every target in
-// tools/platforms.mjs.
+// Cross-compiles the escalier binary for every target in tools/platforms.mjs.
 //
-//     node tools/build-binaries.mjs [--only <suffix>]... [--only-binary <name>]...
+//     node tools/build-binaries.mjs [--only <suffix>]...
 //
-// The escalier binary goes into packages/platforms/cli-<suffix>/bin/, where
-// the @escalier/cli-<suffix> package publishes it. The lsp-server binary
-// goes into bin/<suffix>/, the directory the per-platform VS Code extension
-// builds take it from. Both paths are gitignored.
+// Each binary goes into packages/platforms/cli-<suffix>/bin/, where the
+// @escalier/cli-<suffix> package publishes it. That path is gitignored.
 //
 // Every build sets CGO_ENABLED=0, so a single Linux machine can build all
 // targets and the Linux binaries are statically linked. -ldflags sets
 // buildinfo.Version to the version in packages/cli/package.json, which is
-// what `--version` prints.
+// what `escalier --version` prints.
 //
 // --only limits the build to the named target suffixes, such as
-// `linux-x64`, and --only-binary to `escalier` or `lsp-server`. Each flag can
-// be repeated.
+// `linux-x64`. It can be repeated.
 
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { TARGETS, executableName } from './platforms.mjs';
+import { TARGETS, binaryName } from './platforms.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+// The Go package that builds the escalier binary.
+export const ESCALIER_PKG = './cmd/escalier';
 
 // The Go import path of the variable that `--version` prints.
 export const VERSION_VARIABLE =
     'github.com/escalier-lang/escalier/internal/buildinfo.Version';
 
-// The binaries to build. `outDir` returns the directory, relative to the
-// repo root, that receives the binary for `target`.
-export const BINARIES = [
-    {
-        name: 'escalier',
-        pkg: './cmd/escalier',
-        outDir: (target) =>
-            join('packages', 'platforms', `cli-${target.suffix}`, 'bin'),
-    },
-    {
-        name: 'lsp-server',
-        pkg: './cmd/lsp-server',
-        outDir: (target) => join('bin', target.suffix),
-    },
-];
+// Returns the directory, relative to the repo root, that receives the
+// binary for `target`.
+export function binaryDir(target) {
+    return join('packages', 'platforms', `cli-${target.suffix}`, 'bin');
+}
 
-// Returns `{ only, onlyBinary }`, the target suffixes and binary names that
-// `argv` selects. An empty list means every target or every binary. Throws
-// on an unknown flag, a missing value, or a name that isn't in TARGETS or
-// BINARIES.
+// Returns the target suffixes that `argv` selects with --only. An empty
+// list means every target. Throws on an unknown flag, a missing value, or a
+// suffix that isn't in TARGETS.
 export function parseArgs(argv) {
     const only = [];
-    const onlyBinary = [];
     for (let i = 0; i < argv.length; i++) {
         const flag = argv[i];
-        if (flag !== '--only' && flag !== '--only-binary') {
+        if (flag !== '--only') {
             throw new Error(`unknown argument: ${flag}`);
         }
         const value = argv[i + 1];
@@ -65,42 +52,22 @@ export function parseArgs(argv) {
             throw new Error(`${flag} needs a value`);
         }
         i++;
-        if (flag === '--only') {
-            if (!TARGETS.some((target) => target.suffix === value)) {
-                const suffixes = TARGETS.map((target) => target.suffix);
-                throw new Error(
-                    `unknown target ${value}, expected one of: ${suffixes.join(', ')}`,
-                );
-            }
-            only.push(value);
-        } else {
-            if (!BINARIES.some((binary) => binary.name === value)) {
-                const names = BINARIES.map((binary) => binary.name);
-                throw new Error(
-                    `unknown binary ${value}, expected one of: ${names.join(', ')}`,
-                );
-            }
-            onlyBinary.push(value);
+        if (!TARGETS.some((target) => target.suffix === value)) {
+            const suffixes = TARGETS.map((target) => target.suffix);
+            throw new Error(
+                `unknown target ${value}, expected one of: ${suffixes.join(', ')}`,
+            );
         }
+        only.push(value);
     }
-    return { only, onlyBinary };
+    return only;
 }
 
-// Returns one `{ target, binary }` pair for each build that `selection`, the
-// result of parseArgs, asks for, in TARGETS order.
-export function selectBuilds(selection) {
-    const targets = TARGETS.filter(
-        (target) =>
-            selection.only.length === 0 ||
-            selection.only.includes(target.suffix),
-    );
-    const binaries = BINARIES.filter(
-        (binary) =>
-            selection.onlyBinary.length === 0 ||
-            selection.onlyBinary.includes(binary.name),
-    );
-    return targets.flatMap((target) =>
-        binaries.map((binary) => ({ target, binary })),
+// Returns the targets in TARGETS order that `only`, the result of parseArgs,
+// selects.
+export function selectTargets(only) {
+    return TARGETS.filter(
+        (target) => only.length === 0 || only.includes(target.suffix),
     );
 }
 
@@ -123,9 +90,9 @@ export function goEnv(target) {
     return env;
 }
 
-// Returns the `go` arguments that build `binary` into `outPath` with its
-// version set to `version`.
-export function goBuildArgs(binary, outPath, version) {
+// Returns the `go` arguments that build the escalier binary into `outPath`
+// with its version set to `version`.
+export function goBuildArgs(outPath, version) {
     return [
         'build',
         '-trimpath',
@@ -133,14 +100,14 @@ export function goBuildArgs(binary, outPath, version) {
         `-s -w -X ${VERSION_VARIABLE}=${version}`,
         '-o',
         outPath,
-        binary.pkg,
+        ESCALIER_PKG,
     ];
 }
 
 function main() {
-    let selection;
+    let only;
     try {
-        selection = parseArgs(process.argv.slice(2));
+        only = parseArgs(process.argv.slice(2));
     } catch (err) {
         console.error(err.message);
         process.exit(2);
@@ -149,20 +116,16 @@ function main() {
         readFileSync(join(ROOT, 'packages', 'cli', 'package.json'), 'utf8'),
     );
 
-    for (const { target, binary } of selectBuilds(selection)) {
-        const outDir = join(ROOT, binary.outDir(target));
-        const outPath = join(outDir, executableName(binary.name, target));
+    for (const target of selectTargets(only)) {
+        const outDir = join(ROOT, binaryDir(target));
+        const outPath = join(outDir, binaryName(target));
         mkdirSync(outDir, { recursive: true });
         console.log(`building ${relative(ROOT, outPath)}`);
-        const result = spawnSync(
-            'go',
-            goBuildArgs(binary, outPath, cli.version),
-            {
-                cwd: ROOT,
-                env: { ...process.env, ...goEnv(target) },
-                stdio: 'inherit',
-            },
-        );
+        const result = spawnSync('go', goBuildArgs(outPath, cli.version), {
+            cwd: ROOT,
+            env: { ...process.env, ...goEnv(target) },
+            stdio: 'inherit',
+        });
         if (result.error !== undefined) {
             console.error(`failed to run go: ${result.error.message}`);
             process.exit(1);
@@ -173,7 +136,7 @@ function main() {
                     ? `exit status ${result.status}`
                     : `signal ${result.signal}`;
             console.error(
-                `go build failed for ${binary.name} on ${target.suffix} (${cause})`,
+                `go build failed for escalier on ${target.suffix} (${cause})`,
             );
             process.exit(result.status ?? 1);
         }

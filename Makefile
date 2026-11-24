@@ -18,7 +18,7 @@ escalier-wasm:
 all-targets: lsp-server lsp-server-wasm escalier escalier-wasm
 
 # Cross-compiles escalier into the @escalier/cli-<platform>-<arch> packages
-# and lsp-server into bin/<platform>-<arch>/ for every published target.
+# for every published target.
 npm-binaries:
 	node tools/build-binaries.mjs
 

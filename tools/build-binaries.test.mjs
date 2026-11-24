@@ -3,49 +3,36 @@ import { join } from 'node:path';
 import { describe, test } from 'node:test';
 
 import {
-    BINARIES,
+    binaryDir,
     goBuildArgs,
     goEnv,
     parseArgs,
-    selectBuilds,
+    selectTargets,
 } from './build-binaries.mjs';
 import { TARGETS } from './platforms.mjs';
 
-const escalier = BINARIES.find((binary) => binary.name === 'escalier');
-const lspServer = BINARIES.find((binary) => binary.name === 'lsp-server');
 const linuxArm = TARGETS.find((target) => target.suffix === 'linux-arm');
 const winX64 = TARGETS.find((target) => target.suffix === 'win32-x64');
 
 describe('parseArgs', () => {
-    test('selects everything with no arguments', () => {
-        assert.deepEqual(parseArgs([]), { only: [], onlyBinary: [] });
+    test('selects every target with no arguments', () => {
+        assert.deepEqual(parseArgs([]), []);
     });
 
-    test('collects repeated --only and --only-binary values', () => {
+    test('collects repeated --only values', () => {
         assert.deepEqual(
-            parseArgs([
-                '--only',
-                'linux-x64',
-                '--only-binary',
-                'escalier',
-                '--only',
-                'darwin-arm64',
-            ]),
-            { only: ['linux-x64', 'darwin-arm64'], onlyBinary: ['escalier'] },
+            parseArgs(['--only', 'linux-x64', '--only', 'darwin-arm64']),
+            ['linux-x64', 'darwin-arm64'],
         );
     });
 
     const errors = [
         [['--all'], 'unknown argument: --all'],
         [['--only'], '--only needs a value'],
-        [['--only', '--only-binary', 'escalier'], '--only needs a value'],
+        [['--only', '--only', 'linux-x64'], '--only needs a value'],
         [
             ['--only', 'freebsd-x64'],
             'unknown target freebsd-x64, expected one of: darwin-arm64, darwin-x64, linux-x64, linux-arm64, linux-arm, win32-x64, win32-arm64',
-        ],
-        [
-            ['--only-binary', 'formatter'],
-            'unknown binary formatter, expected one of: escalier, lsp-server',
         ],
     ];
     for (const [argv, message] of errors) {
@@ -55,33 +42,27 @@ describe('parseArgs', () => {
     }
 });
 
-describe('selectBuilds', () => {
-    test('builds both binaries for every target by default', () => {
-        const builds = selectBuilds({ only: [], onlyBinary: [] });
-        assert.equal(builds.length, TARGETS.length * BINARIES.length);
+describe('selectTargets', () => {
+    test('builds every target by default', () => {
+        assert.deepEqual(selectTargets([]), TARGETS);
     });
 
-    test('narrows to the selected targets and binaries', () => {
-        const builds = selectBuilds({
-            only: ['win32-x64', 'linux-arm'],
-            onlyBinary: ['lsp-server'],
-        });
+    test('narrows to the selected targets in TARGETS order', () => {
         assert.deepEqual(
-            builds.map(
-                ({ target, binary }) => `${target.suffix}/${binary.name}`,
+            selectTargets(['win32-x64', 'linux-arm']).map(
+                (target) => target.suffix,
             ),
-            ['linux-arm/lsp-server', 'win32-x64/lsp-server'],
+            ['linux-arm', 'win32-x64'],
         );
     });
 });
 
-describe('BINARIES', () => {
-    test('puts escalier in its platform package and lsp-server under bin/', () => {
+describe('binaryDir', () => {
+    test('puts the binary in its platform package', () => {
         assert.equal(
-            escalier.outDir(winX64),
+            binaryDir(winX64),
             join('packages', 'platforms', 'cli-win32-x64', 'bin'),
         );
-        assert.equal(lspServer.outDir(winX64), join('bin', 'win32-x64'));
     });
 });
 
@@ -109,7 +90,7 @@ describe('goEnv', () => {
 
 describe('goBuildArgs', () => {
     test('strips the binary and sets buildinfo.Version', () => {
-        assert.deepEqual(goBuildArgs(escalier, '/out/escalier', '1.2.3'), [
+        assert.deepEqual(goBuildArgs('/out/escalier', '1.2.3'), [
             'build',
             '-trimpath',
             '-ldflags',
