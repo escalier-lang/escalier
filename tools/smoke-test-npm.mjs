@@ -24,7 +24,8 @@
 // - getBinaryPath() from @escalier/cli returns an executable file in that
 //   package,
 // - `escalier --version` prints the version in packages/cli/package.json,
-// - `escalier build` compiles a one-file project.
+// - `escalier build` compiles a one-file project that imports from `std:`,
+//   and another that imports from `web:`.
 //
 // --target names the platform to install for, such as `linux-arm`. It
 // defaults to this machine's platform. A target that differs from this
@@ -49,13 +50,36 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const CLI_PACKAGE = '@escalier/cli';
 
-// The source of the project that the build check compiles.
-const FIXTURE_SOURCE = [
-    'export fn add(a: number, b: number) -> number {',
-    '    return a + b',
-    '}',
-    '',
-].join('\n');
+// The projects that the build checks compile, one per stdlib directory.
+// Each `source` imports from that directory, so the build only succeeds
+// when the installed @escalier/cli carries it. `output` is a call that the
+// compiled lib/index.js must contain.
+const FIXTURES = [
+    {
+        name: 'std',
+        source: [
+            'import "std:math"',
+            '',
+            'export fn hypot(a: number, b: number) -> number {',
+            '    return math.sqrt(a * a + b * b)',
+            '}',
+            '',
+        ].join('\n'),
+        output: 'Math.sqrt(',
+    },
+    {
+        name: 'web',
+        source: [
+            'import "web:crypto"',
+            '',
+            'export fn newID() -> string {',
+            '    return crypto.randomUUID()',
+            '}',
+            '',
+        ].join('\n'),
+        output: 'crypto.randomUUID()',
+    },
+];
 
 // Returns the options that `argv` selects. `hostTarget` is the suffix of
 // this machine's platform, which --target defaults to. Throws on an
@@ -372,13 +396,15 @@ function main() {
         join(projectDir, 'package.json'),
         `${JSON.stringify(projectManifest(paths, packageManager), null, 2)}\n`,
     );
-    const fixtureDir = join(projectDir, 'fixture');
-    fs.mkdirSync(join(fixtureDir, 'lib'), { recursive: true });
-    fs.writeFileSync(
-        join(fixtureDir, 'package.json'),
-        `${JSON.stringify({ name: 'fixture', private: true, version: '0.0.0', type: 'module' }, null, 2)}\n`,
-    );
-    fs.writeFileSync(join(fixtureDir, 'lib', 'index.esc'), FIXTURE_SOURCE);
+    for (const { name, source } of FIXTURES) {
+        const fixtureDir = join(projectDir, name);
+        fs.mkdirSync(join(fixtureDir, 'lib'), { recursive: true });
+        fs.writeFileSync(
+            join(fixtureDir, 'package.json'),
+            `${JSON.stringify({ name, private: true, version: '0.0.0', type: 'module' }, null, 2)}\n`,
+        );
+        fs.writeFileSync(join(fixtureDir, 'lib', 'index.esc'), source);
+    }
 
     const [installer, installArgs] = installCommand(
         packageManager,
@@ -441,21 +467,33 @@ function main() {
                 }
             },
         },
-        {
-            name: 'escalier build compiles the fixture',
+        ...FIXTURES.map(({ name, output }) => ({
+            name: `escalier build compiles a ${name}: import`,
             check: () => {
-                const result = runEscalier(['build', 'fixture']);
+                const result = runEscalier(['build', name]);
                 if (!result.ok) {
                     throw new Error(result.output);
                 }
-                const outPath = join(fixtureDir, 'build', 'lib', 'index.js');
+                const outPath = join(
+                    projectDir,
+                    name,
+                    'build',
+                    'lib',
+                    'index.js',
+                );
                 if (!fs.existsSync(outPath)) {
                     throw new Error(
-                        `fixture/build/lib/index.js is missing:\n${result.output}`,
+                        `${name}/build/lib/index.js is missing:\n${result.output}`,
+                    );
+                }
+                const js = fs.readFileSync(outPath, 'utf8');
+                if (!js.includes(output)) {
+                    throw new Error(
+                        `${name}/build/lib/index.js has no ${output}:\n${js}`,
                     );
                 }
             },
-        },
+        })),
     ];
 
     let failed = 0;
