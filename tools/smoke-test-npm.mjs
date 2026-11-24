@@ -29,7 +29,7 @@
 // --target names the platform to install for, such as `linux-arm`. It
 // defaults to this machine's platform. A target that differs from this
 // machine needs --emulator, the command that runs the target's binary,
-// such as `qemu-arm-static`. Node on this machine can't run the wrapper for
+// such as `qemu-arm`. Node on this machine can't run the wrapper for
 // another platform, so for such a target the script runs the binary that
 // getBinaryPath() returns under the emulator instead of running
 // `npx escalier`. Only npm can install for another platform, through its
@@ -217,13 +217,17 @@ function childEnv() {
     return env;
 }
 
-// Runs `command` with `args` in `cwd` and returns its exit status and
-// output. npm, npx and pnpm are `.cmd` scripts on Windows, which Node only
+// Runs `command` with `args` in `cwd`, with `extraEnv` added to
+// childEnv(), and returns its exit status and output. npm, npx and pnpm are `.cmd` scripts on Windows, which Node only
 // runs through a shell. Node deprecates passing an argument array along
 // with `shell`, so on Windows the call joins them into one command line.
 // The joined arguments are unquoted, so none of them may contain a space.
-function run(command, args, cwd) {
-    const options = { cwd, env: childEnv(), encoding: 'utf8' };
+function run(command, args, cwd, extraEnv = {}) {
+    const options = {
+        cwd,
+        env: { ...childEnv(), ...extraEnv },
+        encoding: 'utf8',
+    };
     const result =
         process.platform === 'win32'
             ? spawnSync([command, ...args].join(' '), {
@@ -407,7 +411,13 @@ function main() {
         if (binaryPath === undefined) {
             return { ok: false, output: 'getBinaryPath() returned no path' };
         }
-        return run(emulator, [binaryPath, ...args], projectDir);
+        // The `escalier` command would point the binary at the stdlib in
+        // the installed @escalier/cli. Running the binary directly skips
+        // the command, so the call sets the same directory itself.
+        const stdlibDir = join(projectDir, 'node_modules', CLI_PACKAGE, 'data');
+        return run(emulator, [binaryPath, ...args], projectDir, {
+            ESCALIER_STDLIB_DIR: stdlibDir,
+        });
     };
 
     const checks = [
