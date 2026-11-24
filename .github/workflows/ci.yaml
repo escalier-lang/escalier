@@ -588,8 +588,8 @@ jobs:
             target: win32-arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      # The smoke test script, the version it expects and the stdlib that
-      # `escalier build` reads come from the checkout.
+      # The smoke test script and the version it expects come from the
+      # checkout.
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:

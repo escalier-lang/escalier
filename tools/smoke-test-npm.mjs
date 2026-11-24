@@ -206,15 +206,14 @@ export function execCommand(packageManager, args) {
 }
 
 // The environment for every child process. ESCALIER_BINARY_PATH would make
-// getBinaryPath() return its value instead of the installed binary, so the
-// checks run without it.
+// getBinaryPath() return its value instead of the installed binary, and
+// ESCALIER_STDLIB_DIR would stop the `escalier` command from pointing the
+// binary at the stdlib that @escalier/cli ships, so the checks run without
+// either.
 function childEnv() {
     const env = { ...process.env };
     delete env.ESCALIER_BINARY_PATH;
-    // `escalier build` needs the stdlib `.esc` files, which @escalier/cli
-    // doesn't ship yet, so the build check reads them from this checkout.
-    // Drop this once @escalier/cli ships the stdlib.
-    env.ESCALIER_STDLIB_DIR ??= join(ROOT, 'internal', 'interop', 'data');
+    delete env.ESCALIER_STDLIB_DIR;
     return env;
 }
 
