@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["import \"std:math\"\n\nexport val n: string = math.sqrt(2)\n"],"names":[],"mappings":"aAEW,AAAA,IAAY,AAAA,AAAA,KAAA,KAAU"}

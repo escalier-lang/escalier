@@ -125,6 +125,7 @@ jobs:
           node --test .github/scripts/check-private-packages.test.mjs \
             tools/gen-platform-packages.test.mjs \
             tools/build-binaries.test.mjs \
+            tools/copy-stdlib.test.mjs \
             tools/smoke-test-npm.test.mjs
 
       - name: Check that unpublished packages are private
@@ -395,6 +396,85 @@ jobs:
       - name: Check the published package
         working-directory: ./packages/cli
         run: pnpm lint:package
+
+  # Decides whether e2e_cli runs on a pull request. A workflow-level
+  # `paths` filter would skip every job, so this job diffs the PR against
+  # its base instead. It lists the files that change what @escalier/cli
+  # packs or how the binary finds the stdlib.
+  e2e_cli_changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.diff.outputs.run }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The base ref reaches the shell through the environment, so a branch
+      # name that contains shell syntax is passed as data and never runs.
+      - name: Check for changes to the packed CLI
+        id: diff
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if git diff --quiet "origin/${BASE_REF}...HEAD" -- \
+            packages/cli packages/platforms cmd/escalier \
+            internal/stdlibdir internal/interop/data \
+            fixtures/npm_e2e fixtures/npm_e2e_type_error \
+            tools/build-binaries.mjs tools/copy-stdlib.mjs \
+            tools/e2e-cli.mjs tools/platforms.mjs .github/workflows/ci.yaml
+          then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Installs @escalier/cli and @escalier/cli-linux-x64 from packed tarballs
+  # into a project outside the checkout, then builds the project with
+  # ESCALIER_STDLIB_DIR unset. Inside the checkout the binary finds the
+  # stdlib by walking up to internal/interop/data, so only an install
+  # elsewhere catches a package that leaves out a file the binary reads.
+  # It runs on every push to main, and on a pull request when
+  # e2e_cli_changes finds a change to the packed CLI. It also runs when
+  # e2e_cli_changes fails, so a broken diff can't skip it.
+  e2e_cli:
+    needs: e2e_cli_changes
+    if: >-
+      !cancelled() &&
+      (needs.e2e_cli_changes.result != 'success' ||
+        needs.e2e_cli_changes.outputs.run == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The script builds the linux-x64 binary with tools/build-binaries.mjs,
+      # packs both packages and installs the tarballs with npm.
+      - name: Install the packed CLI and build a project with it
+        run: node tools/e2e-cli.mjs
 
   build_runtime:
     runs-on: ubuntu-latest
