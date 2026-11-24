@@ -239,6 +239,10 @@ importers:
 
   fixtures/not_enough_elements: {}
 
+  fixtures/npm_e2e: {}
+
+  fixtures/npm_e2e_type_error: {}
+
   fixtures/objects: {}
 
   fixtures/objects_with_computed_members: {}
