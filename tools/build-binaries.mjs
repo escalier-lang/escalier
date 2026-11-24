@@ -19,6 +19,7 @@ import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs as parseArgv } from 'node:util';
 
 import { TARGETS, binaryName } from './platforms.mjs';
 
@@ -38,27 +39,23 @@ export function binaryDir(target) {
 }
 
 // Returns the target suffixes that `argv` selects with --only. An empty
-// list means every target. Throws on an unknown flag, a missing value, or a
-// suffix that isn't in TARGETS.
+// list means every target. Throws on an unknown flag, a missing value, a
+// positional argument, or a suffix that isn't in TARGETS.
 export function parseArgs(argv) {
-    const only = [];
-    for (let i = 0; i < argv.length; i++) {
-        const flag = argv[i];
-        if (flag !== '--only') {
-            throw new Error(`unknown argument: ${flag}`);
-        }
-        const value = argv[i + 1];
-        if (value === undefined || value.startsWith('--')) {
-            throw new Error(`${flag} needs a value`);
-        }
-        i++;
-        if (!TARGETS.some((target) => target.suffix === value)) {
-            const suffixes = TARGETS.map((target) => target.suffix);
+    const { values } = parseArgv({
+        args: argv,
+        options: { only: { type: 'string', multiple: true } },
+        strict: true,
+        allowPositionals: false,
+    });
+    const only = values.only ?? [];
+    const suffixes = TARGETS.map((target) => target.suffix);
+    for (const value of only) {
+        if (!suffixes.includes(value)) {
             throw new Error(
                 `unknown target ${value}, expected one of: ${suffixes.join(', ')}`,
             );
         }
-        only.push(value);
     }
     return only;
 }

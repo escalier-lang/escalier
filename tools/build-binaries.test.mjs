@@ -26,10 +26,21 @@ describe('parseArgs', () => {
         );
     });
 
+    test('accepts --only=<suffix>', () => {
+        assert.deepEqual(parseArgs(['--only=linux-x64']), ['linux-x64']);
+    });
+
     const errors = [
-        [['--all'], 'unknown argument: --all'],
-        [['--only'], '--only needs a value'],
-        [['--only', '--only', 'linux-x64'], '--only needs a value'],
+        [['--all'], "Unknown option '--all'"],
+        [['--only'], "Option '--only <value>' argument missing"],
+        [
+            ['--only', '--only', 'linux-x64'],
+            "Option '--only' argument is ambiguous.\nDid you forget to specify the option argument for '--only'?\nTo specify an option argument starting with a dash use '--only=-XYZ'.",
+        ],
+        [
+            ['linux-x64'],
+            "Unexpected argument 'linux-x64'. This command does not take positional arguments",
+        ],
         [
             ['--only', 'freebsd-x64'],
             'unknown target freebsd-x64, expected one of: darwin-arm64, darwin-x64, linux-x64, linux-arm64, linux-arm, win32-x64, win32-arm64',
