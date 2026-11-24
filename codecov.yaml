@@ -16,6 +16,7 @@ flag_management:
 
 ignore:
   - "cmd/escalier/main.go"
+  - "packages/cli/src/bin.ts"
   - "cmd/lsp-server/*.go"
   - "internal/ast/**"
   - "internal/codegen/ast.go"

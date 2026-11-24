@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { describe, test } from 'node:test';
 
 import {
+    cliOptionalDependencies,
     platformManifest,
     platformReadme,
     writePlatformPackages,
@@ -109,5 +110,19 @@ describe('writePlatformPackages', () => {
             'package.json',
         ]);
         assert.ok(existsSync(join(dir, 'cli-linux-arm', 'bin', 'escalier')));
+    });
+});
+
+describe('cliOptionalDependencies', () => {
+    test('depends on every platform package, sorted by name', () => {
+        assert.deepEqual(cliOptionalDependencies(TARGETS), {
+            '@escalier/cli-darwin-arm64': 'workspace:*',
+            '@escalier/cli-darwin-x64': 'workspace:*',
+            '@escalier/cli-linux-arm': 'workspace:*',
+            '@escalier/cli-linux-arm64': 'workspace:*',
+            '@escalier/cli-linux-x64': 'workspace:*',
+            '@escalier/cli-win32-arm64': 'workspace:*',
+            '@escalier/cli-win32-x64': 'workspace:*',
+        });
     });
 });

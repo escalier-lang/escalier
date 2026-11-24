@@ -95,7 +95,8 @@ jobs:
   # `changeset publish` publishes every workspace package that isn't
   # private, so the job fails when a package outside the publish list in
   # check-private-packages.mjs lacks "private": true. It also fails when
-  # the committed packages under packages/platforms differ from what
+  # the committed packages under packages/platforms, or the
+  # optionalDependencies of packages/cli/package.json, differ from what
   # tools/gen-platform-packages.mjs writes from tools/platforms.mjs.
   check_npm_packages:
     runs-on: ubuntu-latest
@@ -133,7 +134,7 @@ jobs:
       - name: Check the platform packages against the target list
         run: |
           node tools/gen-platform-packages.mjs
-          changes=$(git status --porcelain -- packages/platforms)
+          changes=$(git status --porcelain -- packages/platforms packages/cli/package.json)
           if [ -n "$changes" ]; then
             echo "$changes"
             echo "Run node tools/gen-platform-packages.mjs and commit the result."
@@ -361,19 +362,11 @@ jobs:
 
   build_cli:
     runs-on: ubuntu-latest
-    needs: build_escalier_wasm
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          fetch-depth: 0
           persist-credentials: false
-
-      - name: Download escalier.wasm artifact
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: escalier.wasm
-          path: ./bin
 
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
@@ -383,14 +376,25 @@ jobs:
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '24'
-      
+
       - name: Install root dependencies
         run: pnpm install
 
       - name: Build
         working-directory: ./packages/cli
         run: pnpm build
- 
+
+      - name: Run Tests
+        working-directory: ./packages/cli
+        run: pnpm test
+
+      # publint checks the package.json fields and the packed file list.
+      # attw resolves the types for ESM consumers, the only kind this
+      # ESM-only package supports.
+      - name: Check the published package
+        working-directory: ./packages/cli
+        run: pnpm lint:package
+
   build_runtime:
     runs-on: ubuntu-latest
     steps:
