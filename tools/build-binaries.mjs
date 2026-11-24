@@ -69,16 +69,24 @@ export function selectTargets(only) {
 }
 
 // Returns the environment variables that point `go build` at `target`.
-// They override the caller's environment. GOAMD64, GOARM64 and GOFLAGS are
-// pinned so a value set in the shell or with `go env -w` can't raise the
-// minimum CPU the binary needs or add build flags such as -race.
+// They override the caller's environment.
 export function goEnv(target) {
     const env = {
         GOOS: target.goos,
         GOARCH: target.goarch,
         CGO_ENABLED: '0',
+        // GOAMD64 and GOARM64 set the oldest CPU the binary runs on. `v1` is
+        // the original x86-64 instruction set and `v8.0` is baseline
+        // ARMv8-A, so every x64 and arm64 CPU can run the binary. Higher
+        // levels let the compiler emit newer instructions: GOAMD64=v3 uses
+        // AVX2, and its binary crashes with "illegal instruction" on CPUs
+        // that lack it. Go defaults to these values, but `go build` also
+        // reads both from the shell and from `go env -w`, so a builder with
+        // GOAMD64=v3 set would publish binaries that fail on older machines.
         GOAMD64: 'v1',
         GOARM64: 'v8.0',
+        // Replaces any GOFLAGS from the caller, so a flag such as -race
+        // can't leak into a release build.
         GOFLAGS: '-mod=readonly',
     };
     if (target.goarm !== undefined) {
