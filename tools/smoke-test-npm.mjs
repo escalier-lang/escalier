@@ -36,20 +36,7 @@
 // --os and --cpu flags.
 
 import { spawnSync } from 'node:child_process';
-import {
-    accessSync,
-    constants,
-    copyFileSync,
-    existsSync,
-    mkdirSync,
-    mkdtempSync,
-    readFileSync,
-    readdirSync,
-    realpathSync,
-    rmSync,
-    statSync,
-    writeFileSync,
-} from 'node:fs';
+import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -251,7 +238,7 @@ function run(command, args, cwd, extraEnv = {}) {
 // Returns the platform packages that resolve from the installed
 // @escalier/cli, which is where its getBinaryPath() looks for them.
 function installedPlatformPackages(projectDir) {
-    const cliManifest = realpathSync(
+    const cliManifest = fs.realpathSync(
         join(projectDir, 'node_modules', '@escalier', 'cli', 'package.json'),
     );
     const requireFromCli = createRequire(cliManifest);
@@ -299,13 +286,13 @@ function checkBinary(path, packageName) {
     if (!path.split(/[\\/]/).join('/').includes(`/${packageName}/bin/`)) {
         throw new Error(`${path} is not inside ${packageName}/bin/`);
     }
-    if (!statSync(path).isFile()) {
+    if (!fs.statSync(path).isFile()) {
         throw new Error(`${path} is not a file`);
     }
     // Windows has no executable bit. It runs a file by its extension.
     if (process.platform !== 'win32') {
         try {
-            accessSync(path, constants.X_OK);
+            fs.accessSync(path, fs.constants.X_OK);
         } catch {
             throw new Error(`${path} is not executable`);
         }
@@ -325,19 +312,19 @@ function main() {
     const crossInstall = target.suffix !== hostTarget;
     const expectedPackage = platformPackageName(target.suffix);
     const version = JSON.parse(
-        readFileSync(join(ROOT, 'packages', 'cli', 'package.json'), 'utf8'),
+        fs.readFileSync(join(ROOT, 'packages', 'cli', 'package.json'), 'utf8'),
     ).version;
 
     let tarballDir;
     let tarballs;
     try {
-        tarballDir = realpathSync(options.tarballs);
-        tarballs = findTarballs(readdirSync(tarballDir));
+        tarballDir = fs.realpathSync(options.tarballs);
+        tarballs = findTarballs(fs.readdirSync(tarballDir));
     } catch (err) {
         console.error(err.message);
         process.exit(2);
     }
-    const projectDir = mkdtempSync(join(tmpdir(), 'escalier-smoke-'));
+    const projectDir = fs.mkdtempSync(join(tmpdir(), 'escalier-smoke-'));
     console.log(
         `installing ${CLI_PACKAGE} for ${target.suffix} with ${packageManager} in ${projectDir}`,
     );
@@ -352,10 +339,10 @@ function main() {
     // The tarballs are copied into the project so the manifest can name
     // them by relative paths, which avoids writing a Windows drive letter
     // into a `file:` specifier.
-    mkdirSync(join(projectDir, 'tarballs'));
+    fs.mkdirSync(join(projectDir, 'tarballs'));
     const paths = {};
     for (const [name, file] of Object.entries(tarballs)) {
-        copyFileSync(
+        fs.copyFileSync(
             join(tarballDir, file),
             join(projectDir, 'tarballs', file),
         );
@@ -366,10 +353,10 @@ function main() {
     // name the extracted packages instead. tar keeps each file's mode, so
     // a tarball that lost the binary's executable bit still fails.
     if (packageManager === 'pnpm') {
-        mkdirSync(join(projectDir, 'packages'));
+        fs.mkdirSync(join(projectDir, 'packages'));
         for (const [name, file] of Object.entries(tarballs)) {
             const dir = `packages/${file.slice(0, -'.tgz'.length)}`;
-            mkdirSync(join(projectDir, dir));
+            fs.mkdirSync(join(projectDir, dir));
             const result = run(
                 'tar',
                 ['-xzf', `tarballs/${file}`, '-C', dir, '--strip-components=1'],
@@ -381,17 +368,17 @@ function main() {
             paths[name] = `./${dir}`;
         }
     }
-    writeFileSync(
+    fs.writeFileSync(
         join(projectDir, 'package.json'),
         `${JSON.stringify(projectManifest(paths, packageManager), null, 2)}\n`,
     );
     const fixtureDir = join(projectDir, 'fixture');
-    mkdirSync(join(fixtureDir, 'lib'), { recursive: true });
-    writeFileSync(
+    fs.mkdirSync(join(fixtureDir, 'lib'), { recursive: true });
+    fs.writeFileSync(
         join(fixtureDir, 'package.json'),
         `${JSON.stringify({ name: 'fixture', private: true, version: '0.0.0', type: 'module' }, null, 2)}\n`,
     );
-    writeFileSync(join(fixtureDir, 'lib', 'index.esc'), FIXTURE_SOURCE);
+    fs.writeFileSync(join(fixtureDir, 'lib', 'index.esc'), FIXTURE_SOURCE);
 
     const [installer, installArgs] = installCommand(
         packageManager,
@@ -462,7 +449,7 @@ function main() {
                     throw new Error(result.output);
                 }
                 const outPath = join(fixtureDir, 'build', 'lib', 'index.js');
-                if (!existsSync(outPath)) {
+                if (!fs.existsSync(outPath)) {
                     throw new Error(
                         `fixture/build/lib/index.js is missing:\n${result.output}`,
                     );
@@ -484,7 +471,7 @@ function main() {
     if (failed > 0) {
         fail(`${failed} of ${checks.length} checks failed`);
     }
-    rmSync(projectDir, { recursive: true, force: true });
+    fs.rmSync(projectDir, { recursive: true, force: true });
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
