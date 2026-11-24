@@ -139,6 +139,51 @@ jobs:
             exit 1
           fi
 
+  # Fails a PR that changes a published package, or the compiler that
+  # @escalier/cli ships, without a changeset that releases it. Without one,
+  # the change ships in the next release with no version bump or changelog
+  # entry. `pnpm changeset --empty` opts a PR out.
+  check_changesets:
+    # The "Version Packages" PR that changesets/action opens consumes the
+    # changesets, so it changes package versions with none left to find. It
+    # comes from this repository, so a fork's branch with the same name
+    # still runs the check.
+    if: >-
+      github.event_name == 'pull_request' &&
+      !(github.head_ref == 'changeset-release/main' &&
+        github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    steps:
+      # `changeset status --since` diffs against the base branch, which
+      # needs the full history.
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test the check
+        run: node --test .github/scripts/check-changesets.test.mjs
+
+      # The base ref reaches the shell through the environment, so a branch
+      # name that contains shell syntax is passed as data and never runs.
+      - name: Check changesets for changed packages
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: node .github/scripts/check-changesets.mjs "origin/${BASE_REF}"
+
   # Rates each change to the committed fixture outputs by review risk and
   # posts the report as a PR comment, which later runs edit in place. The
   # fixture tests in check_go confirm the committed outputs match the
