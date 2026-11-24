@@ -55,7 +55,8 @@ const CLI_PACKAGE = '@escalier/cli';
 // Each `source` imports from that directory, so the build only succeeds
 // when the installed @escalier/cli carries it. `output` is a call that the
 // compiled lib/index.js must contain. Each project is the package
-// `smoke-<name>`, whose `main` is the compiled lib/index.js. `run` is a
+// `smoke-<name>` in the directory of that name, whose `main` is the
+// compiled lib/index.js. `run` is a
 // module that imports that package as `lib` and prints one line, and
 // `stdout` is that line.
 const FIXTURES = [
@@ -424,14 +425,14 @@ function main() {
         }
     }
     const localPackages = Object.fromEntries(
-        FIXTURES.map(({ name }) => [`smoke-${name}`, `./${name}`]),
+        FIXTURES.map(({ name }) => [`smoke-${name}`, `./smoke-${name}`]),
     );
     fs.writeFileSync(
         join(projectDir, 'package.json'),
         `${JSON.stringify(projectManifest(paths, packageManager, localPackages), null, 2)}\n`,
     );
     for (const { name, source } of FIXTURES) {
-        const fixtureDir = join(projectDir, name);
+        const fixtureDir = join(projectDir, `smoke-${name}`);
         fs.mkdirSync(join(fixtureDir, 'lib'), { recursive: true });
         const manifest = {
             name: `smoke-${name}`,
@@ -511,26 +512,27 @@ function main() {
         ...FIXTURES.map(({ name, output }) => ({
             name: `escalier build compiles a ${name}: import`,
             check: () => {
-                const result = runEscalier(['build', name]);
+                const dir = `smoke-${name}`;
+                const result = runEscalier(['build', dir]);
                 if (!result.ok) {
                     throw new Error(result.output);
                 }
                 const outPath = join(
                     projectDir,
-                    name,
+                    dir,
                     'build',
                     'lib',
                     'index.js',
                 );
                 if (!fs.existsSync(outPath)) {
                     throw new Error(
-                        `${name}/build/lib/index.js is missing:\n${result.output}`,
+                        `${dir}/build/lib/index.js is missing:\n${result.output}`,
                     );
                 }
                 const js = fs.readFileSync(outPath, 'utf8');
                 if (!js.includes(output)) {
                     throw new Error(
-                        `${name}/build/lib/index.js has no ${output}:\n${js}`,
+                        `${dir}/build/lib/index.js has no ${output}:\n${js}`,
                     );
                 }
             },
