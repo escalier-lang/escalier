@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, test } from 'node:test';
 
 import {
+    changedFiles,
     changedPackages,
     formatReport,
     isCliSource,
@@ -62,6 +67,34 @@ describe('owningPackage', () => {
             assert.equal(owningPackage(path, packages), expected);
         });
     }
+});
+
+describe('changedFiles', () => {
+    test('lists a moved file under its old and its new path', (t) => {
+        const dir = mkdtempSync(join(tmpdir(), 'changed-files-'));
+        t.after(() => rmSync(dir, { recursive: true, force: true }));
+        const git = (...args) =>
+            execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
+        git('init', '-q', '-b', 'main');
+        git('config', 'user.email', 'test@example.com');
+        git('config', 'user.name', 'Test');
+        mkdirSync(join(dir, 'internal'));
+        writeFileSync(
+            join(dir, 'internal', 'buildinfo.go'),
+            'package buildinfo\n',
+        );
+        git('add', '.');
+        git('commit', '-q', '-m', 'base');
+        git('checkout', '-q', '-b', 'pr');
+        mkdirSync(join(dir, 'tools'));
+        git('mv', 'internal/buildinfo.go', 'tools/buildinfo.go');
+        git('commit', '-q', '-m', 'move');
+
+        assert.deepEqual(changedFiles('main', dir).sort(), [
+            'internal/buildinfo.go',
+            'tools/buildinfo.go',
+        ]);
+    });
 });
 
 describe('changedPackages', () => {

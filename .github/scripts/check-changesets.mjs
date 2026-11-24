@@ -122,12 +122,19 @@ export function formatReport(missing, byPackage) {
     return lines.join('\n');
 }
 
-// Throws an Error that carries git's stderr when the diff fails, such as
-// for a base ref that wasn't fetched.
-function changedFiles(baseRef) {
-    const run = spawnSync('git', ['diff', '--name-only', `${baseRef}...HEAD`], {
-        encoding: 'utf8',
-    });
+// Returns the paths of the files that HEAD changes since its merge base
+// with `baseRef`, in the git repo at `cwd`. A moved file appears under both
+// its old and its new path. Throws an Error that carries git's stderr when
+// the diff fails, such as for a base ref that wasn't fetched.
+export function changedFiles(baseRef, cwd = process.cwd()) {
+    // Without --no-renames, git reports a moved file only under its new
+    // path, so a file moved out of internal/ wouldn't count as a change to
+    // @escalier/cli.
+    const run = spawnSync(
+        'git',
+        ['diff', '--name-only', '--no-renames', `${baseRef}...HEAD`],
+        { cwd, encoding: 'utf8' },
+    );
     if (run.status !== 0) {
         throw new Error(
             `git diff against ${baseRef} failed:\n${(run.stderr ?? '').trimEnd()}`,
