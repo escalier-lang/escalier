@@ -64,6 +64,11 @@ export function platformManifest(target, cli) {
         publishConfig: {
             access: 'public',
             provenance: true,
+            // `pnpm pack` and `pnpm publish` write every file to the tarball
+            // without its execute permission, except the files listed here
+            // and in `bin`. Without the entry the installed binary fails to
+            // start with EACCES.
+            executableFiles: [`./${binary}`],
         },
     };
 }

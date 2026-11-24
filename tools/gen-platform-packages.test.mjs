@@ -58,7 +58,11 @@ describe('platformManifest', () => {
             scripts: {
                 prepublishOnly: `node -e "if (!require('fs').existsSync('bin/escalier')) { console.error('bin/escalier is missing. Build the platform binaries before publishing.'); process.exit(1); }"`,
             },
-            publishConfig: { access: 'public', provenance: true },
+            publishConfig: {
+                access: 'public',
+                provenance: true,
+                executableFiles: ['./bin/escalier'],
+            },
         });
     });
 });
