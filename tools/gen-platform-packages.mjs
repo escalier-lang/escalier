@@ -11,6 +11,10 @@
 // the platform packages always match `@escalier/cli`. It removes any
 // `cli-*` directory whose target is no longer in TARGETS.
 //
+// It also sets the `optionalDependencies` of packages/cli/package.json to
+// the platform packages. @escalier/cli reads that list at run time to know
+// which platforms it supports.
+//
 // CI runs the script and fails when it changes a committed file, so edit
 // tools/platforms.mjs and regenerate instead of editing the output.
 
@@ -64,6 +68,16 @@ export function platformManifest(target, cli) {
     };
 }
 
+// Returns the `optionalDependencies` object that makes `@escalier/cli`
+// depend on the package for each entry in `targets`, with the keys sorted
+// the way pnpm sorts them.
+export function cliOptionalDependencies(targets) {
+    const names = targets
+        .map((target) => platformPackageName(target.suffix))
+        .sort();
+    return Object.fromEntries(names.map((name) => [name, 'workspace:*']));
+}
+
 // Returns the README.md text for `target`.
 export function platformReadme(target) {
     const name = platformPackageName(target.suffix);
@@ -107,13 +121,16 @@ export function writePlatformPackages(platformsDir, targets, cli) {
 }
 
 function main() {
-    const cli = JSON.parse(
-        readFileSync(join(ROOT, 'packages', 'cli', 'package.json'), 'utf8'),
-    );
+    const cliPath = join(ROOT, 'packages', 'cli', 'package.json');
+    const cli = JSON.parse(readFileSync(cliPath, 'utf8'));
     for (const entry of writePlatformPackages(PLATFORMS_DIR, TARGETS, cli)) {
         console.log(`removed packages/platforms/${entry}`);
     }
     console.log(`wrote ${TARGETS.length} packages under packages/platforms`);
+
+    cli.optionalDependencies = cliOptionalDependencies(TARGETS);
+    writeFileSync(cliPath, JSON.stringify(cli, null, 2) + '\n');
+    console.log('wrote the optionalDependencies of packages/cli/package.json');
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

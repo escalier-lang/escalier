@@ -95,7 +95,8 @@ jobs:
   # `changeset publish` publishes every workspace package that isn't
   # private, so the job fails when a package outside the publish list in
   # check-private-packages.mjs lacks "private": true. It also fails when
-  # the committed packages under packages/platforms differ from what
+  # the committed packages under packages/platforms, or the
+  # optionalDependencies of packages/cli/package.json, differ from what
   # tools/gen-platform-packages.mjs writes from tools/platforms.mjs.
   check_npm_packages:
     runs-on: ubuntu-latest
@@ -133,7 +134,7 @@ jobs:
       - name: Check the platform packages against the target list
         run: |
           node tools/gen-platform-packages.mjs
-          changes=$(git status --porcelain -- packages/platforms)
+          changes=$(git status --porcelain -- packages/platforms packages/cli/package.json)
           if [ -n "$changes" ]; then
             echo "$changes"
             echo "Run node tools/gen-platform-packages.mjs and commit the result."

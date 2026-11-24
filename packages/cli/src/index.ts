@@ -1,17 +1,21 @@
 import { createRequire } from 'node:module';
 
+const PLATFORM_PACKAGE_PREFIX = '@escalier/cli-';
+
+// tools/gen-platform-packages.mjs writes one optional dependency per target
+// in tools/platforms.mjs, so this package's own manifest lists the
+// platforms without a second copy of the list.
+const manifest = createRequire(import.meta.url)('../package.json') as {
+    optionalDependencies?: Record<string, string>;
+};
+
 // The platforms that have an `@escalier/cli-<platform>-<arch>` package, named
-// by Node's `process.platform` and `process.arch`. The list matches TARGETS
-// in tools/platforms.mjs, which a test checks.
-export const SUPPORTED_PLATFORMS = [
-    'darwin-arm64',
-    'darwin-x64',
-    'linux-x64',
-    'linux-arm64',
-    'linux-arm',
-    'win32-x64',
-    'win32-arm64',
-] as const;
+// by Node's `process.platform` and `process.arch`, in alphabetical order.
+export const SUPPORTED_PLATFORMS: readonly string[] = Object.keys(
+    manifest.optionalDependencies ?? {},
+)
+    .filter((name) => name.startsWith(PLATFORM_PACKAGE_PREFIX))
+    .map((name) => name.slice(PLATFORM_PACKAGE_PREFIX.length));
 
 // The environment variable that names an escalier binary to use instead of
 // the one from the platform package.
@@ -25,8 +29,8 @@ export function platformPackageName(
     arch: string,
 ): string | undefined {
     const key = `${platform}-${arch}`;
-    return (SUPPORTED_PLATFORMS as readonly string[]).includes(key)
-        ? `@escalier/cli-${key}`
+    return SUPPORTED_PLATFORMS.includes(key)
+        ? `${PLATFORM_PACKAGE_PREFIX}${key}`
         : undefined;
 }
 

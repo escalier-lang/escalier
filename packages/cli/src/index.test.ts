@@ -1,9 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { describe, expect, test } from 'vitest';
 
-import { TARGETS } from '../../../tools/platforms.mjs';
 import {
     SUPPORTED_PLATFORMS,
     getBinaryPath,
@@ -79,7 +75,7 @@ describe('getBinaryPath', () => {
             new Error(
                 [
                     '@escalier/cli has no escalier binary for freebsd-x64.',
-                    'Supported platforms: darwin-arm64, darwin-x64, linux-x64, linux-arm64, linux-arm, win32-x64, win32-arm64.',
+                    'Supported platforms: darwin-arm64, darwin-x64, linux-arm, linux-arm64, linux-x64, win32-arm64, win32-x64.',
                     'Set ESCALIER_BINARY_PATH to the path of an escalier binary to use one you built yourself.',
                 ].join('\n'),
             ),
@@ -130,20 +126,15 @@ describe('getBinaryPath', () => {
 });
 
 describe('SUPPORTED_PLATFORMS', () => {
-    test('matches the target list in tools/platforms.mjs', () => {
-        expect([...SUPPORTED_PLATFORMS]).toEqual(
-            TARGETS.map((target: { suffix: string }) => target.suffix),
-        );
-    });
-
-    test('matches the optionalDependencies in package.json', () => {
-        const manifest = JSON.parse(
-            readFileSync(join(__dirname, '..', 'package.json'), 'utf8'),
-        );
-        // pnpm sorts the keys when it rewrites package.json, so compare the
-        // two lists without their order.
-        expect(Object.keys(manifest.optionalDependencies).sort()).toEqual(
-            SUPPORTED_PLATFORMS.map((key) => `@escalier/cli-${key}`).sort(),
-        );
+    test('lists the platform packages in optionalDependencies', () => {
+        expect(SUPPORTED_PLATFORMS).toEqual([
+            'darwin-arm64',
+            'darwin-x64',
+            'linux-arm',
+            'linux-arm64',
+            'linux-x64',
+            'win32-arm64',
+            'win32-x64',
+        ]);
     });
 });
