@@ -218,16 +218,18 @@ function childEnv() {
 }
 
 // Runs `command` with `args` in `cwd`, with `extraEnv` added to
-// childEnv(), and returns its exit status and output. npm, npx and pnpm are `.cmd` scripts on Windows, which Node only
-// runs through a shell. Node deprecates passing an argument array along
-// with `shell`, so on Windows the call joins them into one command line.
-// The joined arguments are unquoted, so none of them may contain a space.
+// childEnv(), and returns its exit status and output. On Windows none of
+// `args` may contain a space.
 function run(command, args, cwd, extraEnv = {}) {
     const options = {
         cwd,
         env: { ...childEnv(), ...extraEnv },
         encoding: 'utf8',
     };
+    // npm, npx and pnpm are `.cmd` scripts on Windows, which Node only runs
+    // through a shell. Node deprecates passing an argument array along with
+    // `shell`, so on Windows the call joins them into one unquoted command
+    // line.
     const result =
         process.platform === 'win32'
             ? spawnSync([command, ...args].join(' '), {
@@ -263,17 +265,19 @@ function installedPlatformPackages(projectDir) {
     });
 }
 
-// Returns the path that getBinaryPath() from the installed @escalier/cli
-// returns for `target`. The script imports the package in a child process
-// from the project directory, so the import resolves the way it does for a
-// project that depends on @escalier/cli.
-function installedBinaryPath(projectDir, target) {
+// Returns `{ binaryPath, stdlibDir }`, the paths that getBinaryPath() for
+// `target` and getStdlibDir() from the installed @escalier/cli return. The
+// script imports the package in a child process from the project directory,
+// so the import resolves the way it does for a project that depends on
+// @escalier/cli.
+function installedPaths(projectDir, target) {
     const options = JSON.stringify({ platform: target.os, arch: target.cpu });
     // The child prints only the error's message, not its stack trace.
     const code = [
-        `import { getBinaryPath } from '${CLI_PACKAGE}';`,
+        `import { getBinaryPath, getStdlibDir } from '${CLI_PACKAGE}';`,
         'try {',
-        `    console.log(getBinaryPath(${options}));`,
+        `    const binaryPath = getBinaryPath(${options});`,
+        '    console.log(JSON.stringify({ binaryPath, stdlibDir: getStdlibDir() }));',
         '} catch (err) {',
         '    console.error(err.message);',
         '    process.exitCode = 1;',
@@ -287,7 +291,7 @@ function installedBinaryPath(projectDir, target) {
     if (result.status !== 0) {
         throw new Error(`getBinaryPath() failed:\n${result.stderr.trim()}`);
     }
-    return result.stdout.trim();
+    return JSON.parse(result.stdout);
 }
 
 // Throws unless `path` is an executable file inside `packageName`.
@@ -402,21 +406,20 @@ function main() {
     // Runs the escalier binary with `args`. For the host's own target it
     // goes through the installed `escalier` command. For another target it
     // runs the binary under the emulator.
-    let binaryPath;
+    let cliPaths;
     const runEscalier = (args) => {
         if (!crossInstall) {
             const [command, commandArgs] = execCommand(packageManager, args);
             return run(command, commandArgs, projectDir);
         }
-        if (binaryPath === undefined) {
+        if (cliPaths === undefined) {
             return { ok: false, output: 'getBinaryPath() returned no path' };
         }
         // The `escalier` command would point the binary at the stdlib in
         // the installed @escalier/cli. Running the binary directly skips
         // the command, so the call sets the same directory itself.
-        const stdlibDir = join(projectDir, 'node_modules', CLI_PACKAGE, 'data');
-        return run(emulator, [binaryPath, ...args], projectDir, {
-            ESCALIER_STDLIB_DIR: stdlibDir,
+        return run(emulator, [cliPaths.binaryPath, ...args], projectDir, {
+            ESCALIER_STDLIB_DIR: cliPaths.stdlibDir,
         });
     };
 
@@ -438,8 +441,8 @@ function main() {
         {
             name: 'getBinaryPath() returns an executable file',
             check: () => {
-                binaryPath = installedBinaryPath(projectDir, target);
-                checkBinary(binaryPath, expectedPackage);
+                cliPaths = installedPaths(projectDir, target);
+                checkBinary(cliPaths.binaryPath, expectedPackage);
             },
         },
         {
