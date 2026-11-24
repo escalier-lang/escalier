@@ -80,11 +80,6 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
 - When a single change resolves several findings, reply to each thread and point at the same change rather than answering only one of them.
 - Post the reply after the change is committed, not before.
 
-## Git cadence
-
-- While iterating on a PR, commit locally but don't `git push` until I explicitly ask.
-- Still push at the end of a session so nothing is lost.
-
 ## Writing agent-facing docs
 
 This covers the files an agent reads to work here: `CLAUDE.md`, the skills under
