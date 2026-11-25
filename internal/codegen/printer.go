@@ -1285,6 +1285,14 @@ func (p *Printer) printTypeAnnAt(ta TypeAnn, minPrec int) {
 	p.print(")")
 }
 
+// PrintShebang writes a `#!` line that runs the output with `interpreter`,
+// such as "/usr/bin/env node". Call it before printing anything else, since
+// a `#!` line only takes effect as the first line of a file.
+func (p *Printer) PrintShebang(interpreter string) {
+	p.print("#!" + interpreter)
+	p.NewLine()
+}
+
 func (p *Printer) PrintModule(mod *Module) string {
 	for _, stmt := range mod.Stmts {
 		p.PrintStmt(stmt)
