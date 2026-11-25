@@ -474,12 +474,14 @@ function assertRan(result) {
 
 // Defines the smoke tests for `options`, the result of readOptions(). They
 // share one project in a temporary directory: a before() hook installs it,
-// the tests run in order against it, and an after() hook deletes it.
+// the tests run in order against it, and an after() hook deletes it. The
+// directory comes from fs.mkdtempDisposableSync(), which needs Node 24.4.
 function defineSmokeTests(options) {
     const { packageManager, target, version } = options;
     const expectedPackage = platformPackageName(target.suffix);
 
     describe(`${CLI_PACKAGE} on ${target.suffix} with ${packageManager}`, () => {
+        let projectTmp;
         let projectDir;
         // The getBinaryPath() test fills this in, and the escalier runner
         // reads it for an emulated target.
@@ -488,12 +490,15 @@ function defineSmokeTests(options) {
             escalierRunner(options, projectDir, () => cliPaths)(args);
 
         before(() => {
-            projectDir = fs.mkdtempSync(join(tmpdir(), 'escalier-smoke-'));
+            projectTmp = fs.mkdtempDisposableSync(
+                join(tmpdir(), 'escalier-smoke-'),
+            );
+            projectDir = projectTmp.path;
             setUpProject(options, projectDir);
         });
 
         after(() => {
-            fs.rmSync(projectDir, { recursive: true, force: true });
+            projectTmp?.remove();
         });
 
         test(`only ${expectedPackage} is installed`, () => {
