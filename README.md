@@ -4,6 +4,41 @@
 
 Next version of the Escalier compiler written in Go
 
+## Installation
+
+### From npm
+
+Install the compiler in a JavaScript project with
+[`@escalier/cli`](https://www.npmjs.com/package/@escalier/cli), and add
+[`@escalier/runtime`](https://www.npmjs.com/package/@escalier/runtime),
+which the compiled JavaScript imports:
+
+```sh
+npm install --save-dev @escalier/cli
+npm install @escalier/runtime
+npx escalier build .
+```
+
+`@escalier/cli` installs the native binary for macOS, Linux or Windows on
+x64 or ARM. Its [README](packages/cli/README.md) lists the supported
+platforms.
+
+### From a GitHub release
+
+Each [`@escalier/cli` release](https://github.com/escalier-lang/escalier/releases)
+attaches an archive for each supported platform. The archive holds the
+`escalier` binary and the standard library it compiles against.
+
+1. Download the archive for your platform, such as
+   `escalier-linux-x64.tar.gz` or `escalier-win32-x64.zip`.
+2. Unpack it anywhere.
+3. Add its `bin` directory to your `PATH`.
+4. Run `escalier --version` to check the install.
+
+Keep the unpacked `bin/` and `share/` directories together, since the
+binary reads the standard library from `share/escalier/data/`. On macOS, run
+`xattr -d com.apple.quarantine bin/escalier` to allow the unsigned binary.
+
 ## Development
 
 To update the snapshots run the following command:
