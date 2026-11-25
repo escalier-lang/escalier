@@ -7,15 +7,16 @@
 //
 // The release workflow runs it after changesets/action takes its publish
 // path. The script reads each public workspace package's version, and
-// creates a release only for a version that `npm view` finds on npm and
-// that has no GitHub release yet. Running it again creates only what is
-// still missing, so re-running a release whose last step failed, or the
-// next push to main, finishes the job. The
-// @escalier/cli-<platform>-<arch> packages always share @escalier/cli's
-// version, so they fold into one @escalier/cli release instead of one
-// release each. That release carries the escalier binary for every target
-// in tools/platforms.mjs, for people who don't install from npm. Every other
-// package gets a release of its own.
+// creates a release only for a version that is published and has no GitHub
+// release yet. A version counts as published when PUBLISHED_PACKAGES, the
+// action's publishedPackages output, lists it, or else when `npm view`
+// finds it on npm. Running it again creates only what is still missing, so
+// re-running a release whose last step failed, or the next push to main,
+// finishes the job. The @escalier/cli-<platform>-<arch> packages always
+// share @escalier/cli's version, so they fold into one @escalier/cli
+// release instead of one release each. That release carries the escalier
+// binary for every target in tools/platforms.mjs, for people who don't
+// install from npm. Every other package gets a release of its own.
 //
 // Each release gets the tag <name>@<version> on GITHUB_SHA and takes its
 // notes from that version's section of the package's CHANGELOG.md, or a
@@ -101,8 +102,21 @@ export function assetName(target) {
     return `escalier-${target.suffix}${extension}`;
 }
 
+// Returns the `<name>@<version>` of each package in `json`, the
+// publishedPackages output of changesets/action: a JSON array of
+// `{ name, version }`. Returns an empty set when `json` is empty or
+// undefined.
+export function publishedTags(json) {
+    if (!json) {
+        return new Set();
+    }
+    return new Set(
+        JSON.parse(json).map(({ name, version }) => `${name}@${version}`),
+    );
+}
+
 // Returns the releases in `releases` to create: those whose version
-// `isPublished(release)` reports on npm and whose tag
+// `isPublished(release)` reports as published and whose tag
 // `hasRelease(release)` reports without a GitHub release.
 export function pendingReleases(releases, { isPublished, hasRelease }) {
     return releases.filter(
@@ -169,8 +183,16 @@ function main() {
     }
     const packages = workspacePackages();
     const dirs = new Map(packages.map(({ name, dir }) => [name, dir]));
+    const justPublished = publishedTags(process.env.PUBLISHED_PACKAGES);
     const releases = pendingReleases(groupReleases(packages), {
-        isPublished: ({ name, version }) => {
+        isPublished: ({ name, version, tag }) => {
+            // npm's registry reads can lag a publish by minutes, so a
+            // version this run published counts without asking npm. The
+            // npm check covers a re-run, where PUBLISHED_PACKAGES lists
+            // only what that run published.
+            if (justPublished.has(tag)) {
+                return true;
+            }
             const result = run('npm', [
                 'view',
                 `${name}@${version}`,

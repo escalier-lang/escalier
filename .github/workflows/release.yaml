@@ -88,4 +88,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
         run: node tools/create-github-releases.mjs

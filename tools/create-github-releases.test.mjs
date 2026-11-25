@@ -6,6 +6,7 @@ import {
     changelogEntry,
     groupReleases,
     pendingReleases,
+    publishedTags,
     releaseNotes,
 } from './create-github-releases.mjs';
 import { TARGETS } from './platforms.mjs';
@@ -176,4 +177,24 @@ describe('assetName', () => {
             'escalier-win32-arm64.exe',
         ]);
     });
+});
+
+describe('publishedTags', () => {
+    test('returns the tag of each published package', () => {
+        assert.deepEqual(
+            publishedTags(
+                JSON.stringify([
+                    { name: '@escalier/cli', version: '0.1.0' },
+                    { name: '@escalier/cli-linux-x64', version: '0.1.0' },
+                ]),
+            ),
+            new Set(['@escalier/cli@0.1.0', '@escalier/cli-linux-x64@0.1.0']),
+        );
+    });
+
+    for (const json of [undefined, '']) {
+        test(`returns an empty set for ${JSON.stringify(json)}`, () => {
+            assert.deepEqual(publishedTags(json), new Set());
+        });
+    }
 });
