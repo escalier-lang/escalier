@@ -370,21 +370,28 @@ func TestBuildEndsTheStatusLineBeforeDiagnostics(t *testing.T) {
 	t.Setenv("ESCALIER_STDLIB_DIR", stdlibDir)
 
 	// writePackage returns the directory of a new package whose lib/index.esc
-	// holds source.
-	writePackage := func(t *testing.T, source string) string {
+	// holds source. Each entry of extra writes one more file, keyed by its path
+	// in the package, and replaces package.json when it names that file.
+	writePackage := func(t *testing.T, source string, extra map[string]string) string {
 		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(
-			filepath.Join(dir, "package.json"),
-			[]byte(`{"name": "pkg", "version": "0.0.0", "type": "module"}`),
-			0644,
-		))
-		require.NoError(t, os.MkdirAll(filepath.Join(dir, "lib"), 0755))
-		require.NoError(t, os.WriteFile(
-			filepath.Join(dir, "lib", "index.esc"), []byte(source), 0644,
-		))
+		files := map[string]string{
+			"package.json":  `{"name": "pkg", "version": "0.0.0", "type": "module"}`,
+			"lib/index.esc": source,
+		}
+		for path, contents := range extra {
+			files[path] = contents
+		}
+		for path, contents := range files {
+			path = filepath.Join(dir, filepath.FromSlash(path))
+			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0755))
+			require.NoError(t, os.WriteFile(path, []byte(contents), 0644))
+		}
 		return dir
 	}
 
+	badConfigDir := writePackage(
+		t, "export val x = 1\n", map[string]string{"package.json": "{"},
+	)
 	missingDir := filepath.Join(t.TempDir(), "missing")
 	// The message os.Chdir gives for a missing directory differs between
 	// operating systems, so the expected output quotes whatever it returns.
@@ -400,7 +407,7 @@ func TestBuildEndsTheStatusLineBeforeDiagnostics(t *testing.T) {
 	}{
 		{
 			name:   "a package with a type error",
-			pkg:    writePackage(t, "export val x: number = \"hello\"\n"),
+			pkg:    writePackage(t, "export val x: number = \"hello\"\n", nil),
 			status: regexp.QuoteMeta(" - failed (1 error)"),
 			diags: "lib/index.esc:1:24: cannot constrain \"hello\" <: number\n\n" +
 				"1:  export val x: number = \"hello\"\n" +
@@ -409,7 +416,7 @@ func TestBuildEndsTheStatusLineBeforeDiagnostics(t *testing.T) {
 		{
 			name: "a package with a warning",
 			pkg: writePackage(
-				t, "export fn f() -> number throws string { return 1 }\n",
+				t, "export fn f() -> number throws string { return 1 }\n", nil,
 			),
 			ok:     true,
 			status: ` - ok \(.+\)`,
@@ -417,6 +424,23 @@ func TestBuildEndsTheStatusLineBeforeDiagnostics(t *testing.T) {
 				"`throws string` is unreachable; drop the clause\n\n" +
 				"1:  export fn f() -> number throws string { return 1 }\n" +
 				"                                   ^^^^^^\n\n",
+		},
+		{
+			name:   "a package whose package.json doesn't parse",
+			pkg:    badConfigDir,
+			status: regexp.QuoteMeta(" - failed"),
+			diags: "failed to read the package config for " + badConfigDir +
+				": failed to parse " + filepath.Join(badConfigDir, "package.json") +
+				": unexpected end of JSON input\n",
+		},
+		{
+			// A file named build stops the output directory from being created.
+			name: "a package whose output can't be written",
+			pkg: writePackage(
+				t, "export val x = 1\n", map[string]string{"build": ""},
+			),
+			status: regexp.QuoteMeta(" - failed"),
+			diags:  "failed to create directory for module\n",
 		},
 		{
 			name:   "a package directory that doesn't exist",
