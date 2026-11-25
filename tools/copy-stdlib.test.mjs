@@ -51,7 +51,10 @@ describe('copyStdlib', () => {
 
         copyStdlib(src, dest);
 
-        assert.equal(readFileSync(join(dest, NOTICE_FILE), 'utf8'), 'notices\n');
+        assert.equal(
+            readFileSync(join(dest, NOTICE_FILE), 'utf8'),
+            'notices\n',
+        );
         assert.equal(existsSync(join(dest, 'std', NOTICE_FILE)), false);
         assert.equal(existsSync(join(dest, 'NOTES.txt')), false);
     });
