@@ -2,7 +2,6 @@ package compiler
 
 import (
 	"context"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -474,7 +473,6 @@ func FindSourceFiles() ([]string, error) {
 		})
 
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "failed to walk directory:", err)
 			return nil, err
 		}
 	}
@@ -495,7 +493,6 @@ func FindSourceFiles() ([]string, error) {
 		})
 
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "failed to walk directory:", err)
 			return nil, err
 		}
 	}

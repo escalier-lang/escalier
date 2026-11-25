@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -392,6 +393,15 @@ func TestBuildEndsTheStatusLineBeforeDiagnostics(t *testing.T) {
 	badConfigDir := writePackage(
 		t, "export val x = 1\n", map[string]string{"package.json": "{"},
 	)
+	// Listing lib/private fails once its permissions are cleared. Root reads it
+	// anyway, and Windows ignores the mode, so that case skips on both.
+	unreadableDir := writePackage(
+		t, "export val x = 1\n", map[string]string{"lib/private/a.esc": ""},
+	)
+	privateDir := filepath.Join(unreadableDir, "lib", "private")
+	require.NoError(t, os.Chmod(privateDir, 0))
+	t.Cleanup(func() { _ = os.Chmod(privateDir, 0755) })
+	canMakeUnreadable := runtime.GOOS != "windows" && os.Geteuid() != 0
 	missingDir := filepath.Join(t.TempDir(), "missing")
 	// The message os.Chdir gives for a missing directory differs between
 	// operating systems, so the expected output quotes whatever it returns.
@@ -404,6 +414,7 @@ func TestBuildEndsTheStatusLineBeforeDiagnostics(t *testing.T) {
 		ok     bool
 		status string // a regexp for the text after `building: <pkg>` on its line
 		diags  string
+		skip   bool
 	}{
 		{
 			name:   "a package with a type error",
@@ -434,6 +445,14 @@ func TestBuildEndsTheStatusLineBeforeDiagnostics(t *testing.T) {
 				": unexpected end of JSON input\n",
 		},
 		{
+			name:   "a package whose sources can't be listed",
+			pkg:    unreadableDir,
+			status: regexp.QuoteMeta(" - failed"),
+			diags: "failed to find source files for " + unreadableDir +
+				": open lib/private: permission denied\n",
+			skip: !canMakeUnreadable,
+		},
+		{
 			// A file named build stops the output directory from being created.
 			name: "a package whose output can't be written",
 			pkg: writePackage(
@@ -452,6 +471,9 @@ func TestBuildEndsTheStatusLineBeforeDiagnostics(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.skip {
+				t.Skip("this OS or user can read a directory without permissions")
+			}
 			// One buffer stands in for a terminal that shows stdout and stderr
 			// together, so the test sees the order the two streams interleave in.
 			out := &bytes.Buffer{}
