@@ -323,46 +323,38 @@ function checkBinary(path, packageName) {
     }
 }
 
-function main() {
+// Returns the options from the command line, the version that `escalier
+// --version` should print and the tarballs to install. Prints the error and
+// exits with status 2 on a bad argument or tarball directory.
+function readOptions() {
     const hostTarget = `${process.platform}-${process.arch}`;
-    let options;
     try {
-        options = parseArgs(process.argv.slice(2), hostTarget);
+        const options = parseArgs(process.argv.slice(2), hostTarget);
+        const tarballDir = fs.realpathSync(options.tarballs);
+        const tarballs = findTarballs(fs.readdirSync(tarballDir));
+        const { version } = JSON.parse(
+            fs.readFileSync(
+                join(ROOT, 'packages', 'cli', 'package.json'),
+                'utf8',
+            ),
+        );
+        return {
+            ...options,
+            crossInstall: options.target.suffix !== hostTarget,
+            version,
+            tarballDir,
+            tarballs,
+        };
     } catch (err) {
         console.error(err.message);
         process.exit(2);
     }
-    const { packageManager, target, emulator } = options;
-    const crossInstall = target.suffix !== hostTarget;
-    const expectedPackage = platformPackageName(target.suffix);
-    const version = JSON.parse(
-        fs.readFileSync(join(ROOT, 'packages', 'cli', 'package.json'), 'utf8'),
-    ).version;
+}
 
-    let tarballDir;
-    let tarballs;
-    try {
-        tarballDir = fs.realpathSync(options.tarballs);
-        tarballs = findTarballs(fs.readdirSync(tarballDir));
-    } catch (err) {
-        console.error(err.message);
-        process.exit(2);
-    }
-    const projectDir = fs.mkdtempSync(join(tmpdir(), 'escalier-smoke-'));
-    console.log(
-        `installing ${CLI_PACKAGE} for ${target.suffix} with ${packageManager} in ${projectDir}`,
-    );
-    // Prints `message` and exits with status 1. The project directory is
-    // left in place so the failed install can be inspected. A passing run
-    // deletes it.
-    const fail = (message) => {
-        console.error(`${message}\nkept ${projectDir} for inspection`);
-        process.exit(1);
-    };
-
-    // The tarballs are copied into the project so the manifest can name
-    // them by relative paths, which avoids writing a Windows drive letter
-    // into a `file:` specifier.
+// Copies the tarballs into `projectDir`/tarballs and returns the path of
+// each, relative to the project, keyed by package name. Relative paths keep
+// a Windows drive letter out of the `file:` specifiers.
+function copyTarballs(tarballDir, tarballs, projectDir) {
     fs.mkdirSync(join(projectDir, 'tarballs'));
     const paths = {};
     for (const [name, file] of Object.entries(tarballs)) {
@@ -372,39 +364,68 @@ function main() {
         );
         paths[name] = `./tarballs/${file}`;
     }
+    return paths;
+}
+
+// Extracts each tarball in `projectDir`/tarballs into `projectDir`/packages
+// and returns the path of each extracted package, relative to the project,
+// keyed by package name. tar keeps each file's mode. Throws when tar fails.
+function extractTarballs(tarballs, projectDir) {
+    fs.mkdirSync(join(projectDir, 'packages'));
+    const paths = {};
+    for (const [name, file] of Object.entries(tarballs)) {
+        const dir = `packages/${file.slice(0, -'.tgz'.length)}`;
+        fs.mkdirSync(join(projectDir, dir));
+        const result = run(
+            'tar',
+            ['-xzf', `tarballs/${file}`, '-C', dir, '--strip-components=1'],
+            projectDir,
+        );
+        if (!result.ok) {
+            throw new Error(`extracting ${file} failed:\n${result.output}`);
+        }
+        paths[name] = `./${dir}`;
+    }
+    return paths;
+}
+
+// Writes each entry of FIXTURES into its own directory under `projectDir`.
+function writeFixtures(projectDir) {
+    for (const { name, source } of FIXTURES) {
+        const fixtureDir = join(projectDir, name);
+        fs.mkdirSync(join(fixtureDir, 'lib'), { recursive: true });
+        const manifest = {
+            name,
+            private: true,
+            version: '0.0.0',
+            type: 'module',
+        };
+        fs.writeFileSync(
+            join(fixtureDir, 'package.json'),
+            `${JSON.stringify(manifest, null, 2)}\n`,
+        );
+        fs.writeFileSync(join(fixtureDir, 'lib', 'index.esc'), source);
+    }
+}
+
+// Writes the project that installs the tarballs into `projectDir` and
+// installs it. Throws when extracting a tarball or the install fails.
+function setUpProject(options, projectDir) {
+    const { packageManager, target, crossInstall, tarballDir, tarballs } =
+        options;
+    let paths = copyTarballs(tarballDir, tarballs, projectDir);
     // pnpm installs every platform package when the overrides name
     // tarballs, whatever their `os` and `cpu`, so for pnpm the overrides
-    // name the extracted packages instead. tar keeps each file's mode, so
-    // a tarball that lost the binary's executable bit still fails.
+    // name the extracted packages instead. A tarball that lost the binary's
+    // executable bit still fails, because tar keeps file modes.
     if (packageManager === 'pnpm') {
-        fs.mkdirSync(join(projectDir, 'packages'));
-        for (const [name, file] of Object.entries(tarballs)) {
-            const dir = `packages/${file.slice(0, -'.tgz'.length)}`;
-            fs.mkdirSync(join(projectDir, dir));
-            const result = run(
-                'tar',
-                ['-xzf', `tarballs/${file}`, '-C', dir, '--strip-components=1'],
-                projectDir,
-            );
-            if (!result.ok) {
-                fail(`not ok - extracting ${file} failed:\n${result.output}`);
-            }
-            paths[name] = `./${dir}`;
-        }
+        paths = extractTarballs(tarballs, projectDir);
     }
     fs.writeFileSync(
         join(projectDir, 'package.json'),
         `${JSON.stringify(projectManifest(paths, packageManager), null, 2)}\n`,
     );
-    for (const { name, source } of FIXTURES) {
-        const fixtureDir = join(projectDir, name);
-        fs.mkdirSync(join(fixtureDir, 'lib'), { recursive: true });
-        fs.writeFileSync(
-            join(fixtureDir, 'package.json'),
-            `${JSON.stringify({ name, private: true, version: '0.0.0', type: 'module' }, null, 2)}\n`,
-        );
-        fs.writeFileSync(join(fixtureDir, 'lib', 'index.esc'), source);
-    }
+    writeFixtures(projectDir);
 
     const [installer, installArgs] = installCommand(
         packageManager,
@@ -413,30 +434,70 @@ function main() {
     );
     const install = run(installer, installArgs, projectDir);
     if (!install.ok) {
-        fail(`not ok - install failed:\n${install.output}`);
+        throw new Error(`install failed:\n${install.output}`);
     }
+}
 
-    // Runs the escalier binary with `args`. For the host's own target it
-    // goes through the installed `escalier` command. For another target it
-    // runs the binary under the emulator.
-    let cliPaths;
-    const runEscalier = (args) => {
+// Returns a function that runs the escalier binary with its arguments in
+// `projectDir` and returns the result the way run() does. For the host's
+// own target it goes through the installed `escalier` command. For another
+// target it runs the binary that `getPaths()` names under the emulator.
+function escalierRunner(options, projectDir, getPaths) {
+    const { packageManager, crossInstall, emulator } = options;
+    return (args) => {
         if (!crossInstall) {
             const [command, commandArgs] = execCommand(packageManager, args);
             return run(command, commandArgs, projectDir);
         }
-        if (cliPaths === undefined) {
+        const paths = getPaths();
+        if (paths === undefined) {
             return { ok: false, output: 'getBinaryPath() returned no path' };
         }
         // The `escalier` command would point the binary at the stdlib in
         // the installed @escalier/cli. Running the binary directly skips
         // the command, so the call sets the same directory itself.
-        return run(emulator, [cliPaths.binaryPath, ...args], projectDir, {
-            ESCALIER_STDLIB_DIR: cliPaths.stdlibDir,
+        return run(emulator, [paths.binaryPath, ...args], projectDir, {
+            ESCALIER_STDLIB_DIR: paths.stdlibDir,
         });
     };
+}
 
-    const checks = [
+// Returns the check that `escalier build` compiles the FIXTURES entry
+// `name` into a lib/index.js that contains `output`.
+function buildCheck(projectDir, runEscalier, { name, output }) {
+    return {
+        name: `escalier build compiles a ${name}: import`,
+        check: () => {
+            const result = runEscalier(['build', name]);
+            if (!result.ok) {
+                throw new Error(result.output);
+            }
+            const outPath = join(projectDir, name, 'build', 'lib', 'index.js');
+            if (!fs.existsSync(outPath)) {
+                throw new Error(
+                    `${name}/build/lib/index.js is missing:\n${result.output}`,
+                );
+            }
+            const js = fs.readFileSync(outPath, 'utf8');
+            if (!js.includes(output)) {
+                throw new Error(
+                    `${name}/build/lib/index.js has no ${output}:\n${js}`,
+                );
+            }
+        },
+    };
+}
+
+// Returns the checks to run against the project in `projectDir`, in order.
+// Each is `{ name, check }`, where `check` throws when it fails.
+function smokeChecks(options, projectDir) {
+    const { target, version } = options;
+    const expectedPackage = platformPackageName(target.suffix);
+    // The getBinaryPath() check fills this in, and the escalier runner
+    // reads it for an emulated target.
+    let cliPaths;
+    const runEscalier = escalierRunner(options, projectDir, () => cliPaths);
+    return [
         {
             name: `only ${expectedPackage} is installed`,
             check: () => {
@@ -467,35 +528,15 @@ function main() {
                 }
             },
         },
-        ...FIXTURES.map(({ name, output }) => ({
-            name: `escalier build compiles a ${name}: import`,
-            check: () => {
-                const result = runEscalier(['build', name]);
-                if (!result.ok) {
-                    throw new Error(result.output);
-                }
-                const outPath = join(
-                    projectDir,
-                    name,
-                    'build',
-                    'lib',
-                    'index.js',
-                );
-                if (!fs.existsSync(outPath)) {
-                    throw new Error(
-                        `${name}/build/lib/index.js is missing:\n${result.output}`,
-                    );
-                }
-                const js = fs.readFileSync(outPath, 'utf8');
-                if (!js.includes(output)) {
-                    throw new Error(
-                        `${name}/build/lib/index.js has no ${output}:\n${js}`,
-                    );
-                }
-            },
-        })),
+        ...FIXTURES.map((fixture) =>
+            buildCheck(projectDir, runEscalier, fixture),
+        ),
     ];
+}
 
+// Runs each of `checks` in order, printing `ok` or `not ok` for each, and
+// returns how many failed.
+function runChecks(checks) {
     let failed = 0;
     for (const { name, check } of checks) {
         try {
@@ -506,6 +547,29 @@ function main() {
             console.error(`not ok - ${name}\n${err.message}`);
         }
     }
+    return failed;
+}
+
+function main() {
+    const options = readOptions();
+    const projectDir = fs.mkdtempSync(join(tmpdir(), 'escalier-smoke-'));
+    console.log(
+        `installing ${CLI_PACKAGE} for ${options.target.suffix} with ${options.packageManager} in ${projectDir}`,
+    );
+    // A failed run leaves the project in place so it can be inspected, and
+    // a passing run deletes it.
+    const fail = (message) => {
+        console.error(`${message}\nkept ${projectDir} for inspection`);
+        process.exit(1);
+    };
+
+    try {
+        setUpProject(options, projectDir);
+    } catch (err) {
+        fail(`not ok - ${err.message}`);
+    }
+    const checks = smokeChecks(options, projectDir);
+    const failed = runChecks(checks);
     if (failed > 0) {
         fail(`${failed} of ${checks.length} checks failed`);
     }
