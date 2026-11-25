@@ -421,6 +421,10 @@ func compileScript(b backend, lib LibScope, source *ast.Source) CompilerOutput {
 	// dtsMod := builder.BuildDefinitions(decls, namespace)
 
 	printer := codegen.NewPrinter()
+	// npm runs a package's `bin` entry through its `#!` line. POSIX shells
+	// read it directly, and on Windows npm's .cmd shim picks the interpreter
+	// from it, so a script without one fails as an installed command.
+	printer.PrintShebang("/usr/bin/env node")
 	jsOutput := printer.PrintModule(jsMod)
 
 	baseName := strings.TrimSuffix(filepath.Base(source.Path), filepath.Ext(source.Path)) + ".js"
