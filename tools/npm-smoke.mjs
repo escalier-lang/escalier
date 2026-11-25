@@ -319,24 +319,6 @@ export function installedPaths(projectDir, target) {
     return JSON.parse(result.stdout);
 }
 
-// Throws unless `path` is an executable file inside `packageName`.
-export function checkBinary(path, packageName) {
-    if (!path.split(/[\\/]/).join('/').includes(`/${packageName}/bin/`)) {
-        throw new Error(`${path} is not inside ${packageName}/bin/`);
-    }
-    if (!fs.statSync(path).isFile()) {
-        throw new Error(`${path} is not a file`);
-    }
-    // Windows has no executable bit. It runs a file by its extension.
-    if (process.platform !== 'win32') {
-        try {
-            fs.accessSync(path, fs.constants.X_OK);
-        } catch {
-            throw new Error(`${path} is not executable`);
-        }
-    }
-}
-
 // Returns the arguments for parseArgs() that the smoke test's environment
 // variables in `env` select, or `undefined` when ESCALIER_SMOKE_TARBALLS
 // is unset or empty:

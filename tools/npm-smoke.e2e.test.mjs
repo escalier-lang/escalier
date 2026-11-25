@@ -49,7 +49,6 @@ import { after, before, describe, test } from 'node:test';
 import {
     CLI_PACKAGE,
     FIXTURES,
-    checkBinary,
     escalierRunner,
     execCommand,
     installProject,
@@ -63,12 +62,6 @@ import {
     smokeArgsFromEnv,
 } from './npm-smoke.mjs';
 import { platformPackageName } from './platforms.mjs';
-
-// Asserts that `result`, from run() or runModule(), succeeded, with its
-// output as the failure message.
-function assertRan(result) {
-    assert.ok(result.ok, result.output);
-}
 
 // Defines the smoke tests for `options`, the result of readOptions(). They
 // share one project in a temporary directory: a before() hook installs it,
@@ -109,12 +102,30 @@ function defineSmokeTests(options) {
 
         test('getBinaryPath() returns an executable file', () => {
             cliPaths = installedPaths(projectDir, target);
-            checkBinary(cliPaths.binaryPath, expectedPackage);
+            const { binaryPath } = cliPaths;
+            assert.ok(
+                binaryPath
+                    .split(/[\\/]/)
+                    .join('/')
+                    .includes(`/${expectedPackage}/bin/`),
+                `${binaryPath} is not inside ${expectedPackage}/bin/`,
+            );
+            assert.ok(
+                fs.statSync(binaryPath).isFile(),
+                `${binaryPath} is not a file`,
+            );
+            // Windows has no executable bit. It runs a file by its extension.
+            if (process.platform !== 'win32') {
+                assert.doesNotThrow(
+                    () => fs.accessSync(binaryPath, fs.constants.X_OK),
+                    `${binaryPath} is not executable`,
+                );
+            }
         });
 
         test(`escalier --version prints ${version}`, () => {
             const result = runEscalier(['--version']);
-            assertRan(result);
+            assert.ok(result.ok, result.output);
             assert.equal(result.stdout, version);
         });
 
@@ -122,7 +133,7 @@ function defineSmokeTests(options) {
             test(`escalier build compiles ${label}`, () => {
                 const dir = `smoke-${name}`;
                 const result = runEscalier(['build', dir]);
-                assertRan(result);
+                assert.ok(result.ok, result.output);
                 const [file, text] = output;
                 const outPath = join(projectDir, dir, 'build', file);
                 assert.ok(
@@ -163,7 +174,7 @@ function defineSmokeTests(options) {
                     `import * as lib from 'smoke-${name}';\n${code}`,
                     projectDir,
                 );
-                assertRan(result);
+                assert.ok(result.ok, result.output);
                 assert.equal(result.stdout, stdout);
             });
         }
@@ -179,7 +190,7 @@ function defineSmokeTests(options) {
                     [],
                 );
                 const result = run(command, args, projectDir);
-                assertRan(result);
+                assert.ok(result.ok, result.output);
                 assert.equal(result.stdout, bin);
             });
         }
