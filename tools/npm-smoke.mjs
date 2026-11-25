@@ -1,53 +1,12 @@
-#!/usr/bin/env node
-//
-// Installs the packed @escalier/cli tarballs into a new temporary project
-// and checks that the installed command works on this machine.
-//
-//     node tools/smoke-test-npm.mjs --tarballs <dir>
-//         [--package-manager npm|pnpm] [--target <suffix>]
-//         [--emulator <command>]
-//
-// <dir> holds the tarballs that `pnpm pack` writes for packages/cli and for
-// every package under packages/platforms. The project depends on the
-// @escalier/cli tarball. Package manager overrides point each
-// @escalier/cli-<suffix> dependency at a local copy of its package, so
-// nothing comes from the registry. To build the tarballs in a checkout:
-//
-//     node tools/build-binaries.mjs
-//     for dir in packages/cli packages/platforms/cli-*; do
-//         (cd "$dir" && pnpm pack --pack-destination /tmp/escalier-tarballs)
-//     done
-//
-// The checks are node:test tests, so running the file runs them and prints
-// node:test's report. They share one project, which a before() hook
-// installs and an after() hook deletes, and they check that:
-//
-// - only the platform package for the target was installed,
-// - getBinaryPath() from @escalier/cli returns an executable file in that
-//   package,
-// - `escalier --version` prints the version in packages/cli/package.json,
-// - `escalier build` compiles each package in FIXTURES: a library that
-//   imports from `std:`, one that imports from `web:`, a bin-only package
-//   and a package whose bin script calls its library,
-// - Node imports each compiled library and prints the expected result,
-// - each installed bin command prints the expected line.
-//
-// --target names the platform to install for, such as `linux-arm`. It
-// defaults to this machine's platform. A target that differs from this
-// machine needs --emulator, the command that runs the target's binary,
-// such as `qemu-arm`. Node on this machine can't run the wrapper for
-// another platform, so for such a target the script runs the binary that
-// getBinaryPath() returns under the emulator instead of running
-// `npx escalier`. Only npm can install for another platform, through its
-// --os and --cpu flags.
+// Helpers for the npm smoke test in tools/npm-smoke.e2e.test.mjs, which
+// installs the packed @escalier/cli tarballs into a temporary project and
+// checks that the installed command works. tools/npm-smoke.test.mjs tests
+// these helpers.
 
-import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { after, before, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { parseArgs as parseArgv } from 'node:util';
 
@@ -55,7 +14,7 @@ import { TARGETS, platformPackageName } from './platforms.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-const CLI_PACKAGE = '@escalier/cli';
+export const CLI_PACKAGE = '@escalier/cli';
 
 // The packages that the build checks compile. Each is `smoke-<name>` in the
 // directory of that name, with the `.esc` sources in `files`.
@@ -286,7 +245,7 @@ function childEnv() {
 // Runs `command` with `args` in `cwd`, with `extraEnv` added to
 // childEnv(), and returns its exit status and output. On Windows none of
 // `args` may contain a space.
-function run(command, args, cwd, extraEnv = {}) {
+export function run(command, args, cwd, extraEnv = {}) {
     const options = {
         cwd,
         env: { ...childEnv(), ...extraEnv },
@@ -316,7 +275,7 @@ function run(command, args, cwd, extraEnv = {}) {
 
 // Returns the platform packages that resolve from the installed
 // @escalier/cli, which is where its getBinaryPath() looks for them.
-function installedPlatformPackages(projectDir) {
+export function installedPlatformPackages(projectDir) {
     const cliManifest = fs.realpathSync(
         join(projectDir, 'node_modules', '@escalier', 'cli', 'package.json'),
     );
@@ -336,7 +295,7 @@ function installedPlatformPackages(projectDir) {
 // script imports the package in a child process from the project directory,
 // so the import resolves the way it does for a project that depends on
 // @escalier/cli.
-function installedPaths(projectDir, target) {
+export function installedPaths(projectDir, target) {
     const options = JSON.stringify({ platform: target.os, arch: target.cpu });
     // The child prints only the error's message, not its stack trace.
     const code = [
@@ -361,7 +320,7 @@ function installedPaths(projectDir, target) {
 }
 
 // Throws unless `path` is an executable file inside `packageName`.
-function checkBinary(path, packageName) {
+export function checkBinary(path, packageName) {
     if (!path.split(/[\\/]/).join('/').includes(`/${packageName}/bin/`)) {
         throw new Error(`${path} is not inside ${packageName}/bin/`);
     }
@@ -378,32 +337,47 @@ function checkBinary(path, packageName) {
     }
 }
 
-// Returns the options from the command line, the version that `escalier
-// --version` should print and the tarballs to install. Prints the error and
-// exits with status 2 on a bad argument or tarball directory.
-function readOptions() {
-    const hostTarget = `${process.platform}-${process.arch}`;
-    try {
-        const options = parseArgs(process.argv.slice(2), hostTarget);
-        const tarballDir = fs.realpathSync(options.tarballs);
-        const tarballs = findTarballs(fs.readdirSync(tarballDir));
-        const { version } = JSON.parse(
-            fs.readFileSync(
-                join(ROOT, 'packages', 'cli', 'package.json'),
-                'utf8',
-            ),
-        );
-        return {
-            ...options,
-            crossInstall: options.target.suffix !== hostTarget,
-            version,
-            tarballDir,
-            tarballs,
-        };
-    } catch (err) {
-        console.error(err.message);
-        process.exit(2);
+// Returns the arguments for parseArgs() that the smoke test's environment
+// variables in `env` select, or `undefined` when ESCALIER_SMOKE_TARBALLS
+// is unset or empty:
+//
+// - ESCALIER_SMOKE_TARBALLS gives --tarballs,
+// - ESCALIER_SMOKE_PACKAGE_MANAGER gives --package-manager,
+// - ESCALIER_SMOKE_TARGET gives --target,
+// - ESCALIER_SMOKE_EMULATOR gives --emulator.
+//
+// An unset or empty variable leaves its flag out.
+export function smokeArgsFromEnv(env) {
+    if (!env.ESCALIER_SMOKE_TARBALLS) {
+        return undefined;
     }
+    const flags = [
+        ['--tarballs', env.ESCALIER_SMOKE_TARBALLS],
+        ['--package-manager', env.ESCALIER_SMOKE_PACKAGE_MANAGER],
+        ['--target', env.ESCALIER_SMOKE_TARGET],
+        ['--emulator', env.ESCALIER_SMOKE_EMULATOR],
+    ];
+    return flags.flatMap(([flag, value]) => (value ? [flag, value] : []));
+}
+
+// Returns the options that `argv` selects, with the version that `escalier
+// --version` should print and the tarballs to install. Throws on a bad
+// argument or tarball directory.
+export function readOptions(argv) {
+    const hostTarget = `${process.platform}-${process.arch}`;
+    const options = parseArgs(argv, hostTarget);
+    const tarballDir = fs.realpathSync(options.tarballs);
+    const tarballs = findTarballs(fs.readdirSync(tarballDir));
+    const { version } = JSON.parse(
+        fs.readFileSync(join(ROOT, 'packages', 'cli', 'package.json'), 'utf8'),
+    );
+    return {
+        ...options,
+        crossInstall: options.target.suffix !== hostTarget,
+        version,
+        tarballDir,
+        tarballs,
+    };
 }
 
 // Copies the tarballs into `projectDir`/tarballs and returns the path of
@@ -462,7 +436,7 @@ function writeFixtures(projectDir) {
 
 // Writes `manifest` as the project's package.json and installs it with the
 // options' package manager. Throws when the install fails.
-function installProject(options, projectDir, manifest) {
+export function installProject(options, projectDir, manifest) {
     fs.writeFileSync(
         join(projectDir, 'package.json'),
         `${JSON.stringify(manifest, null, 2)}\n`,
@@ -482,7 +456,7 @@ function installProject(options, projectDir, manifest) {
 // installs it. Returns the paths of the installed packages, keyed by
 // package name, for projectManifest(). Throws when extracting a tarball or
 // the install fails.
-function setUpProject(options, projectDir) {
+export function setUpProject(options, projectDir) {
     const { packageManager, tarballDir, tarballs } = options;
     let paths = copyTarballs(tarballDir, tarballs, projectDir);
     // pnpm installs every platform package when the overrides name
@@ -501,7 +475,7 @@ function setUpProject(options, projectDir) {
 // returns its exit status and output the way run() does. The compiled
 // JavaScript doesn't depend on the target, so the host's Node runs it for an
 // emulated target too.
-function runModule(code, cwd) {
+export function runModule(code, cwd) {
     const result = spawnSync(
         process.execPath,
         ['--input-type=module', '--eval', code],
@@ -515,7 +489,7 @@ function runModule(code, cwd) {
 // `projectDir` and returns the result the way run() does. For the host's
 // own target it goes through the installed `escalier` command. For another
 // target it runs the binary that `getPaths()` names under the emulator.
-function escalierRunner(options, projectDir, getPaths) {
+export function escalierRunner(options, projectDir, getPaths) {
     const { packageManager, crossInstall, emulator } = options;
     return (args) => {
         if (!crossInstall) {
@@ -537,130 +511,4 @@ function escalierRunner(options, projectDir, getPaths) {
             ESCALIER_STDLIB_DIR: paths.stdlibDir,
         });
     };
-}
-
-// Asserts that `result`, from run() or runModule(), succeeded, with its
-// output as the failure message.
-function assertRan(result) {
-    assert.ok(result.ok, result.output);
-}
-
-// Defines the smoke tests for `options`, the result of readOptions(). They
-// share one project in a temporary directory: a before() hook installs it,
-// the tests run in order against it, and an after() hook deletes it. The
-// directory comes from fs.mkdtempDisposableSync(), which needs Node 24.4.
-function defineSmokeTests(options) {
-    const { packageManager, target, version } = options;
-    const expectedPackage = platformPackageName(target.suffix);
-
-    describe(`${CLI_PACKAGE} on ${target.suffix} with ${packageManager}`, () => {
-        let projectTmp;
-        let projectDir;
-        // The paths of the installed tarballs, for the second install.
-        let paths;
-        // The getBinaryPath() test fills this in, and the escalier runner
-        // reads it for an emulated target.
-        let cliPaths;
-        const runEscalier = (args) =>
-            escalierRunner(options, projectDir, () => cliPaths)(args);
-
-        before(() => {
-            projectTmp = fs.mkdtempDisposableSync(
-                join(tmpdir(), 'escalier-smoke-'),
-            );
-            projectDir = projectTmp.path;
-            paths = setUpProject(options, projectDir);
-        });
-
-        after(() => {
-            projectTmp?.remove();
-        });
-
-        test(`only ${expectedPackage} is installed`, () => {
-            assert.deepEqual(installedPlatformPackages(projectDir), [
-                expectedPackage,
-            ]);
-        });
-
-        test('getBinaryPath() returns an executable file', () => {
-            cliPaths = installedPaths(projectDir, target);
-            checkBinary(cliPaths.binaryPath, expectedPackage);
-        });
-
-        test(`escalier --version prints ${version}`, () => {
-            const result = runEscalier(['--version']);
-            assertRan(result);
-            assert.equal(result.stdout, version);
-        });
-
-        for (const { name, label, output } of FIXTURES) {
-            test(`escalier build compiles ${label}`, () => {
-                const dir = `smoke-${name}`;
-                const result = runEscalier(['build', dir]);
-                assertRan(result);
-                const [file, text] = output;
-                const outPath = join(projectDir, dir, 'build', file);
-                assert.ok(
-                    fs.existsSync(outPath),
-                    `${dir}/build/${file} is missing:\n${result.output}`,
-                );
-                const js = fs.readFileSync(outPath, 'utf8');
-                assert.ok(
-                    js.includes(text),
-                    `${dir}/build/${file} has no ${text}:\n${js}`,
-                );
-            });
-        }
-
-        // The fixtures install after they build. npm links a bin command to
-        // its target, and pnpm copies a `file:` directory, so both need
-        // build/ to exist first.
-        test('the compiled packages install', () => {
-            const localPackages = Object.fromEntries(
-                FIXTURES.map(({ name }) => [
-                    `smoke-${name}`,
-                    `./smoke-${name}`,
-                ]),
-            );
-            installProject(
-                options,
-                projectDir,
-                projectManifest(paths, packageManager, localPackages),
-            );
-        });
-
-        for (const { name, run: code, stdout } of FIXTURES) {
-            if (code === undefined) {
-                continue;
-            }
-            test(`node imports smoke-${name}`, () => {
-                const result = runModule(
-                    `import * as lib from 'smoke-${name}';\n${code}`,
-                    projectDir,
-                );
-                assertRan(result);
-                assert.equal(result.stdout, stdout);
-            });
-        }
-
-        for (const { name, bin } of FIXTURES) {
-            if (bin === undefined) {
-                continue;
-            }
-            test(`smoke-${name} prints ${bin}`, () => {
-                const [command, args] = execCommand(
-                    packageManager,
-                    `smoke-${name}`,
-                    [],
-                );
-                const result = run(command, args, projectDir);
-                assertRan(result);
-                assert.equal(result.stdout, bin);
-            });
-        }
-    });
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    defineSmokeTests(readOptions());
 }
