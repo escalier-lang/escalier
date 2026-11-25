@@ -34,3 +34,5 @@ packages/platforms/*/bin/
 .DS_Store
 coverage
 dist
+# tools/copy-stdlib.mjs copies the stdlib here when packages/cli builds.
+packages/cli/data/

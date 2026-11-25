@@ -1,0 +1,9 @@
+import "std:math"
+
+export fn hypot(a: number, b: number) -> number {
+    return math.sqrt(a * a + b * b)
+}
+
+export fn shout(s: string) -> string {
+    return s.toUpperCase()
+}

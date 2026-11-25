@@ -1,4 +1,6 @@
 import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const PLATFORM_PACKAGE_PREFIX = '@escalier/cli-';
 
@@ -20,6 +22,16 @@ export const SUPPORTED_PLATFORMS: readonly string[] = Object.keys(
 // The environment variable that names an escalier binary to use instead of
 // the one from the platform package.
 export const BINARY_PATH_ENV = 'ESCALIER_BINARY_PATH';
+
+// The environment variable the escalier binary reads the stdlib directory
+// from.
+export const STDLIB_DIR_ENV = 'ESCALIER_STDLIB_DIR';
+
+// Returns the directory that holds the stdlib `.esc` files this package
+// ships.
+export function getStdlibDir(): string {
+    return join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
+}
 
 // Returns the name of the package that holds the escalier binary for
 // `platform` and `arch`, such as `@escalier/cli-linux-x64`, or `undefined`

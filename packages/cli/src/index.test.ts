@@ -1,8 +1,12 @@
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, test } from 'vitest';
 
 import {
     SUPPORTED_PLATFORMS,
     getBinaryPath,
+    getStdlibDir,
     platformPackageName,
 } from './index.js';
 
@@ -136,5 +140,12 @@ describe('SUPPORTED_PLATFORMS', () => {
             'win32-arm64',
             'win32-x64',
         ]);
+    });
+});
+
+describe('getStdlibDir', () => {
+    test('names the data directory at the package root', () => {
+        const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+        expect(getStdlibDir()).toBe(join(packageRoot, 'data'));
     });
 });

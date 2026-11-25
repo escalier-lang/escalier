@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { constants } from 'node:os';
 
-import { getBinaryPath } from './index.js';
+import { STDLIB_DIR_ENV, getBinaryPath, getStdlibDir } from './index.js';
 
 // The outcome of running the binary, in the shape `spawnSync` returns it.
 export interface SpawnOutcome {
@@ -10,11 +10,18 @@ export interface SpawnOutcome {
     error?: Error;
 }
 
+export type Env = Record<string, string | undefined>;
+
 export interface RunDeps {
+    // This process's environment variables.
+    env: Env;
     // Returns the path of the binary to run. Throws when there is none.
     getBinaryPath: () => string;
-    // Runs the binary with the given arguments and this process's stdio.
-    spawn: (binaryPath: string, args: string[]) => SpawnOutcome;
+    // Returns the stdlib directory this package ships.
+    getStdlibDir: () => string;
+    // Runs the binary with the given arguments and environment variables,
+    // and this process's stdio.
+    spawn: (binaryPath: string, args: string[], env: Env) => SpawnOutcome;
     // Sends `signal` to this process.
     kill: (signal: NodeJS.Signals) => void;
     // Writes a line to stderr.
@@ -22,12 +29,24 @@ export interface RunDeps {
 }
 
 const defaultDeps: RunDeps = {
+    env: process.env,
     getBinaryPath: () => getBinaryPath(),
-    spawn: (binaryPath, args) =>
-        spawnSync(binaryPath, args, { stdio: 'inherit' }),
+    getStdlibDir,
+    spawn: (binaryPath, args, env) =>
+        spawnSync(binaryPath, args, { stdio: 'inherit', env }),
     kill: (signal) => process.kill(process.pid, signal),
     printError: (message) => console.error(message),
 };
+
+// Returns the environment variables to run the binary with. They are `env`
+// with ESCALIER_STDLIB_DIR set to `stdlibDir`, unless `env` already sets
+// ESCALIER_STDLIB_DIR to a non-empty value.
+export function binaryEnv(env: Env, stdlibDir: string): Env {
+    if (env[STDLIB_DIR_ENV]) {
+        return env;
+    }
+    return { ...env, [STDLIB_DIR_ENV]: stdlibDir };
+}
 
 // Runs the escalier binary with `args` and returns the exit status the
 // `escalier` command should exit with: the binary's own status, or 1 when
@@ -50,7 +69,12 @@ export function runEscalier(
         return 1;
     }
 
-    const result = deps.spawn(binaryPath, args);
+    // The binary in the platform package finds the stdlib only through
+    // ESCALIER_STDLIB_DIR or `--stdlib-dir`, so the variable points it at
+    // this package's copy. A binary from ESCALIER_BINARY_PATH gets the same
+    // copy, since one built with `go install` has no stdlib next to it.
+    const env = binaryEnv(deps.env, deps.getStdlibDir());
+    const result = deps.spawn(binaryPath, args, env);
     if (result.error !== undefined) {
         deps.printError(`failed to run ${binaryPath}: ${result.error.message}`);
         return 1;

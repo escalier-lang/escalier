@@ -5,7 +5,7 @@ The command-line compiler for the
 
 ```sh
 npm install --save-dev @escalier/cli
-npx escalier build
+npx escalier build .
 ```
 
 Projects that run the compiled code also need
@@ -34,14 +34,31 @@ If the `escalier` command reports a missing platform package, reinstall
 without `--no-optional` or `--omit=optional`. To use a binary you built
 yourself, set `ESCALIER_BINARY_PATH` to its path.
 
+## The standard library
+
+The binary reads the standard library's `.esc` files from disk.
+`@escalier/cli` ships them in its `data` directory, and the `escalier`
+command sets `ESCALIER_STDLIB_DIR` to that directory unless you have set it
+yourself. It does so for a binary from `ESCALIER_BINARY_PATH` too, so set
+`ESCALIER_STDLIB_DIR` as well to run your binary with another copy of the
+standard library.
+
 ## JavaScript API
 
 ```js
-import { getBinaryPath } from '@escalier/cli';
+import { spawnSync } from 'node:child_process';
+import { getBinaryPath, getStdlibDir } from '@escalier/cli';
 
-// The path of the escalier binary for this machine, for tools that spawn
-// the compiler themselves.
-const escalier = getBinaryPath();
+// The path of the escalier binary for this machine, and the standard
+// library directory to run it with, for tools that spawn the compiler
+// themselves.
+spawnSync(getBinaryPath(), ['build', '.'], {
+    env: {
+        ...process.env,
+        ESCALIER_STDLIB_DIR: process.env.ESCALIER_STDLIB_DIR || getStdlibDir(),
+    },
+    stdio: 'inherit',
+});
 ```
 
 `getBinaryPath()` throws an `Error` that explains what is missing when the

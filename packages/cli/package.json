@@ -16,11 +16,12 @@
   },
   "files": [
     "dist",
-    "!dist/**/*.test.*"
+    "!dist/**/*.test.*",
+    "data"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "prepack": "pnpm build",
+    "build": "tsc -p tsconfig.json && node ../../tools/copy-stdlib.mjs",
+    "prepack": "pnpm build && node -e \"if (!require('fs').existsSync('data/std')) { console.error('data/std is missing. Run node ../../tools/copy-stdlib.mjs before packing.'); process.exit(1); }\"",
     "test": "vitest run",
     "lint:package": "publint --strict && attw --pack . --profile esm-only"
   },
