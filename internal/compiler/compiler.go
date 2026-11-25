@@ -451,7 +451,10 @@ func compileScript(b backend, lib LibScope, source *ast.Source) CompilerOutput {
 	}
 }
 
-// Assumes that the current working directory is the root of the package
+// FindSourceFiles returns the paths of the .esc files under lib/ and bin/,
+// relative to the current working directory, which must be the package root.
+// The paths use forward slashes on every OS, such as "lib/foo/bar.esc", the
+// form ast.Source.Path documents and CompilePackage matches against.
 func FindSourceFiles() ([]string, error) {
 	// Find all .esc files in the lib directory
 	var files []string
@@ -464,7 +467,7 @@ func FindSourceFiles() ([]string, error) {
 
 			// Check if it's a file and ends with .esc
 			if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
-				files = append(files, path)
+				files = append(files, filepath.ToSlash(path))
 			}
 
 			return nil
@@ -485,7 +488,7 @@ func FindSourceFiles() ([]string, error) {
 
 			// Check if it's a file and ends with .esc
 			if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
-				files = append(files, path)
+				files = append(files, filepath.ToSlash(path))
 			}
 
 			return nil
