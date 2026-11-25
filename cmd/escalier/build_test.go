@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -361,3 +363,83 @@ type testDiagnostic struct {
 
 func (d testDiagnostic) Span() ast.Span  { return d.span }
 func (d testDiagnostic) Message() string { return d.message }
+
+func TestBuildEndsTheStatusLineBeforeDiagnostics(t *testing.T) {
+	stdlibDir, err := filepath.Abs(filepath.Join("..", "..", "internal", "interop", "data"))
+	require.NoError(t, err)
+	t.Setenv("ESCALIER_STDLIB_DIR", stdlibDir)
+
+	// writePackage returns the directory of a new package whose lib/index.esc
+	// holds source.
+	writePackage := func(t *testing.T, source string) string {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(
+			filepath.Join(dir, "package.json"),
+			[]byte(`{"name": "pkg", "version": "0.0.0", "type": "module"}`),
+			0644,
+		))
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "lib"), 0755))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(dir, "lib", "index.esc"), []byte(source), 0644,
+		))
+		return dir
+	}
+
+	missingDir := filepath.Join(t.TempDir(), "missing")
+	// The message os.Chdir gives for a missing directory differs between
+	// operating systems, so the expected output quotes whatever it returns.
+	chdirErr := os.Chdir(missingDir)
+	require.Error(t, chdirErr)
+
+	tests := []struct {
+		name   string
+		pkg    string
+		ok     bool
+		status string // a regexp for the text after `building: <pkg>` on its line
+		diags  string
+	}{
+		{
+			name:   "a package with a type error",
+			pkg:    writePackage(t, "export val x: number = \"hello\"\n"),
+			status: regexp.QuoteMeta(" - failed (1 error)"),
+			diags: "lib/index.esc:1:24: cannot constrain \"hello\" <: number\n\n" +
+				"1:  export val x: number = \"hello\"\n" +
+				"                           ^^^^^^^\n\n",
+		},
+		{
+			name: "a package with a warning",
+			pkg: writePackage(
+				t, "export fn f() -> number throws string { return 1 }\n",
+			),
+			ok:     true,
+			status: ` - ok \(.+\)`,
+			diags: "lib/index.esc:1:32: the body raises nothing, so the declared " +
+				"`throws string` is unreachable; drop the clause\n\n" +
+				"1:  export fn f() -> number throws string { return 1 }\n" +
+				"                                   ^^^^^^\n\n",
+		},
+		{
+			name:   "a package directory that doesn't exist",
+			pkg:    missingDir,
+			status: regexp.QuoteMeta(" - failed"),
+			diags: "failed to change directory to " + missingDir + ": " +
+				chdirErr.Error() + "\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// One buffer stands in for a terminal that shows stdout and stderr
+			// together, so the test sees the order the two streams interleave in.
+			out := &bytes.Buffer{}
+			require.Equal(t, tt.ok, build(out, out, []string{tt.pkg}))
+			statusLine, diags, found := strings.Cut(out.String(), "\n")
+			require.True(t, found)
+			require.Regexp(
+				t,
+				"^"+regexp.QuoteMeta("building: "+tt.pkg)+tt.status+"$",
+				statusLine,
+			)
+			require.Equal(t, tt.diags, diags)
+		})
+	}
+}
