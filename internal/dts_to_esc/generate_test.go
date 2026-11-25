@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/set"
@@ -158,6 +159,69 @@ func TestGenerate_RemovesAPackageNoInputAccountsFor(t *testing.T) {
 	require.Equal(t, []string{
 		"node/README.md", "std/number.esc", "std/prelude.esc",
 	}, treeUnder(t, outDir))
+}
+
+// TestGenerate_CopiesTheNoticeFile covers GenerateOptions.NoticeFile. A
+// run copies the file to the root of the tree, and fails with the
+// reason when it can't read the file or can't write the copy.
+func TestGenerate_CopiesTheNoticeFile(t *testing.T) {
+	t.Parallel()
+
+	noticeDir := t.TempDir()
+	notice := filepath.Join(noticeDir, NoticeFileName)
+	require.NoError(t, os.WriteFile(notice, []byte("notices\n"), 0o644))
+	missing := filepath.Join(noticeDir, "missing.txt")
+
+	cases := []struct {
+		name string
+		// prepare readies outDir before the run.
+		prepare    func(t *testing.T, outDir string)
+		noticeFile string
+		// message is the run's full error, with "<out-dir>" standing in
+		// for the output root. "" means the run succeeds.
+		message string
+	}{
+		{
+			name:       "copies the file",
+			prepare:    func(t *testing.T, outDir string) {},
+			noticeFile: notice,
+		},
+		{
+			name:       "can't read the file",
+			prepare:    func(t *testing.T, outDir string) {},
+			noticeFile: missing,
+			message:    "reading notice file: open " + missing + ": no such file or directory",
+		},
+		{
+			name: "can't write the copy",
+			prepare: func(t *testing.T, outDir string) {
+				require.NoError(t, os.Mkdir(filepath.Join(outDir, NoticeFileName), 0o755))
+			},
+			noticeFile: notice,
+			message: "writing notice file: open <out-dir>/" + NoticeFileName +
+				": is a directory",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			outDir := t.TempDir()
+			tc.prepare(t, outDir)
+			_, err := Generate(GenerateOptions{
+				LibDir:     seedLibDir(t, overlayLib),
+				OverlayDir: seedOverlay(t, nil),
+				OutDir:     outDir,
+				NoticeFile: tc.noticeFile,
+			})
+			if tc.message != "" {
+				require.EqualError(t, err,
+					strings.ReplaceAll(tc.message, "<out-dir>", outDir))
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "notices\n", readPackage(t, outDir, NoticeFileName))
+		})
+	}
 }
 
 // TestGenerate_LeavesAHandAuthoredPackageAlone covers the exemption. A
