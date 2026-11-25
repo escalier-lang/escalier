@@ -34,3 +34,10 @@ Docs, Go test files, `cmd/lsp-server/` and private packages such as the
 fixtures don't need a changeset. For a change that shouldn't release, such
 as a refactor, run `pnpm changeset --empty` and commit the empty changeset
 it creates.
+
+The `Release` workflow (`.github/workflows/release.yaml`) publishes the
+packages. While changesets are pending on `main`, it keeps a "Version
+Packages" pull request open with the result of `pnpm version-packages`.
+Merging that pull request publishes each package whose version isn't on npm
+yet. `pnpm release` builds the platform binaries and the two packages first,
+so a build failure stops the release before anything is published.

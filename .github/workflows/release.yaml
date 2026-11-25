@@ -1,0 +1,74 @@
+name: Release
+
+# Runs changesets/action on every push to main. While changesets are
+# pending, it opens or updates the "Version Packages" pull request. Merging
+# that pull request removes the changesets, and the next run publishes the
+# packages whose versions changed to npm.
+on:
+  push:
+    branches:
+      - main
+
+# A second push to main waits for the running release instead of racing it
+# to update the pull request or to publish.
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions: {}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      # Pushes the changeset-release/main branch and the release tags.
+      contents: write
+      # Opens and updates the "Version Packages" pull request.
+      pull-requests: write
+      # Signs the npm provenance statements.
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      # A release builds the platform binaries, so Go comes from go.mod. The
+      # job restores no caches, so a cache that another workflow wrote can't
+      # change what gets published.
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      # No registry-url here. setup-node would write its own npm user config
+      # that reads NODE_AUTH_TOKEN, and npm would use it in place of the
+      # .npmrc that changesets/action writes from NPM_TOKEN.
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      # changesets/action v2 requires Changesets v3, and this repo uses
+      # Changesets v2, so the action stays on v1. The github-api commit mode
+      # pushes the version commit through the API with GITHUB_TOKEN, which
+      # works without the credentials that checkout leaves out, and GitHub
+      # signs the commit.
+      - name: Open the version pull request or publish
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          version: pnpm version-packages
+          publish: pnpm release
+          commitMode: github-api
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
