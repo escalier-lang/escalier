@@ -311,6 +311,52 @@ jobs:
       - name: Run Tests
         run: pnpm coverage
 
+      - name: Upload results to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6.0.2
+        with:
+          flags: ts
+          verbose: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # The playground's Playwright tests run in a job of their own, in parallel
+  # with check_ts, since they take several minutes. Both jobs build the
+  # lsp-server wasm, which the unit tests and the playground both load.
+  e2e_playground:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Install Go dependencies
+        run: go mod download
+
+      - name: Build lsp-server
+        run: make lsp-server-wasm
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install chromium --with-deps
+
       - name: Playwright E2E tests
         working-directory: playground
         run: pnpm e2e:ci
@@ -328,13 +374,6 @@ jobs:
         with:
           name: playwright-test-results
           path: playground/test-results/
-
-      - name: Upload results to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6.0.2
-        with:
-          flags: ts
-          verbose: true
-          token: ${{ secrets.CODECOV_TOKEN }}
 
   build_escalier_wasm:
     runs-on: ubuntu-latest
