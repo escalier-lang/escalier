@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { Color } from "../lib/index.js";
 import { InvokeCustomMatcherOrThrow } from "@escalier/runtime";
 const color = new Color.Hex("#FF0000");

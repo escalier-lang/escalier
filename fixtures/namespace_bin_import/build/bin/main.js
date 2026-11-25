@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { geo } from "../lib/index.js";
 const p = new geo.Point(3, 4);
 const o = geo.makeOrigin();

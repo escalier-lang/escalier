@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { InvokeCustomMatcherOrThrow } from "@escalier/runtime";
 const Color = {};
 class Color__RGB {

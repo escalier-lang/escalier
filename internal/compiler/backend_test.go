@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"context"
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -73,9 +74,28 @@ func TestCompileScriptImportsUsedLibSymbols(t *testing.T) {
 	out := CompileScript(libOutput.LibScope, binSource("val g = greeting\n"))
 	require.Empty(t, out.ParseErrors)
 	require.Equal(t,
-		"import { greeting } from \"../lib/index.js\";\nconst g = greeting;\n"+
+		"#!/usr/bin/env node\n"+
+			"import { greeting } from \"../lib/index.js\";\nconst g = greeting;\n"+
 			"//# sourceMappingURL=./index.js.map\n",
 		out.CompUnits["bin/index"].JS)
+}
+
+// TestCompileScriptSourceMapSkipsTheShebang asserts that the source map of a
+// compiled script leaves the `#!` line without mappings, so the mappings for
+// `const g = 1;` land on the second generated line.
+func TestCompileScriptSourceMapSkipsTheShebang(t *testing.T) {
+	out := CompileScript(nil, binSource("val g = 1\n"))
+	require.Empty(t, out.ParseErrors)
+
+	unit := out.CompUnits["bin/index"]
+	require.Equal(t, "#!/usr/bin/env node\nconst g = 1;\n//# sourceMappingURL=./index.js.map\n", unit.JS)
+
+	var sourceMap struct {
+		Mappings string `json:"mappings"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(unit.SourceMap), &sourceMap))
+	require.True(t, strings.HasPrefix(sourceMap.Mappings, ";"), "mappings: %q", sourceMap.Mappings)
+	require.False(t, strings.HasPrefix(sourceMap.Mappings, ";;"), "mappings: %q", sourceMap.Mappings)
 }
 
 // TestCompileAScriptWithNoLibrary checks the entry point a package with no lib/ files
