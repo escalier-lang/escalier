@@ -80,11 +80,12 @@ jobs:
 
       # One release covers @escalier/cli and its platform packages, with the
       # binaries that pnpm release built attached. Each other published
-      # package gets its own release.
+      # package gets its own release. The step runs whenever the action took
+      # its publish path, not only when it published, and creates only the
+      # releases still missing, so a re-run recovers from a failure here.
       - name: Create the GitHub releases
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.changesets.outputs.hasChangesets == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
         run: node tools/create-github-releases.mjs

@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 //
-// Creates the GitHub releases for the packages that a release published.
+// Creates the GitHub release for each published package version that
+// doesn't have one yet.
 //
-//     PUBLISHED_PACKAGES='[{"name":"@escalier/cli","version":"0.1.0"}]' \
-//         node tools/create-github-releases.mjs
+//     node tools/create-github-releases.mjs
 //
-// The release workflow runs it after changesets/action publishes, with
-// PUBLISHED_PACKAGES set to the action's publishedPackages output. The
+// The release workflow runs it after changesets/action takes its publish
+// path. The script reads each public workspace package's version, and
+// creates a release only for a version that `npm view` finds on npm and
+// that has no GitHub release yet. Running it again creates only what is
+// still missing, so re-running a release whose last step failed, or the
+// next push to main, finishes the job. The
 // @escalier/cli-<platform>-<arch> packages always share @escalier/cli's
 // version, so they fold into one @escalier/cli release instead of one
 // release each. That release carries the escalier binary for every target
@@ -15,8 +19,9 @@
 //
 // Each release gets the tag <name>@<version> on GITHUB_SHA and takes its
 // notes from that version's section of the package's CHANGELOG.md, or a
-// one-line note when the package has no CHANGELOG.md. The
-// script runs `gh release create`, which reads its token from GH_TOKEN.
+// one-line note when the package has no CHANGELOG.md. The script computes
+// every release's notes before it creates any release, so a bad changelog
+// creates none. It runs `gh`, which reads its token from GH_TOKEN.
 
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -31,14 +36,14 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const CLI_PACKAGE = '@escalier/cli';
 const PLATFORM_PREFIX = `${CLI_PACKAGE}-`;
 
-// Returns the releases for `published`, the list of `{ name, version }`
-// that changesets/action reports, in the order each first appears. Each
+// Returns the releases for `packages`, a list of `{ name, version }`, in
+// the order each first appears. Each
 // release is `{ name, version, tag }`. A @escalier/cli-<suffix> package
 // joins the @escalier/cli release. Throws when two packages in one release
 // have different versions.
-export function groupReleases(published) {
+export function groupReleases(packages) {
     const releases = new Map();
-    for (const { name, version } of published) {
+    for (const { name, version } of packages) {
         const releaseName = name.startsWith(PLATFORM_PREFIX)
             ? CLI_PACKAGE
             : name;
@@ -96,10 +101,19 @@ export function assetName(target) {
     return `escalier-${target.suffix}${extension}`;
 }
 
-// Returns the directory of each workspace package under packages/, keyed
-// by package name.
-function packageDirs() {
-    const dirs = new Map();
+// Returns the releases in `releases` to create: those whose version
+// `isPublished(release)` reports on npm and whose tag
+// `hasRelease(release)` reports without a GitHub release.
+export function pendingReleases(releases, { isPublished, hasRelease }) {
+    return releases.filter(
+        (release) => isPublished(release) && !hasRelease(release),
+    );
+}
+
+// Returns each public workspace package under packages/ as
+// `{ name, version, dir }`.
+function workspacePackages() {
+    const packages = [];
     const parents = [
         join(ROOT, 'packages'),
         join(ROOT, 'packages', 'platforms'),
@@ -107,15 +121,27 @@ function packageDirs() {
     for (const parent of parents) {
         for (const entry of fs.readdirSync(parent)) {
             const manifestPath = join(parent, entry, 'package.json');
-            if (fs.existsSync(manifestPath)) {
-                const { name } = JSON.parse(
-                    fs.readFileSync(manifestPath, 'utf8'),
-                );
-                dirs.set(name, join(parent, entry));
+            if (!fs.existsSync(manifestPath)) {
+                continue;
+            }
+            const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+            if (!manifest.private) {
+                const { name, version } = manifest;
+                packages.push({ name, version, dir: join(parent, entry) });
             }
         }
     }
-    return dirs;
+    return packages;
+}
+
+// Runs `command` with `args` and returns its exit status and stdout.
+// Throws when the command can't be started.
+function run(command, args) {
+    const result = spawnSync(command, args, { encoding: 'utf8' });
+    if (result.error !== undefined) {
+        throw new Error(`failed to run ${command}: ${result.error.message}`);
+    }
+    return { status: result.status, stdout: result.stdout.trim() };
 }
 
 // Copies each target's binary into `dir` under its asset name and returns
@@ -141,23 +167,40 @@ function main() {
     if (!sha) {
         throw new Error('GITHUB_SHA is not set');
     }
-    const releases = groupReleases(JSON.parse(process.env.PUBLISHED_PACKAGES));
-    const dirs = packageDirs();
+    const packages = workspacePackages();
+    const dirs = new Map(packages.map(({ name, dir }) => [name, dir]));
+    const releases = pendingReleases(groupReleases(packages), {
+        isPublished: ({ name, version }) => {
+            const result = run('npm', [
+                'view',
+                `${name}@${version}`,
+                'version',
+            ]);
+            return result.status === 0 && result.stdout === version;
+        },
+        hasRelease: ({ tag }) =>
+            run('gh', ['release', 'view', tag]).status === 0,
+    });
+    if (releases.length === 0) {
+        console.log('every published version has a GitHub release');
+        return;
+    }
+
+    // Every release's notes come first, so a changelog that lacks its
+    // section stops the script before it creates any release.
+    const notes = releases.map((release) => {
+        const changelogPath = join(dirs.get(release.name), 'CHANGELOG.md');
+        const changelog = fs.existsSync(changelogPath)
+            ? fs.readFileSync(changelogPath, 'utf8')
+            : undefined;
+        return releaseNotes(changelog, release);
+    });
+
     const workDir = fs.mkdtempSync(join(tmpdir(), 'escalier-releases-'));
     try {
-        for (const release of releases) {
-            const { name, version, tag } = release;
-            const dir = dirs.get(name);
-            if (dir === undefined) {
-                throw new Error(`no workspace package is named ${name}`);
-            }
-            const changelogPath = join(dir, 'CHANGELOG.md');
-            const changelog = fs.existsSync(changelogPath)
-                ? fs.readFileSync(changelogPath, 'utf8')
-                : undefined;
+        releases.forEach(({ name, version, tag }, i) => {
             const notesPath = join(workDir, 'notes.md');
-            fs.writeFileSync(notesPath, releaseNotes(changelog, release));
-
+            fs.writeFileSync(notesPath, notes[i]);
             const assets = name === CLI_PACKAGE ? copyAssets(workDir) : [];
             const args = ['release', 'create', tag, '--target', sha];
             args.push('--title', tag, '--notes-file', notesPath);
@@ -174,7 +217,7 @@ function main() {
             if (result.status !== 0) {
                 throw new Error(`gh release create ${tag} failed`);
             }
-        }
+        });
     } finally {
         fs.rmSync(workDir, { recursive: true, force: true });
     }

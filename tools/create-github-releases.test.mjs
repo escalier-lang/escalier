@@ -5,6 +5,7 @@ import {
     assetName,
     changelogEntry,
     groupReleases,
+    pendingReleases,
     releaseNotes,
 } from './create-github-releases.mjs';
 import { TARGETS } from './platforms.mjs';
@@ -50,6 +51,57 @@ describe('groupReleases', () => {
             },
         );
     });
+});
+
+describe('pendingReleases', () => {
+    const cli = {
+        name: '@escalier/cli',
+        version: '0.1.0',
+        tag: '@escalier/cli@0.1.0',
+    };
+    const runtime = {
+        name: '@escalier/runtime',
+        version: '0.0.1',
+        tag: '@escalier/runtime@0.0.1',
+    };
+
+    const cases = [
+        {
+            name: 'keeps a published version with no release',
+            published: [cli.tag, runtime.tag],
+            released: [],
+            expected: [cli, runtime],
+        },
+        {
+            name: 'skips a version that already has a release',
+            published: [cli.tag, runtime.tag],
+            released: [cli.tag],
+            expected: [runtime],
+        },
+        {
+            name: 'skips a version that is not on npm',
+            published: [cli.tag],
+            released: [],
+            expected: [cli],
+        },
+        {
+            name: 'returns nothing when every version has a release',
+            published: [cli.tag, runtime.tag],
+            released: [cli.tag, runtime.tag],
+            expected: [],
+        },
+    ];
+    for (const { name, published, released, expected } of cases) {
+        test(name, () => {
+            assert.deepEqual(
+                pendingReleases([cli, runtime], {
+                    isPublished: ({ tag }) => published.includes(tag),
+                    hasRelease: ({ tag }) => released.includes(tag),
+                }),
+                expected,
+            );
+        });
+    }
 });
 
 describe('changelogEntry', () => {
