@@ -14,9 +14,16 @@
 // re-running a release whose last step failed, or the next push to main,
 // finishes the job. The @escalier/cli-<platform>-<arch> packages always
 // share @escalier/cli's version, so they fold into one @escalier/cli
-// release instead of one release each. That release carries the escalier
-// binary for every target in tools/platforms.mjs, for people who don't
-// install from npm. Every other package gets a release of its own.
+// release instead of one release each. Every other package gets a release
+// of its own.
+//
+// The @escalier/cli release carries one archive for each target in
+// tools/platforms.mjs, for people who don't install from npm. An archive
+// unpacks to escalier-<suffix>/ and holds the binary in bin/, the stdlib's
+// .esc files in share/escalier/data/, a README.md and the LICENSE. The
+// binary finds share/escalier/data/ next to its own bin/ directory, so it
+// works wherever the archive unpacks. Linux and macOS archives are .tar.gz,
+// which keeps the binary's execute bit, and Windows archives are .zip.
 //
 // Each release gets the tag <name>@<version> on GITHUB_SHA and takes its
 // notes from that version's section of the package's CHANGELOG.md, or a
@@ -30,6 +37,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { STDLIB_SOURCE_DIR, copyStdlib } from './copy-stdlib.mjs';
 import { TARGETS, binaryName } from './platforms.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -94,12 +102,67 @@ export function releaseNotes(changelog, { version, tag }) {
     return changelogEntry(changelog, version);
 }
 
-// Returns the file name that the binary for `target` gets as an asset of
-// the @escalier/cli release, such as `escalier-linux-x64` or
-// `escalier-win32-x64.exe`.
-export function assetName(target) {
-    const extension = binaryName(target).endsWith('.exe') ? '.exe' : '';
-    return `escalier-${target.suffix}${extension}`;
+// Returns the directory that the archive for `target` unpacks to, such as
+// `escalier-linux-x64`.
+export function archiveRoot(target) {
+    return `escalier-${target.suffix}`;
+}
+
+// Returns the file name of the archive for `target`, such as
+// `escalier-linux-x64.tar.gz` or `escalier-win32-x64.zip`.
+export function archiveName(target) {
+    const extension = target.os === 'win32' ? '.zip' : '.tar.gz';
+    return `${archiveRoot(target)}${extension}`;
+}
+
+// Returns `{ command, args }` that packs the directory `archiveRoot(target)`
+// into `archiveName(target)`, both relative to the working directory the
+// command runs in.
+export function archiveCommand(target) {
+    const root = archiveRoot(target);
+    const archive = archiveName(target);
+    return target.os === 'win32'
+        ? { command: 'zip', args: ['-qr', archive, root] }
+        : { command: 'tar', args: ['-czf', archive, root] };
+}
+
+// Returns the README.md for the archive of `target` at `version`.
+export function archiveReadme(target, version) {
+    const binary = `bin/${binaryName(target)}`;
+    const lines = [
+        `# escalier ${version} for ${target.label}`,
+        '',
+        'This archive holds the escalier compiler and the standard library',
+        'it compiles against.',
+        '',
+        '## Install',
+        '',
+        '1. Unpack the archive anywhere.',
+        '2. Add its `bin` directory to your `PATH`.',
+        '3. Run `escalier --version` to check that it prints',
+        `   \`${version}\`.`,
+        '',
+        `Keep \`bin/\` and \`share/\` together. \`${binary}\` reads the`,
+        'standard library from `share/escalier/data/`.',
+    ];
+    if (target.os === 'darwin') {
+        lines.push(
+            '',
+            'macOS blocks a downloaded binary that is not signed. To allow',
+            'this one, run:',
+            '',
+            '```sh',
+            `xattr -d com.apple.quarantine ${binary}`,
+            '```',
+        );
+    }
+    lines.push(
+        '',
+        'To use escalier in a JavaScript project, install `@escalier/cli`',
+        'from npm instead.',
+        '',
+    );
+    return lines.join('\n');
 }
 
 // Returns the `<name>@<version>` of each package in `json`, the
@@ -158,21 +221,47 @@ function run(command, args) {
     return { status: result.status, stdout: result.stdout.trim() };
 }
 
-// Copies each target's binary into `dir` under its asset name and returns
-// the copies' paths. Throws when a binary is missing.
-function copyAssets(dir) {
+// Builds the archive of each target for `version` in `dir` and returns the
+// archives' paths. Throws when a binary is missing or packing fails.
+function buildArchives(dir, version) {
     return TARGETS.map((target) => {
-        const binary = join(
-            ROOT,
-            'packages',
-            'platforms',
-            `cli-${target.suffix}`,
-            'bin',
-            binaryName(target),
+        const root = join(dir, archiveRoot(target));
+        const binDir = join(root, 'bin');
+        fs.mkdirSync(binDir, { recursive: true });
+        const binary = join(binDir, binaryName(target));
+        fs.copyFileSync(
+            join(
+                ROOT,
+                'packages',
+                'platforms',
+                `cli-${target.suffix}`,
+                'bin',
+                binaryName(target),
+            ),
+            binary,
         );
-        const asset = join(dir, assetName(target));
-        fs.copyFileSync(binary, asset);
-        return asset;
+        fs.chmodSync(binary, 0o755);
+        copyStdlib(
+            join(ROOT, STDLIB_SOURCE_DIR),
+            join(root, 'share', 'escalier', 'data'),
+        );
+        fs.writeFileSync(
+            join(root, 'README.md'),
+            archiveReadme(target, version),
+        );
+        fs.copyFileSync(join(ROOT, 'LICENSE'), join(root, 'LICENSE'));
+
+        const { command, args } = archiveCommand(target);
+        const result = spawnSync(command, args, { cwd: dir, stdio: 'inherit' });
+        if (result.error !== undefined) {
+            throw new Error(
+                `failed to run ${command}: ${result.error.message}`,
+            );
+        }
+        if (result.status !== 0) {
+            throw new Error(`packing ${archiveName(target)} failed`);
+        }
+        return join(dir, archiveName(target));
     });
 }
 
@@ -223,7 +312,10 @@ function main() {
         releases.forEach(({ name, version, tag }, i) => {
             const notesPath = join(workDir, 'notes.md');
             fs.writeFileSync(notesPath, notes[i]);
-            const assets = name === CLI_PACKAGE ? copyAssets(workDir) : [];
+            const assets =
+                name === CLI_PACKAGE
+                    ? buildArchives(join(workDir, 'archives'), version)
+                    : [];
             const args = ['release', 'create', tag, '--target', sha];
             args.push('--title', tag, '--notes-file', notesPath);
             if (version.includes('-')) {
