@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, test } from 'node:test';
 
-import { copyStdlib } from './copy-stdlib.mjs';
+import { NOTICE_FILE, copyStdlib } from './copy-stdlib.mjs';
 
 describe('copyStdlib', () => {
     let tmp;
@@ -39,6 +39,21 @@ describe('copyStdlib', () => {
         );
         assert.equal(existsSync(join(dest, 'std', 'README.md')), false);
         assert.equal(existsSync(join(dest, 'web', 'stale.esc')), false);
+    });
+
+    test('copies the notices file at the root and no other file there', () => {
+        const src = join(tmp, 'src');
+        const dest = join(tmp, 'dest');
+        mkdirSync(join(src, 'std'), { recursive: true });
+        writeFileSync(join(src, NOTICE_FILE), 'notices\n');
+        writeFileSync(join(src, 'std', NOTICE_FILE), 'not the root one\n');
+        writeFileSync(join(src, 'NOTES.txt'), 'notes\n');
+
+        copyStdlib(src, dest);
+
+        assert.equal(readFileSync(join(dest, NOTICE_FILE), 'utf8'), 'notices\n');
+        assert.equal(existsSync(join(dest, 'std', NOTICE_FILE)), false);
+        assert.equal(existsSync(join(dest, 'NOTES.txt')), false);
     });
 
     test('rejects a source with no std/ subdirectory', () => {

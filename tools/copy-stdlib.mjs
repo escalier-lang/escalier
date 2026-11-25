@@ -24,9 +24,14 @@ export const STDLIB_SOURCE_DIR = join('internal', 'interop', 'data');
 // repo root.
 export const STDLIB_PACKAGE_DIR = join('packages', 'cli', 'data');
 
-// Replaces `destDir` with a copy of the directories and `.esc` files under
-// `srcDir`. Throws when `srcDir` has no `std/` subdirectory, the one the
-// binary requires of a stdlib directory.
+// The third-party notices file dts_to_esc writes at the root of the stdlib
+// tree. The generated `.esc` files are derived from the TypeScript lib files
+// those notices cover, so the notices ship wherever the `.esc` files do.
+export const NOTICE_FILE = 'ThirdPartyNoticeText.txt';
+
+// Replaces `destDir` with a copy of the directories, the `.esc` files and
+// the NOTICE_FILE at the root of `srcDir`. Throws when `srcDir` has no
+// `std/` subdirectory, the one the binary requires of a stdlib directory.
 export function copyStdlib(srcDir, destDir) {
     if (!existsSync(join(srcDir, 'std'))) {
         throw new Error(`${srcDir} has no std/ subdirectory`);
@@ -34,7 +39,10 @@ export function copyStdlib(srcDir, destDir) {
     rmSync(destDir, { recursive: true, force: true });
     cpSync(srcDir, destDir, {
         recursive: true,
-        filter: (src) => src.endsWith('.esc') || statSync(src).isDirectory(),
+        filter: (src) =>
+            src.endsWith('.esc') ||
+            src === join(srcDir, NOTICE_FILE) ||
+            statSync(src).isDirectory(),
     });
 }
 
