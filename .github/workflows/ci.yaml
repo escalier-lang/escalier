@@ -126,7 +126,7 @@ jobs:
             tools/gen-platform-packages.test.mjs \
             tools/build-binaries.test.mjs \
             tools/copy-stdlib.test.mjs \
-            tools/smoke-test-npm.test.mjs
+            tools/npm-smoke.test.mjs
 
       - name: Check that unpublished packages are private
         run: node .github/scripts/check-private-packages.mjs
@@ -601,7 +601,7 @@ jobs:
   # Installs the packed tarballs on each platform and runs the installed
   # `escalier` command, so a wrong `os` or `cpu` field, a binary without its
   # executable bit, or a wrong path in the wrapper fails here instead of
-  # after a release. tools/smoke-test-npm.mjs lists the checks.
+  # after a release. tools/npm-smoke.e2e.test.mjs lists the checks.
   smoke_test_npm:
     needs: smoke_test_npm_pack
     strategy:
@@ -661,22 +661,16 @@ jobs:
           path: npm-tarballs
 
       - name: Smoke test the npm install
-        shell: bash
         env:
-          TARGET: ${{ matrix.target }}
-          EMULATOR: ${{ matrix.emulator }}
-        run: |
-          args=(--tarballs npm-tarballs --target "$TARGET")
-          if [ -n "$EMULATOR" ]; then
-            args+=(--emulator "$EMULATOR")
-          fi
-          node tools/smoke-test-npm.mjs "${args[@]}"
+          ESCALIER_SMOKE_TARBALLS: npm-tarballs
+          ESCALIER_SMOKE_TARGET: ${{ matrix.target }}
+          ESCALIER_SMOKE_EMULATOR: ${{ matrix.emulator }}
+        run: node --test tools/npm-smoke.e2e.test.mjs
 
       - name: Smoke test the pnpm install
         if: matrix.pnpm
-        shell: bash
         env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          node tools/smoke-test-npm.mjs --tarballs npm-tarballs \
-            --target "$TARGET" --package-manager pnpm
+          ESCALIER_SMOKE_TARBALLS: npm-tarballs
+          ESCALIER_SMOKE_TARGET: ${{ matrix.target }}
+          ESCALIER_SMOKE_PACKAGE_MANAGER: pnpm
+        run: node --test tools/npm-smoke.e2e.test.mjs

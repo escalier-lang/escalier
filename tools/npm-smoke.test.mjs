@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { TARGETS } from './platforms.mjs';
 import {
     execCommand,
     findTarballs,
     installCommand,
     parseArgs,
     projectManifest,
-} from './smoke-test-npm.mjs';
+    smokeArgsFromEnv,
+} from './npm-smoke.mjs';
+import { TARGETS } from './platforms.mjs';
 
 const linuxArm = TARGETS.find((target) => target.suffix === 'linux-arm');
 const linuxX64 = TARGETS.find((target) => target.suffix === 'linux-x64');
@@ -198,5 +199,46 @@ describe('execCommand', () => {
             'pnpm',
             ['exec', 'escalier', 'build', 'fixture'],
         ]);
+    });
+});
+
+describe('smokeArgsFromEnv', () => {
+    test('returns undefined without ESCALIER_SMOKE_TARBALLS', () => {
+        assert.equal(smokeArgsFromEnv({}), undefined);
+        assert.equal(
+            smokeArgsFromEnv({ ESCALIER_SMOKE_TARBALLS: '' }),
+            undefined,
+        );
+    });
+
+    test('turns each set variable into its flag', () => {
+        assert.deepEqual(
+            smokeArgsFromEnv({
+                ESCALIER_SMOKE_TARBALLS: 'npm-tarballs',
+                ESCALIER_SMOKE_PACKAGE_MANAGER: 'pnpm',
+                ESCALIER_SMOKE_TARGET: 'linux-arm',
+                ESCALIER_SMOKE_EMULATOR: 'qemu-arm',
+            }),
+            [
+                '--tarballs',
+                'npm-tarballs',
+                '--package-manager',
+                'pnpm',
+                '--target',
+                'linux-arm',
+                '--emulator',
+                'qemu-arm',
+            ],
+        );
+    });
+
+    test('leaves out unset and empty variables', () => {
+        assert.deepEqual(
+            smokeArgsFromEnv({
+                ESCALIER_SMOKE_TARBALLS: 'npm-tarballs',
+                ESCALIER_SMOKE_EMULATOR: '',
+            }),
+            ['--tarballs', 'npm-tarballs'],
+        );
     });
 });

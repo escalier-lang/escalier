@@ -50,8 +50,7 @@
         {
             "files": [
                 ".github/scripts/*.test.mjs",
-                "tools/*.test.mjs",
-                "tools/smoke-test-npm.mjs"
+                "tools/*.test.mjs"
             ],
             "rules": {
                 "typescript/no-floating-promises": "off"
