@@ -1,6 +1,6 @@
 {
     "name": "@escalier/cli-linux-arm64",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "description": "The escalier compiler binary for Linux on ARM64. Install @escalier/cli instead of depending on this package.",
     "license": "MIT",
     "author": "escalier-lang",

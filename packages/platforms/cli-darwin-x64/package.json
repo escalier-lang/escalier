@@ -1,6 +1,6 @@
 {
     "name": "@escalier/cli-darwin-x64",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "description": "The escalier compiler binary for macOS on Intel. Install @escalier/cli instead of depending on this package.",
     "license": "MIT",
     "author": "escalier-lang",
