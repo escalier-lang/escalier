@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
-    assetName,
+    archiveCommand,
+    archiveName,
+    archiveReadme,
     changelogEntry,
     groupReleases,
     pendingReleases,
@@ -165,17 +167,94 @@ describe('releaseNotes', () => {
     });
 });
 
-describe('assetName', () => {
-    test('names each binary after its target', () => {
-        assert.deepEqual(TARGETS.map(assetName), [
-            'escalier-darwin-arm64',
-            'escalier-darwin-x64',
-            'escalier-linux-x64',
-            'escalier-linux-arm64',
-            'escalier-linux-arm',
-            'escalier-win32-x64.exe',
-            'escalier-win32-arm64.exe',
+describe('archiveName', () => {
+    test('names each archive after its target', () => {
+        assert.deepEqual(TARGETS.map(archiveName), [
+            'escalier-darwin-arm64.tar.gz',
+            'escalier-darwin-x64.tar.gz',
+            'escalier-linux-x64.tar.gz',
+            'escalier-linux-arm64.tar.gz',
+            'escalier-linux-arm.tar.gz',
+            'escalier-win32-x64.zip',
+            'escalier-win32-arm64.zip',
         ]);
+    });
+});
+
+describe('archiveCommand', () => {
+    const target = (suffix) => TARGETS.find((t) => t.suffix === suffix);
+
+    test('packs a Linux or macOS target with tar', () => {
+        assert.deepEqual(archiveCommand(target('linux-x64')), {
+            command: 'tar',
+            args: ['-czf', 'escalier-linux-x64.tar.gz', 'escalier-linux-x64'],
+        });
+    });
+
+    test('packs a Windows target with zip', () => {
+        assert.deepEqual(archiveCommand(target('win32-x64')), {
+            command: 'zip',
+            args: ['-qr', 'escalier-win32-x64.zip', 'escalier-win32-x64'],
+        });
+    });
+});
+
+describe('archiveReadme', () => {
+    const target = (suffix) => TARGETS.find((t) => t.suffix === suffix);
+
+    test('names the binary for a Windows target', () => {
+        assert.equal(
+            archiveReadme(target('win32-x64'), '0.2.0'),
+            `# escalier 0.2.0 for Windows on x64
+
+This archive holds the escalier compiler and the standard library
+it compiles against.
+
+## Install
+
+1. Unpack the archive anywhere.
+2. Add its \`bin\` directory to your \`PATH\`.
+3. Run \`escalier --version\` to check that it prints
+   \`0.2.0\`.
+
+Keep \`bin/\` and \`share/\` together. \`bin/escalier.exe\` reads the
+standard library from \`share/escalier/data/\`.
+
+To use escalier in a JavaScript project, install \`@escalier/cli\`
+from npm instead.
+`,
+        );
+    });
+
+    test('tells macOS users how to lift the quarantine', () => {
+        assert.equal(
+            archiveReadme(target('darwin-arm64'), '0.2.0'),
+            `# escalier 0.2.0 for macOS on Apple silicon
+
+This archive holds the escalier compiler and the standard library
+it compiles against.
+
+## Install
+
+1. Unpack the archive anywhere.
+2. Add its \`bin\` directory to your \`PATH\`.
+3. Run \`escalier --version\` to check that it prints
+   \`0.2.0\`.
+
+Keep \`bin/\` and \`share/\` together. \`bin/escalier\` reads the
+standard library from \`share/escalier/data/\`.
+
+macOS blocks a downloaded binary that is not signed. To allow
+this one, run:
+
+\`\`\`sh
+xattr -d com.apple.quarantine bin/escalier
+\`\`\`
+
+To use escalier in a JavaScript project, install \`@escalier/cli\`
+from npm instead.
+`,
+        );
     });
 });
 
