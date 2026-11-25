@@ -24,8 +24,11 @@
 // - getBinaryPath() from @escalier/cli returns an executable file in that
 //   package,
 // - `escalier --version` prints the version in packages/cli/package.json,
-// - `escalier build` compiles a one-file project that imports from `std:`,
-//   and another that imports from `web:`.
+// - `escalier build` compiles each package in FIXTURES: a library that
+//   imports from `std:`, one that imports from `web:`, a bin-only package
+//   and a package whose bin script calls its library,
+// - Node imports each compiled library and prints the expected result,
+// - each installed bin command prints the expected line.
 //
 // ESCALIER_SMOKE_PACKAGE_MANAGER is `npm`, the default, or `pnpm`.
 // ESCALIER_SMOKE_TARGET names the platform to install for, such as
@@ -47,9 +50,14 @@ import {
     CLI_PACKAGE,
     FIXTURES,
     escalierRunner,
+    execCommand,
+    installProject,
     installedPaths,
     installedPlatformPackages,
+    projectManifest,
     readOptions,
+    run,
+    runModule,
     setUpProject,
     smokeArgsFromEnv,
 } from './npm-smoke.mjs';
@@ -66,6 +74,8 @@ function defineSmokeTests(options) {
     describe(`${CLI_PACKAGE} on ${target.suffix} with ${packageManager}`, () => {
         let projectTmp;
         let projectDir;
+        // The paths of the installed tarballs, for the second install.
+        let paths;
         // The getBinaryPath() test fills this in, and the escalier runner
         // reads it for an emulated target.
         let cliPaths;
@@ -77,7 +87,7 @@ function defineSmokeTests(options) {
                 join(tmpdir(), 'escalier-smoke-'),
             );
             projectDir = projectTmp.path;
-            setUpProject(options, projectDir);
+            paths = setUpProject(options, projectDir);
         });
 
         after(() => {
@@ -119,26 +129,69 @@ function defineSmokeTests(options) {
             assert.equal(result.stdout, version);
         });
 
-        for (const { name, output } of FIXTURES) {
-            test(`escalier build compiles a ${name}: import`, () => {
-                const result = runEscalier(['build', name]);
+        for (const { name, label, output } of FIXTURES) {
+            test(`escalier build compiles ${label}`, () => {
+                const dir = `smoke-${name}`;
+                const result = runEscalier(['build', dir]);
                 assert.ok(result.ok, result.output);
-                const outPath = join(
-                    projectDir,
-                    name,
-                    'build',
-                    'lib',
-                    'index.js',
-                );
+                const [file, text] = output;
+                const outPath = join(projectDir, dir, 'build', file);
                 assert.ok(
                     fs.existsSync(outPath),
-                    `${name}/build/lib/index.js is missing:\n${result.output}`,
+                    `${dir}/build/${file} is missing:\n${result.output}`,
                 );
                 const js = fs.readFileSync(outPath, 'utf8');
                 assert.ok(
-                    js.includes(output),
-                    `${name}/build/lib/index.js has no ${output}:\n${js}`,
+                    js.includes(text),
+                    `${dir}/build/${file} has no ${text}:\n${js}`,
                 );
+            });
+        }
+
+        // The fixtures install after they build. npm links a bin command to
+        // its target, and pnpm copies a `file:` directory, so both need
+        // build/ to exist first.
+        test('the compiled packages install', () => {
+            const localPackages = Object.fromEntries(
+                FIXTURES.map(({ name }) => [
+                    `smoke-${name}`,
+                    `./smoke-${name}`,
+                ]),
+            );
+            installProject(
+                options,
+                projectDir,
+                projectManifest(paths, packageManager, localPackages),
+            );
+        });
+
+        for (const { name, run: code, stdout } of FIXTURES) {
+            if (code === undefined) {
+                continue;
+            }
+            test(`node imports smoke-${name}`, () => {
+                const result = runModule(
+                    `import * as lib from 'smoke-${name}';\n${code}`,
+                    projectDir,
+                );
+                assert.ok(result.ok, result.output);
+                assert.equal(result.stdout, stdout);
+            });
+        }
+
+        for (const { name, bin } of FIXTURES) {
+            if (bin === undefined) {
+                continue;
+            }
+            test(`smoke-${name} prints ${bin}`, () => {
+                const [command, args] = execCommand(
+                    packageManager,
+                    `smoke-${name}`,
+                    [],
+                );
+                const result = run(command, args, projectDir);
+                assert.ok(result.ok, result.output);
+                assert.equal(result.stdout, bin);
             });
         }
     });

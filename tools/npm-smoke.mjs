@@ -16,36 +16,79 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 export const CLI_PACKAGE = '@escalier/cli';
 
-// The projects that the build checks compile, one per stdlib directory.
-// Each `source` imports from that directory, so the build only succeeds
-// when the installed @escalier/cli carries it. `output` is a call that the
-// compiled lib/index.js must contain.
+// The packages that the build checks compile. Each is `smoke-<name>` in the
+// directory of that name, with the `.esc` sources in `files`.
+//
+// - `label` names the package in the check names.
+// - `output` is `[path, text]`: the compiled file under build/ and text it
+//   must contain.
+// - `run` is a module that imports the package as `lib` and prints one
+//   line, and `stdout` is that line.
+// - `bin` is the line the package's bin command, also named
+//   `smoke-<name>`, prints.
+//
+// A package with lib/index.esc gets `main`, and one with bin/main.esc gets
+// `bin`. The std and web libraries import from those stdlib directories, so
+// they only compile when the installed @escalier/cli carries them.
 export const FIXTURES = [
     {
         name: 'std',
-        source: [
-            'import "std:math"',
-            '',
-            'export fn hypot(a: number, b: number) -> number {',
-            '    return math.sqrt(a * a + b * b)',
-            '}',
-            '',
-        ].join('\n'),
-        output: 'Math.sqrt(',
+        label: 'a std: import',
+        files: {
+            'lib/index.esc':
+                'import "std:math"\n\nexport fn hypot(a: number, b: number) -> number {\n    return math.sqrt(a * a + b * b)\n}\n',
+        },
+        output: ['lib/index.js', 'Math.sqrt('],
+        run: 'console.log(lib.hypot(3, 4));',
+        stdout: '5',
     },
     {
         name: 'web',
-        source: [
-            'import "web:crypto"',
-            '',
-            'export fn newID() -> string {',
-            '    return crypto.randomUUID()',
-            '}',
-            '',
-        ].join('\n'),
-        output: 'crypto.randomUUID()',
+        label: 'a web: import',
+        files: {
+            'lib/index.esc':
+                'import "web:crypto"\n\nexport fn newID() -> string {\n    return crypto.randomUUID()\n}\n',
+        },
+        output: ['lib/index.js', 'crypto.randomUUID()'],
+        run: 'console.log(/^[0-9a-f-]{36}$/.test(lib.newID()));',
+        stdout: 'true',
+    },
+    {
+        name: 'bin',
+        label: 'a bin-only package',
+        files: {
+            'bin/main.esc':
+                'import "std:console"\n\nconsole.log("hello from smoke-bin")\n',
+        },
+        output: ['bin/main.js', 'console.log('],
+        bin: 'hello from smoke-bin',
+    },
+    {
+        name: 'bin-lib',
+        label: 'a bin+lib package',
+        files: {
+            'lib/index.esc':
+                'export fn greet(name: string) -> string {\n    return "hello, " ++ name\n}\n',
+            'bin/main.esc':
+                'import "std:console"\n\nconsole.log(greet("smoke"))\n',
+        },
+        output: ['bin/main.js', '"../lib/index.js"'],
+        bin: 'hello, smoke',
     },
 ];
+
+// Returns the package.json of the FIXTURES entry `fixture`.
+export function fixtureManifest(fixture) {
+    const name = `smoke-${fixture.name}`;
+    const manifest = { name, private: true, version: '0.0.0', type: 'module' };
+    if ('lib/index.esc' in fixture.files) {
+        manifest.main = 'build/lib/index.js';
+    }
+    if ('bin/main.esc' in fixture.files) {
+        manifest.bin = { [name]: 'build/bin/main.js' };
+    }
+    return manifest;
+}
 
 // Returns the options that `argv` selects. `hostTarget` is the suffix of
 // this machine's platform, which --target defaults to. Throws on an
@@ -131,8 +174,10 @@ export function findTarballs(files) {
 // Returns the package.json of the project that installs @escalier/cli.
 // `paths` maps each package name to the path of its tarball or extracted
 // package, relative to the project. npm reads the top-level `overrides` and
-// pnpm reads `pnpm.overrides`.
-export function projectManifest(paths, packageManager) {
+// pnpm reads `pnpm.overrides`. `localPackages` maps the name of each
+// package in a subdirectory of the project to that directory, and the
+// project depends on each one through `file:`.
+export function projectManifest(paths, packageManager, localPackages = {}) {
     const overrides = {};
     for (const [name, path] of Object.entries(paths)) {
         if (name !== CLI_PACKAGE) {
@@ -145,6 +190,9 @@ export function projectManifest(paths, packageManager) {
         version: '0.0.0',
         dependencies: { [CLI_PACKAGE]: `file:${paths[CLI_PACKAGE]}` },
     };
+    for (const [name, dir] of Object.entries(localPackages)) {
+        manifest.dependencies[name] = `file:${dir}`;
+    }
     if (packageManager === 'pnpm') {
         manifest.pnpm = { overrides };
     } else {
@@ -169,17 +217,17 @@ export function installCommand(packageManager, target, crossInstall) {
     return ['npm', args];
 }
 
-// Returns the command and arguments that run the installed `escalier`
-// command with `args`.
-export function execCommand(packageManager, args) {
+// Returns the command and arguments that run the installed command
+// `command` with `args` through `packageManager`.
+export function execCommand(packageManager, command, args) {
     if (packageManager === 'pnpm') {
-        return ['pnpm', ['exec', 'escalier', ...args]];
+        return ['pnpm', ['exec', command, ...args]];
     }
-    // --no stops npx from fetching escalier from the registry when the
-    // install didn't link the command. npx reads flags that follow the
-    // command name as its own, so without `--` it would print npm's
-    // version for `escalier --version`.
-    return ['npx', ['--no', '--', 'escalier', ...args]];
+    // --no stops npx from fetching the command from the registry when the
+    // install didn't link it. npx reads flags that follow the command name
+    // as its own, so without `--` it would print npm's version for
+    // `escalier --version`.
+    return ['npx', ['--no', '--', command, ...args]];
 }
 
 // The environment for every child process. ESCALIER_BINARY_PATH would make
@@ -354,28 +402,44 @@ function extractTarballs(tarballs, projectDir) {
 
 // Writes each entry of FIXTURES into its own directory under `projectDir`.
 function writeFixtures(projectDir) {
-    for (const { name, source } of FIXTURES) {
-        const fixtureDir = join(projectDir, name);
-        fs.mkdirSync(join(fixtureDir, 'lib'), { recursive: true });
-        const manifest = {
-            name,
-            private: true,
-            version: '0.0.0',
-            type: 'module',
-        };
+    for (const fixture of FIXTURES) {
+        const fixtureDir = join(projectDir, `smoke-${fixture.name}`);
+        fs.mkdirSync(fixtureDir);
         fs.writeFileSync(
             join(fixtureDir, 'package.json'),
-            `${JSON.stringify(manifest, null, 2)}\n`,
+            `${JSON.stringify(fixtureManifest(fixture), null, 2)}\n`,
         );
-        fs.writeFileSync(join(fixtureDir, 'lib', 'index.esc'), source);
+        for (const [path, source] of Object.entries(fixture.files)) {
+            fs.mkdirSync(join(fixtureDir, dirname(path)), { recursive: true });
+            fs.writeFileSync(join(fixtureDir, path), source);
+        }
+    }
+}
+
+// Writes `manifest` as the project's package.json and installs it with the
+// options' package manager. Throws when the install fails.
+export function installProject(options, projectDir, manifest) {
+    fs.writeFileSync(
+        join(projectDir, 'package.json'),
+        `${JSON.stringify(manifest, null, 2)}\n`,
+    );
+    const [installer, installArgs] = installCommand(
+        options.packageManager,
+        options.target,
+        options.crossInstall,
+    );
+    const install = run(installer, installArgs, projectDir);
+    if (!install.ok) {
+        throw new Error(`install failed:\n${install.output}`);
     }
 }
 
 // Writes the project that installs the tarballs into `projectDir` and
-// installs it. Throws when extracting a tarball or the install fails.
+// installs it. Returns the paths of the installed packages, keyed by
+// package name, for projectManifest(). Throws when extracting a tarball or
+// the install fails.
 export function setUpProject(options, projectDir) {
-    const { packageManager, target, crossInstall, tarballDir, tarballs } =
-        options;
+    const { packageManager, tarballDir, tarballs } = options;
     let paths = copyTarballs(tarballDir, tarballs, projectDir);
     // pnpm installs every platform package when the overrides name
     // tarballs, whatever their `os` and `cpu`, so for pnpm the overrides
@@ -384,21 +448,23 @@ export function setUpProject(options, projectDir) {
     if (packageManager === 'pnpm') {
         paths = extractTarballs(tarballs, projectDir);
     }
-    fs.writeFileSync(
-        join(projectDir, 'package.json'),
-        `${JSON.stringify(projectManifest(paths, packageManager), null, 2)}\n`,
-    );
     writeFixtures(projectDir);
+    installProject(options, projectDir, projectManifest(paths, packageManager));
+    return paths;
+}
 
-    const [installer, installArgs] = installCommand(
-        packageManager,
-        target,
-        crossInstall,
+// Runs `code` as an ES module with this machine's Node, from `cwd`, and
+// returns its exit status and output the way run() does. The compiled
+// JavaScript doesn't depend on the target, so the host's Node runs it for an
+// emulated target too.
+export function runModule(code, cwd) {
+    const result = spawnSync(
+        process.execPath,
+        ['--input-type=module', '--eval', code],
+        { cwd, env: childEnv(), encoding: 'utf8' },
     );
-    const install = run(installer, installArgs, projectDir);
-    if (!install.ok) {
-        throw new Error(`install failed:\n${install.output}`);
-    }
+    const output = `${result.stdout}${result.stderr}`.trim();
+    return { ok: result.status === 0, output, stdout: result.stdout.trim() };
 }
 
 // Returns a function that runs the escalier binary with its arguments in
@@ -409,7 +475,11 @@ export function escalierRunner(options, projectDir, getPaths) {
     const { packageManager, crossInstall, emulator } = options;
     return (args) => {
         if (!crossInstall) {
-            const [command, commandArgs] = execCommand(packageManager, args);
+            const [command, commandArgs] = execCommand(
+                packageManager,
+                'escalier',
+                args,
+            );
             return run(command, commandArgs, projectDir);
         }
         const paths = getPaths();

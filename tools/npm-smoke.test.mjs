@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
+    FIXTURES,
     execCommand,
     findTarballs,
+    fixtureManifest,
     installCommand,
     parseArgs,
     projectManifest,
@@ -161,6 +163,59 @@ describe('projectManifest', () => {
             },
         });
     });
+
+    test('depends on each local package through file:', () => {
+        const localPackages = { 'smoke-std': './smoke-std' };
+        assert.deepEqual(
+            projectManifest(paths, 'npm', localPackages).dependencies,
+            {
+                '@escalier/cli': 'file:./tarballs/escalier-cli-0.0.1.tgz',
+                'smoke-std': 'file:./smoke-std',
+            },
+        );
+    });
+});
+
+describe('fixtureManifest', () => {
+    const cases = [
+        {
+            name: 'std',
+            expected: {
+                name: 'smoke-std',
+                private: true,
+                version: '0.0.0',
+                type: 'module',
+                main: 'build/lib/index.js',
+            },
+        },
+        {
+            name: 'bin',
+            expected: {
+                name: 'smoke-bin',
+                private: true,
+                version: '0.0.0',
+                type: 'module',
+                bin: { 'smoke-bin': 'build/bin/main.js' },
+            },
+        },
+        {
+            name: 'bin-lib',
+            expected: {
+                name: 'smoke-bin-lib',
+                private: true,
+                version: '0.0.0',
+                type: 'module',
+                main: 'build/lib/index.js',
+                bin: { 'smoke-bin-lib': 'build/bin/main.js' },
+            },
+        },
+    ];
+    for (const { name, expected } of cases) {
+        test(`writes the manifest of smoke-${name}`, () => {
+            const fixture = FIXTURES.find((f) => f.name === name);
+            assert.deepEqual(fixtureManifest(fixture), expected);
+        });
+    }
 });
 
 describe('installCommand', () => {
@@ -188,17 +243,17 @@ describe('installCommand', () => {
 
 describe('execCommand', () => {
     test('separates the npx flags from the escalier arguments', () => {
-        assert.deepEqual(execCommand('npm', ['--version']), [
+        assert.deepEqual(execCommand('npm', 'escalier', ['--version']), [
             'npx',
             ['--no', '--', 'escalier', '--version'],
         ]);
     });
 
     test('runs pnpm exec', () => {
-        assert.deepEqual(execCommand('pnpm', ['build', 'fixture']), [
-            'pnpm',
-            ['exec', 'escalier', 'build', 'fixture'],
-        ]);
+        assert.deepEqual(
+            execCommand('pnpm', 'escalier', ['build', 'fixture']),
+            ['pnpm', ['exec', 'escalier', 'build', 'fixture']],
+        );
     });
 });
 
