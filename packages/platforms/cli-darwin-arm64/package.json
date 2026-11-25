@@ -2,7 +2,7 @@
     "name": "@escalier/cli-darwin-arm64",
     "version": "0.1.0",
     "description": "The escalier compiler binary for macOS on Apple silicon. Install @escalier/cli instead of depending on this package.",
-    "license": "MIT",
+    "license": "Apache-2.0",
     "author": "escalier-lang",
     "repository": {
         "type": "git",
@@ -20,7 +20,8 @@
         "arm64"
     ],
     "files": [
-        "bin/"
+        "bin/",
+        "THIRD_PARTY_NOTICES.txt"
     ],
     "preferUnplugged": true,
     "scripts": {

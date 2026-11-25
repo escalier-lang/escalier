@@ -4,6 +4,7 @@ import {
     mkdirSync,
     mkdtempSync,
     readdirSync,
+    readFileSync,
     rmSync,
     writeFileSync,
 } from 'node:fs';
@@ -22,7 +23,7 @@ import { TARGETS } from './platforms.mjs';
 const cli = {
     name: '@escalier/cli',
     version: '1.2.3',
-    license: 'MIT',
+    license: 'Apache-2.0',
     author: 'escalier-lang',
     repository: {
         type: 'git',
@@ -42,7 +43,7 @@ describe('platformManifest', () => {
             version: '1.2.3',
             description:
                 'The escalier compiler binary for Linux on 32-bit ARMv7. Install @escalier/cli instead of depending on this package.',
-            license: 'MIT',
+            license: 'Apache-2.0',
             author: 'escalier-lang',
             repository: {
                 type: 'git',
@@ -53,7 +54,7 @@ describe('platformManifest', () => {
             bugs: { url: 'https://github.com/escalier-lang/escalier/issues' },
             os: ['linux'],
             cpu: ['arm'],
-            files: ['bin/'],
+            files: ['bin/', 'THIRD_PARTY_NOTICES.txt'],
             preferUnplugged: true,
             scripts: {
                 prepublishOnly: `node -e "if (!require('fs').existsSync('bin/escalier')) { console.error('bin/escalier is missing. Build the platform binaries before publishing.'); process.exit(1); }"`,
@@ -104,16 +105,23 @@ describe('writePlatformPackages', () => {
         // A directory that isn't a platform package, which must survive.
         mkdirSync(join(dir, 'notes'));
 
-        const removed = writePlatformPackages(dir, [linuxArm], cli);
+        const removed = writePlatformPackages(dir, [linuxArm], cli, {
+            LICENSE: 'licence text\n',
+        });
 
         assert.deepEqual(removed, ['cli-freebsd-x64']);
         assert.deepEqual(readdirSync(dir).sort(), ['cli-linux-arm', 'notes']);
         assert.deepEqual(readdirSync(join(dir, 'cli-linux-arm')).sort(), [
+            'LICENSE',
             'README.md',
             'bin',
             'package.json',
         ]);
         assert.ok(existsSync(join(dir, 'cli-linux-arm', 'bin', 'escalier')));
+        assert.equal(
+            readFileSync(join(dir, 'cli-linux-arm', 'LICENSE'), 'utf8'),
+            'licence text\n',
+        );
     });
 });
 

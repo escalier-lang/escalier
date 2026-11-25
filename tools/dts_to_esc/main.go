@@ -146,7 +146,11 @@ func runGenerate(args []string, stderr io.Writer) error {
 	}
 
 	res, err := dts_to_esc.Generate(dts_to_esc.GenerateOptions{
-		LibDir:        libDir,
+		LibDir: libDir,
+		// The generated files are derived from the lib files, so the tree
+		// ships the notices TypeScript ships beside them. An npm install of
+		// typescript keeps the file one level above lib/.
+		NoticeFile:    filepath.Join(filepath.Dir(filepath.Clean(libDir)), dts_to_esc.NoticeFileName),
 		OverlayDir:    *overlayDir,
 		OutDir:        escDir,
 		HandAuthored:  dts_to_esc.HandAuthoredPackages,

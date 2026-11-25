@@ -39,6 +39,21 @@ Keep the unpacked `bin/` and `share/` directories together, since the
 binary reads the standard library from `share/escalier/data/`. On macOS, run
 `xattr -d com.apple.quarantine bin/escalier` to allow the unsigned binary.
 
+## Licence
+
+Escalier is licensed under the [Apache License, Version 2.0](LICENSE).
+`@escalier/runtime`, which the compiled JavaScript imports, is licensed
+under [0BSD](packages/runtime/LICENSE), so a program built with Escalier
+owes no attribution for the runtime it bundles.
+
+The standard library under `internal/interop/data/` is generated from
+TypeScript's `lib.*.d.ts` files, which Microsoft licenses under
+Apache-2.0. Each generated file carries their notice, and
+[ThirdPartyNoticeText.txt](internal/interop/data/ThirdPartyNoticeText.txt)
+holds the third-party notices TypeScript ships with them.
+[cmd/escalier/THIRD_PARTY_NOTICES.txt](cmd/escalier/THIRD_PARTY_NOTICES.txt)
+lists the third-party software linked into the `escalier` binary.
+
 ## Development
 
 To update the snapshots run the following command:

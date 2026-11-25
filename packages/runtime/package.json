@@ -34,7 +34,7 @@
     "typescript"
   ],
   "author": "escalier-lang",
-  "license": "MIT",
+  "license": "0BSD",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/escalier-lang/escalier.git",

@@ -15,15 +15,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// seedLib writes one synthetic `lib.*.d.ts` into a fresh directory and
-// returns that directory.
+// seedLib lays out a fresh directory the way an npm install of typescript
+// does: one synthetic `lib.*.d.ts` under lib/, and a notices file beside
+// lib/ holding seedNotice. Returns the lib/ directory.
 func seedLib(t *testing.T, contents string) string {
 	t.Helper()
-	dir := t.TempDir()
+	root := t.TempDir()
+	dir := filepath.Join(root, "lib")
+	require.NoError(t, os.Mkdir(dir, 0o755))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "lib.es5.d.ts"), []byte(contents), 0o644))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, dts_to_esc.NoticeFileName), []byte(seedNotice), 0o644))
 	return dir
 }
+
+// seedNotice is the notices file seedLib writes beside lib/.
+const seedNotice = "Third-party notices for the seeded lib files.\n"
 
 const arrayLib = `
 interface Array<T> { length: number; }
@@ -232,6 +240,7 @@ func TestRun_GenerateWritesTheTree(t *testing.T) {
 discovered 1 lib files
 wrote 1 packages under <esc-dir>
 --- tree ---
+ThirdPartyNoticeText.txt
 node/README.md
 std/prelude.esc
 --- std/prelude.esc ---
@@ -253,6 +262,36 @@ export declare var Symbol: SymbolConstructor
 @js("Symbol.iterator")
 export declare val iteratorKey: unique symbol
 `))
+}
+
+// TestRun_GenerateCopiesTheNoticeFile asserts that a run copies the
+// notices file beside <lib-dir> to the root of the tree, and that a run
+// whose <lib-dir> has no notices file beside it fails.
+func TestRun_GenerateCopiesTheNoticeFile(t *testing.T) {
+	t.Parallel()
+
+	t.Run("copies it", func(t *testing.T) {
+		t.Parallel()
+		escDir := t.TempDir()
+		require.NoError(t, run(
+			[]string{"generate", "--overlay", t.TempDir(), seedLib(t, arrayLib), escDir},
+			io.Discard, io.Discard))
+		contents, err := os.ReadFile(filepath.Join(escDir, dts_to_esc.NoticeFileName))
+		require.NoError(t, err)
+		require.Equal(t, seedNotice, string(contents))
+	})
+
+	t.Run("fails without it", func(t *testing.T) {
+		t.Parallel()
+		libDir := seedLib(t, arrayLib)
+		notice := filepath.Join(filepath.Dir(libDir), dts_to_esc.NoticeFileName)
+		require.NoError(t, os.Remove(notice))
+		err := run(
+			[]string{"generate", "--overlay", t.TempDir(), libDir, t.TempDir()},
+			io.Discard, io.Discard)
+		require.EqualError(t, err,
+			"reading notice file: open "+notice+": no such file or directory")
+	})
 }
 
 // TestRun_GenerateResolvesTheOverlayBesideTheTree covers the default

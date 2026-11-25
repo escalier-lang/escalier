@@ -5,8 +5,10 @@
 //     node tools/gen-platform-packages.mjs
 //
 // Each package holds the escalier binary for one platform. The script
-// writes package.json and README.md and leaves bin/ alone, since the
-// cross-compile script fills bin/ at release time. It copies `version`,
+// writes package.json, README.md, LICENSE and THIRD_PARTY_NOTICES.txt and
+// leaves bin/ alone, since the cross-compile script fills bin/ at release
+// time. LICENSE is a copy of the repo's, and THIRD_PARTY_NOTICES.txt a copy
+// of cmd/escalier/THIRD_PARTY_NOTICES.txt. It copies `version`,
 // `license` and the repository links from packages/cli/package.json, so
 // the platform packages always match `@escalier/cli`. It removes any
 // `cli-*` directory whose target is no longer in TARGETS.
@@ -34,6 +36,10 @@ import { TARGETS, binaryName, platformPackageName } from './platforms.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PLATFORMS_DIR = join(ROOT, 'packages', 'platforms');
 
+// The name of the file in each platform package that holds the notices of
+// the third-party software linked into the binary.
+export const NOTICES_FILE = 'THIRD_PARTY_NOTICES.txt';
+
 // Returns the package.json object for `target`, taking the fields it
 // shares with `@escalier/cli` from `cli`, the parsed packages/cli/package.json.
 export function platformManifest(target, cli) {
@@ -53,7 +59,8 @@ export function platformManifest(target, cli) {
         bugs: cli.bugs,
         os: [target.os],
         cpu: [target.cpu],
-        files: ['bin/'],
+        // npm adds LICENSE to every tarball on its own, but not the notices.
+        files: ['bin/', NOTICES_FILE],
         preferUnplugged: true,
         scripts: {
             // bin/ is gitignored and filled by the cross-compile script, so
@@ -95,10 +102,12 @@ Install [\`@escalier/cli\`](https://www.npmjs.com/package/@escalier/cli) instead
 }
 
 // Writes package.json and README.md for each entry in `targets` into
-// `platformsDir`/cli-<suffix>, and removes every other `cli-*` directory in
-// `platformsDir`. Files the function doesn't write, such as a target's bin/,
-// are left in place. Returns the names of the removed directories.
-export function writePlatformPackages(platformsDir, targets, cli) {
+// `platformsDir`/cli-<suffix>, along with one file per entry of
+// `extraFiles`, an object mapping a file name to its contents. Removes every
+// other `cli-*` directory in `platformsDir`. Files the function doesn't
+// write, such as a target's bin/, are left in place. Returns the names of
+// the removed directories.
+export function writePlatformPackages(platformsDir, targets, cli, extraFiles) {
     mkdirSync(platformsDir, { recursive: true });
 
     const expected = new Set(targets.map((target) => `cli-${target.suffix}`));
@@ -121,6 +130,9 @@ export function writePlatformPackages(platformsDir, targets, cli) {
             JSON.stringify(manifest, null, 4) + '\n',
         );
         writeFileSync(join(dir, 'README.md'), platformReadme(target));
+        for (const [name, contents] of Object.entries(extraFiles)) {
+            writeFileSync(join(dir, name), contents);
+        }
     }
     return removed;
 }
@@ -128,7 +140,22 @@ export function writePlatformPackages(platformsDir, targets, cli) {
 function main() {
     const cliPath = join(ROOT, 'packages', 'cli', 'package.json');
     const cli = JSON.parse(readFileSync(cliPath, 'utf8'));
-    for (const entry of writePlatformPackages(PLATFORMS_DIR, TARGETS, cli)) {
+    // Each package ships a binary, so it carries the licence it is
+    // distributed under and the notices that the binary's third-party
+    // licences require binary redistributions to reproduce.
+    const extraFiles = {
+        LICENSE: readFileSync(join(ROOT, 'LICENSE'), 'utf8'),
+        [NOTICES_FILE]: readFileSync(
+            join(ROOT, 'cmd', 'escalier', NOTICES_FILE),
+            'utf8',
+        ),
+    };
+    for (const entry of writePlatformPackages(
+        PLATFORMS_DIR,
+        TARGETS,
+        cli,
+        extraFiles,
+    )) {
         console.log(`removed packages/platforms/${entry}`);
     }
     console.log(`wrote ${TARGETS.length} packages under packages/platforms`);

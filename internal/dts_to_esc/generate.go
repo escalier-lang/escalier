@@ -26,6 +26,13 @@ type GenerateOptions struct {
 	// node_modules/typescript/lib.
 	LibDir string
 
+	// NoticeFile is the third-party notices file of the TypeScript
+	// package LibDir belongs to, typically
+	// node_modules/typescript/ThirdPartyNoticeText.txt. The run copies it
+	// to OutDir/ThirdPartyNoticeText.txt and fails if it can't be read.
+	// "" skips the copy.
+	NoticeFile string
+
 	// OverlayDir holds the hand-written `.esc` fragments, typically
 	// internal/interop/overlay.
 	OverlayDir string
@@ -176,6 +183,11 @@ func Generate(opts GenerateOptions) (*GenerateResult, error) {
 	if err := ScaffoldNodeDir(opts.OutDir); err != nil {
 		return nil, err
 	}
+	if opts.NoticeFile != "" {
+		if err := copyNoticeFile(opts.NoticeFile, opts.OutDir); err != nil {
+			return nil, err
+		}
+	}
 	removed, err := removeStalePackages(opts.OutDir, set.FromSlice(written), opts.HandAuthored)
 	if err != nil {
 		return nil, err
@@ -188,6 +200,24 @@ func Generate(opts GenerateOptions) (*GenerateResult, error) {
 		Written:   written,
 		Removed:   removed,
 	}, nil
+}
+
+// NoticeFileName is the name the third-party notices file gets at the
+// root of the generated tree.
+const NoticeFileName = "ThirdPartyNoticeText.txt"
+
+// copyNoticeFile copies the file at src to outDir/NoticeFileName,
+// replacing any copy already there.
+func copyNoticeFile(src, outDir string) error {
+	contents, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("reading notice file: %w", err)
+	}
+	dest := filepath.Join(outDir, NoticeFileName)
+	if err := os.WriteFile(dest, contents, 0o644); err != nil {
+		return fmt.Errorf("writing notice file: %w", err)
+	}
+	return nil
 }
 
 // removeStalePackages deletes every `.esc` file in the generated

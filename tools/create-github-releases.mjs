@@ -20,9 +20,10 @@
 // The @escalier/cli release carries one archive for each target in
 // tools/platforms.mjs, for people who don't install from npm. An archive
 // unpacks to escalier-<suffix>/ and holds the binary in bin/, the stdlib's
-// .esc files in share/escalier/data/, a README.md and the LICENSE. The
-// binary finds share/escalier/data/ next to its own bin/ directory, so it
-// works wherever the archive unpacks. Linux and macOS archives are .tar.gz,
+// .esc files and their notices in share/escalier/data/, a README.md, the
+// LICENSE and the THIRD_PARTY_NOTICES.txt of the binary. The binary finds
+// share/escalier/data/ next to its own bin/ directory, so it works wherever
+// the archive unpacks. Linux and macOS archives are .tar.gz,
 // which keeps the binary's execute bit, and Windows archives are .zip.
 //
 // Each release gets the tag <name>@<version> on GITHUB_SHA and takes its
@@ -38,6 +39,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { STDLIB_SOURCE_DIR, copyStdlib } from './copy-stdlib.mjs';
+import { NOTICES_FILE } from './gen-platform-packages.mjs';
 import { TARGETS, binaryName } from './platforms.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -250,6 +252,12 @@ function buildArchives(dir, version) {
             archiveReadme(target, version),
         );
         fs.copyFileSync(join(ROOT, 'LICENSE'), join(root, 'LICENSE'));
+        // The licences of the Go standard library and the binary's other
+        // dependencies require a binary redistribution to carry their notices.
+        fs.copyFileSync(
+            join(ROOT, 'cmd', 'escalier', NOTICES_FILE),
+            join(root, NOTICES_FILE),
+        );
 
         const { command, args } = archiveCommand(target);
         const result = spawnSync(command, args, { cwd: dir, stdio: 'inherit' });
