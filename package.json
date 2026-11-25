@@ -22,6 +22,7 @@
         "test": "vitest run",
         "changeset": "changeset",
         "version-packages": "changeset version && pnpm install --lockfile-only",
+        "release": "node tools/build-binaries.mjs && pnpm --filter @escalier/cli --filter @escalier/runtime build && changeset publish",
         "test:ui": "vitest --ui --coverage",
         "coverage": "vitest run --coverage",
         "typecheck": "tsc -b"
