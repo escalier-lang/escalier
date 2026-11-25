@@ -20,7 +20,8 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     permissions:
-      # Pushes the changeset-release/main branch and the release tags.
+      # Pushes the changeset-release/main branch, and creates the release
+      # tags and GitHub releases.
       contents: write
       # Opens and updates the "Version Packages" pull request.
       pull-requests: write
@@ -62,13 +63,28 @@ jobs:
       # pushes the version commit through the API with GITHUB_TOKEN, which
       # works without the credentials that checkout leaves out, and GitHub
       # signs the commit.
+      # The action's own GitHub releases are off, because it would create one
+      # per published package. The next step creates them instead.
       - name: Open the version pull request or publish
+        id: changesets
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
           version: pnpm version-packages
           publish: pnpm release
           commitMode: github-api
+          createGithubReleases: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
+
+      # One release covers @escalier/cli and its platform packages, with the
+      # binaries that pnpm release built attached. Each other published
+      # package gets its own release.
+      - name: Create the GitHub releases
+        if: steps.changesets.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
+        run: node tools/create-github-releases.mjs

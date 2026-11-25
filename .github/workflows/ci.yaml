@@ -125,6 +125,7 @@ jobs:
           node --test .github/scripts/check-private-packages.test.mjs \
             tools/gen-platform-packages.test.mjs \
             tools/build-binaries.test.mjs \
+            tools/create-github-releases.test.mjs \
             tools/copy-stdlib.test.mjs \
             tools/npm-smoke.test.mjs
 
