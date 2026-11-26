@@ -37,13 +37,17 @@ func (c *checker) queueParamTypeCheck(fe *ast.FuncExpr, p *ast.Param, pat ast.Pa
 func (c *checker) checkParamTypes() {
 	pending := c.pendingParamTypes
 	c.pendingParamTypes = nil
+	// A closure is checked against its context in the component that infers it, so the
+	// record of those checks is read here and then dropped.
+	checked := c.ctx.checkedFuncs
+	c.ctx.checkedFuncs = nil
 	for _, p := range pending {
 		if len(p.v.LowerBounds) > 0 {
 			continue
 		}
 		// A check against a generic function type runs under a probe, which rolls the bound
 		// it gave the parameter back, so the closure's own function type records the check.
-		if ft, ok := c.info.TypeOf(p.closure).(*soltype.FuncType); ok && c.ctx.checkedFuncs.Contains(ft) {
+		if ft, ok := c.info.TypeOf(p.closure).(*soltype.FuncType); ok && checked.Contains(ft) {
 			continue
 		}
 		name, _ := printer.Print(p.pat, printer.DefaultOptions())

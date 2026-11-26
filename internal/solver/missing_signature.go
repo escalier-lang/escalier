@@ -356,9 +356,8 @@ func isIdentByte(b byte) bool {
 
 // checkSignature reports sig, which name declares at site, when it leaves out a parameter
 // type and needsParams is set, or its return type when needsReturn is set. node carries the
-// blame span. suggest
-// renders what to write when only the return type is left out, or the empty string when the
-// checker has nothing to suggest.
+// blame span. suggest renders what to write when only the return type is left out, or the
+// empty string when the checker has nothing to suggest.
 func (c *checker) checkSignature(
 	sig *ast.FuncSig,
 	needsParams, needsReturn bool,

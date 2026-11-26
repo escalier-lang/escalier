@@ -245,9 +245,9 @@ type Context struct {
 	holeVars set.Set[*soltype.TypeVarType]
 
 	// checkedFuncs holds each function type constrain has checked against another function
-	// type, the one it flows into. noteFuncChecked fills it, and a probe's rollback leaves it
-	// alone, since a trial check still had a function type to check against.
-	// checkParamTypes reads it.
+	// type, the one it flows into, since the last checkParamTypes. noteFuncChecked fills it,
+	// and a probe's rollback leaves it alone, since a trial check still had a function type to
+	// check against. checkParamTypes reads it and then clears it.
 	checkedFuncs set.Set[*soltype.FuncType]
 
 	// frozenVars and frozenLts hold the type and lifetime variables reachable from a

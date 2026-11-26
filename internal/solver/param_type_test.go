@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestMissingParamType covers which closure parameters W3 asks a type for. A parameter
+// TestMissingParamType covers which closure parameters need a written type. A parameter
 // takes its type from its annotation or from the function type the closure flows into, and
 // one with neither reports MissingParamTypeError. expected lists every diagnostic the source
 // reports.
