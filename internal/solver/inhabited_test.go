@@ -425,9 +425,24 @@ func TestNonReturningRecursionThroughAlias(t *testing.T) {
 		},
 		{
 			// A written return type whose body returns a call that never returns.
-			name: "ReturnsACallThatNeverReturns",
-			src:  "type Next = {next: Next}\ndeclare fn mk() -> Next\nfn f() -> Next { return mk() }",
+			name:     "ReturnsACallThatNeverReturns",
+			src:      "type Next = {next: Next}\ndeclare fn mk() -> Next\nfn f() -> Next { return mk() }",
 			expected: []string{nonReturningMsg("3:4-3:5", "f", "fn () -> Next")},
+		},
+		{
+			// The call runs only on one branch, and the other branch returns.
+			name: "CallOnOneBranchOfAnIf",
+			src:  "type Next = {next: Next}\ndeclare fn mk() -> Next\nfn f(x: Next, c: boolean) -> Next { return if c { x } else { mk() } }",
+		},
+		{
+			name: "CallInAMatchArm",
+			src:  "type Next = {next: Next}\ndeclare fn mk() -> Next\nfn f(x: Next | undefined) -> Next { return match x { n: Next => n, _ => mk() } }",
+		},
+		{
+			// The condition always runs, so its call never returns either.
+			name:     "CallInTheConditionOfAnIf",
+			src:      "type Next = {next: Next}\ndeclare fn mk() -> Next\ndeclare fn ok(n: Next) -> boolean\nfn f(x: Next) -> Next { return if ok(mk()) { x } else { x } }",
+			expected: []string{nonReturningMsg("4:4-4:5", "f", "fn (x: Next) -> Next")},
 		},
 		{
 			name: "AliasAlone",

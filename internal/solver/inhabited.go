@@ -125,8 +125,10 @@ func (c *checker) callsNonReturning(e ast.Expr) bool {
 	return finder.found
 }
 
-// nonReturningCallFinder records whether an expression calls a function whose result no finite
-// value has.
+// nonReturningCallFinder records whether an expression calls, on every path through it, a
+// function whose result no finite value has. Only the parts of an expression that always run are
+// walked: the condition of an `if`, the target of a `match`, the left operand of `&&`, `||` and
+// `??`, the `try` block of a `try`/`catch`, and the callee of an optional call.
 type nonReturningCallFinder struct {
 	ast.DefaultVisitor
 	c     *checker
@@ -137,7 +139,26 @@ func (v *nonReturningCallFinder) EnterExpr(e ast.Expr) bool {
 	switch e := e.(type) {
 	case *ast.FuncExpr:
 		return false
+	case *ast.IfElseExpr:
+		e.Cond.Accept(v)
+		return false
+	case *ast.MatchExpr:
+		e.Target.Accept(v)
+		return false
+	case *ast.BinaryExpr:
+		switch e.Op {
+		case ast.LogicalAnd, ast.LogicalOr, ast.NullishCoalescing:
+			e.Left.Accept(v)
+			return false
+		}
+	case *ast.TryCatchExpr:
+		e.Try.Accept(v)
+		return false
 	case *ast.CallExpr:
+		if e.OptChain {
+			e.Callee.Accept(v)
+			return false
+		}
 		if t := v.c.info.TypeOf(e); t != nil && !finitelyInhabitedGiven(coalesce(t, soltype.Positive), v.c.aliasInhabited) {
 			v.found = true
 		}
