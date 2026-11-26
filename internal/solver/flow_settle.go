@@ -38,25 +38,19 @@ func borrowKindOf(mut bool) borrowKind {
 // classifyFlow returns the event F2 gives flow, whose value has type t, through dest.
 // The event carries flow's place, node, and CFG node. table holds the flow's event. A
 // value type returns a read *useEvent with no holder, since copying it is only a read of
-// the place. settled is false when F3 has not settled the source or the destination. The
-// event is then nil and wait names what the flow waits on.
+// the place. settled is false when the destination is not settled yet. The event is then
+// nil and wait names what the flow waits on.
 //
-// force settles every such flow the way the current solver treats what it cannot see: an
-// unsettled parameter is read as it stands, a callee with no signature borrows its
-// argument, and a closure capture settles from the holder the closure has then.
-// forceCapture settles only that last case.
+// force settles every such flow the way the current solver treats what it cannot see: a
+// callee with no signature borrows its argument, and a closure capture settles from the
+// holder the closure has then. forceCapture settles only that last case.
 func (c *checker) classifyFlow(table *ownershipEvents, flow flowBase, t soltype.Type, dest flowDest, force, forceCapture bool) (ownershipEvent, flowWait, bool) {
 	dest, wait, ok := c.settleDest(table, dest, flow.holder, force, force || forceCapture)
 	if !ok {
 		return nil, wait, false
 	}
 
-	src, wait, ok := c.sourceKindOf(flow.place, t, force)
-	if !ok {
-		return nil, wait, false
-	}
-
-	switch src {
+	switch c.sourceKindOf(t) {
 	case valueSource:
 		return &useEvent{eventBase: flow.eventBase, access: readAccess}, flowWait{}, true
 	case borrowSource:
@@ -65,7 +59,7 @@ func (c *checker) classifyFlow(table *ownershipEvents, flow flowBase, t soltype.
 			return &borrowEvent{flowBase: flow, borrow: b.borrow, lifetime: b.lt}, flowWait{}, true
 		}
 
-		kind := c.sourceBorrowKind(flow.place, t)
+		kind := c.sourceBorrowKind(t)
 		ev := &copyEvent{flowBase: flow, source: kind, borrow: kind}
 		if toBorrow {
 			ev.borrow = b.narrow(kind)
@@ -165,22 +159,22 @@ func (c *checker) paramTakesOwnership(fp *soltype.FuncParam) bool {
 	return fp.Moved || c.isConcreteOwned(fp.Type)
 }
 
-// sourceKindOf classifies the value place p holds by its type t. A value type is a value
-// source, a borrow is a borrow source, and any other place is an owned source.
-func (c *checker) sourceKindOf(p movePlace, t soltype.Type, force bool) (sourceKind, flowWait, bool) {
+// sourceKindOf classifies a flow's source by its type t. A value type is a value source, a
+// borrow is a borrow source, and any other type is an owned source.
+func (c *checker) sourceKindOf(t soltype.Type) sourceKind {
 	if c.holdsValueType(t) {
-		return valueSource, flowWait{}, true
+		return valueSource
 	}
 
 	if _, ok := c.borrowOfType(t); ok {
-		return borrowSource, flowWait{}, true
+		return borrowSource
 	}
-	return ownedSource, flowWait{}, true
+	return ownedSource
 }
 
-// sourceBorrowKind returns the mutability of the borrow place p holds, whose type is t. A
-// borrow whose type has a `&mut` member is mutable, so `&mut A | &A` is `&mut`.
-func (c *checker) sourceBorrowKind(p movePlace, t soltype.Type) borrowKind {
+// sourceBorrowKind returns the mutability of a borrow source of type t. A borrow whose type
+// has a `&mut` member is mutable, so `&mut A | &A` is `&mut`.
+func (c *checker) sourceBorrowKind(t soltype.Type) borrowKind {
 	if b, ok := c.borrowOfType(t); ok {
 		return borrowKindOf(b.anyMut)
 	}
