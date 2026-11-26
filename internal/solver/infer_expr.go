@@ -2618,21 +2618,22 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, fn *solt
 		}
 		if fe, ok := a.(*ast.FuncExpr); ok {
 			c.argFunc = fe
-			c.argFuncSig = declaredCallbackSig(fn, i)
+			c.argFuncSig = c.declaredCallbackSig(fn, i)
 		}
 		args[i] = c.inferExpr(scope, lvl, a)
 	}
 	return args
 }
 
-// declaredCallbackSig returns the function type fn declares for its parameter at index i. It
-// returns nil when fn is nil, when i falls past the parameters or on a rest parameter, and
-// when the parameter's type is not a function type or carries a binder of its own.
-func declaredCallbackSig(fn *soltype.FuncType, i int) *soltype.FuncType {
+// declaredCallbackSig returns the function type fn declares for its parameter at index i, with
+// an alias naming it expanded. It returns nil when fn is nil, when i falls past the parameters
+// or on a rest parameter, and when the parameter's type is not a function type or carries a
+// binder of its own.
+func (c *checker) declaredCallbackSig(fn *soltype.FuncType, i int) *soltype.FuncType {
 	if fn == nil || i >= len(fn.Params) || fn.Params[i].Rest {
 		return nil
 	}
-	cb, ok := fn.Params[i].Type.(*soltype.FuncType)
+	cb, ok := c.memberCarrier(fn.Params[i].Type).(*soltype.FuncType)
 	if !ok || quantified(cb) {
 		return nil
 	}
@@ -2640,9 +2641,10 @@ func declaredCallbackSig(fn *soltype.FuncType, i int) *soltype.FuncType {
 }
 
 // declaredParamType returns the type sig declares for its parameter at index i. It returns
-// false when sig is nil, and when i falls past the parameters or on a rest parameter.
+// false when sig is nil, when i falls past the parameters, and on a rest or optional
+// parameter. An optional parameter may hold `undefined`, which its declared type leaves out.
 func declaredParamType(sig *soltype.FuncType, i int) (soltype.Type, bool) {
-	if sig == nil || i >= len(sig.Params) || sig.Params[i].Rest {
+	if sig == nil || i >= len(sig.Params) || sig.Params[i].Rest || sig.Params[i].Optional {
 		return nil, false
 	}
 	return sig.Params[i].Type, true
@@ -4460,7 +4462,7 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	return pathResult{value: out}
 }
 
-// declaredParamMember reads the method, getter, or setter name off the type the callee
+// declaredParamMember reads the method, getter, or setter `name` off the type the callee
 // declares for recv, when recv is the variable of an unannotated parameter of a function
 // passed as a call argument. place is the binding recv is an owned layer of, or nil. It
 // returns false when recv is any other type, and when the declared type reads name as a field

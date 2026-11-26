@@ -3849,6 +3849,14 @@ func TestInferMethodCallOnUnannotatedCallbackParam(t *testing.T) {
 			`,
 		},
 		{
+			name: "a mutating method through a callback type named by an alias",
+			src: box + `
+				type Cb = fn (b: &mut Box) -> undefined
+				declare fn apply(f: Cb) -> undefined
+				fn f() -> undefined { apply(fn (inner) { inner.bump() }) }
+			`,
+		},
+		{
 			name: "a field write through a declared mutable borrow",
 			src:  apply("b: &mut Box", "fn (inner) { inner.x = 1 }"),
 		},
