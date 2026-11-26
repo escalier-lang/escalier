@@ -842,12 +842,10 @@ func TestGeneratorSubtyping(t *testing.T) {
 		{
 			name: "SyncGeneratorIsNotAsync",
 			src: `
-				gen fn g() { yield 1 return true }
+				gen fn g() -> Generator<1, true, unknown> { yield 1 return true }
 				val h: fn () -> AsyncGenerator<number, boolean, never> = g
 			`,
-			// The yield slot renders in describe's raw mid-constrain form, so g's
-			// still-unsolved yield variable shows as `t4`.
-			wantErrs: []string{"3:62-3:63: cannot constrain Generator<t4, true, unknown> <: AsyncGenerator<number, boolean, never>"},
+			wantErrs: []string{"3:62-3:63: cannot constrain Generator<1, true, unknown> <: AsyncGenerator<number, boolean, never>"},
 		},
 	})
 }
