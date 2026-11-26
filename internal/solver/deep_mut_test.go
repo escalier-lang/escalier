@@ -129,6 +129,13 @@ func TestExplicitBorrowOfBorrowFieldFlowsFieldLifetime(t *testing.T) {
 			expected: "fn <'a>(obj: {a: &'a mut {x: number}}) -> &'a {x: number}",
 		},
 		{
+			// A write records the field's type for the receiver, and the borrow that follows
+			// reads it from there.
+			name:     "FieldWrittenBeforeItIsBorrowed",
+			src:      "fn f(mut obj, q: &{x: number}) { obj.a = q\n return &obj.a }",
+			expected: "fn <'a>(obj: {a: &'a {x: number} & unknown}, q: &'a {x: number}) -> &'a {x: number}",
+		},
+		{
 			name:     "MutableBorrowOfMutableBorrowField",
 			src:      "fn f(mut obj: {a: &mut {x: number}}) { return &mut obj.a }",
 			expected: "fn <'a>(obj: {a: &'a mut {x: number}}) -> &'a mut {x: number}",
