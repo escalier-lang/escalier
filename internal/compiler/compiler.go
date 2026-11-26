@@ -2,7 +2,6 @@ package compiler
 
 import (
 	"context"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -421,6 +420,10 @@ func compileScript(b backend, lib LibScope, source *ast.Source) CompilerOutput {
 	// dtsMod := builder.BuildDefinitions(decls, namespace)
 
 	printer := codegen.NewPrinter()
+	// npm runs a package's `bin` entry through its `#!` line. POSIX shells
+	// read it directly, and on Windows npm's .cmd shim picks the interpreter
+	// from it, so a script without one fails as an installed command.
+	printer.PrintShebang("/usr/bin/env node")
 	jsOutput := printer.PrintModule(jsMod)
 
 	baseName := strings.TrimSuffix(filepath.Base(source.Path), filepath.Ext(source.Path)) + ".js"
@@ -447,7 +450,10 @@ func compileScript(b backend, lib LibScope, source *ast.Source) CompilerOutput {
 	}
 }
 
-// Assumes that the current working directory is the root of the package
+// FindSourceFiles returns the paths of the .esc files under lib/ and bin/,
+// relative to the current working directory, which must be the package root.
+// The paths use forward slashes on every OS, such as "lib/foo/bar.esc", the
+// form ast.Source.Path documents and CompilePackage matches against.
 func FindSourceFiles() ([]string, error) {
 	// Find all .esc files in the lib directory
 	var files []string
@@ -460,14 +466,13 @@ func FindSourceFiles() ([]string, error) {
 
 			// Check if it's a file and ends with .esc
 			if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
-				files = append(files, path)
+				files = append(files, filepath.ToSlash(path))
 			}
 
 			return nil
 		})
 
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "failed to walk directory:", err)
 			return nil, err
 		}
 	}
@@ -481,14 +486,13 @@ func FindSourceFiles() ([]string, error) {
 
 			// Check if it's a file and ends with .esc
 			if !d.IsDir() && strings.HasSuffix(d.Name(), ".esc") {
-				files = append(files, path)
+				files = append(files, filepath.ToSlash(path))
 			}
 
 			return nil
 		})
 
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "failed to walk directory:", err)
 			return nil, err
 		}
 	}

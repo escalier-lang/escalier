@@ -3,7 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
+
+	"github.com/escalier-lang/escalier/internal/buildinfo"
 )
 
 func main() {
@@ -24,6 +27,8 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "--version", "-version":
+		writeVersion(os.Stdout)
 	case "build":
 		err := buildCmd.Parse(os.Args[2:])
 		if err != nil {
@@ -48,4 +53,9 @@ func main() {
 	default:
 		fmt.Println("expected 'build' or 'format' subcommands")
 	}
+}
+
+// writeVersion writes the binary's version and a newline to w.
+func writeVersion(w io.Writer) {
+	_, _ = fmt.Fprintln(w, buildinfo.Version)
 }

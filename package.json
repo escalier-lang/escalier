@@ -1,6 +1,7 @@
 {
     "name": "escalier",
-    "license": "MIT",
+    "private": true,
+    "license": "Apache-2.0",
     "version": "0.0.1",
     "repository": {
         "type": "git",
@@ -19,11 +20,15 @@
         "format": "oxfmt",
         "check": "oxfmt --check && oxlint",
         "test": "vitest run",
+        "changeset": "changeset",
+        "version-packages": "changeset version && pnpm install --lockfile-only",
+        "release": "node tools/build-binaries.mjs && pnpm --filter @escalier/cli --filter @escalier/runtime build && changeset publish",
         "test:ui": "vitest --ui --coverage",
         "coverage": "vitest run --coverage",
         "typecheck": "tsc -b"
     },
     "devDependencies": {
+        "@changesets/cli": "^2.31.1",
         "@storybook/addon-vitest": "^10.3.3",
         "@types/node": "^20",
         "@types/react": "catalog:",
@@ -42,6 +47,9 @@
         "typescript": "^5.7.2",
         "vite": "^7.3.6",
         "vitest": "^4.1.10"
+    },
+    "engines": {
+        "node": ">=24.4"
     },
     "packageManager": "pnpm@10.22.0+sha512.bf049efe995b28f527fd2b41ae0474ce29186f7edcb3bf545087bd61fbbebb2bf75362d1307fda09c2d288e1e499787ac12d4fcb617a974718a6051f2eee741c",
     "dependencies": {

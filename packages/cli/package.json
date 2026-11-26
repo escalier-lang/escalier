@@ -1,17 +1,29 @@
 {
   "name": "@escalier/cli",
-  "version": "0.0.1",
-  "description": "Command-line interface for the Escalier programming language compiler",
+  "version": "0.1.1",
+  "description": "The Escalier compiler, with a native binary for each supported platform",
   "type": "module",
   "bin": {
-    "escalier": "dist/index.js"
+    "escalier": "dist/bin.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/*.test.*",
+    "data"
   ],
   "scripts": {
-    "build": "vite build",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc -p tsconfig.json && node ../../tools/copy-stdlib.mjs",
+    "prepack": "pnpm build && node -e \"if (!require('fs').existsSync('data/std')) { console.error('data/std is missing. Run node ../../tools/copy-stdlib.mjs before packing.'); process.exit(1); }\"",
+    "test": "vitest run",
+    "lint:package": "publint --strict && attw --pack . --profile esm-only"
   },
   "keywords": [
     "escalier",
@@ -21,7 +33,7 @@
     "typescript"
   ],
   "author": "escalier-lang",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/escalier-lang/escalier.git",
@@ -33,5 +45,22 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "optionalDependencies": {
+    "@escalier/cli-darwin-arm64": "workspace:*",
+    "@escalier/cli-darwin-x64": "workspace:*",
+    "@escalier/cli-linux-arm": "workspace:*",
+    "@escalier/cli-linux-arm64": "workspace:*",
+    "@escalier/cli-linux-x64": "workspace:*",
+    "@escalier/cli-win32-arm64": "workspace:*",
+    "@escalier/cli-win32-x64": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "publint": "^0.3.25"
   }
 }

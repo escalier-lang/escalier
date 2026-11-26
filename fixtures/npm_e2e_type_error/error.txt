@@ -1,0 +1,5 @@
+lib/index.esc:3:24: cannot constrain number <: string
+
+3:  export val n: string = math.sqrt(2)
+                           ^^^^^^^^^^^^
+

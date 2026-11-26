@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -200,16 +201,28 @@ func build(stdout io.Writer, stderr io.Writer, pkgs []string) bool {
 		start := time.Now()
 		fmt.Fprint(stdout, "building: ", pkg)
 
+		// The package's diagnostics collect in diags and reach stderr only after
+		// finish ends the `building:` line. When stdout and stderr share a
+		// terminal, each diagnostic then starts on a line of its own instead of
+		// running on from the package path.
+		var diags bytes.Buffer
+		finish := func(status string) {
+			fmt.Fprintf(stdout, " - %s\n", status)
+			_, _ = diags.WriteTo(stderr)
+		}
+
 		err := os.Chdir(pkg)
 		if err != nil {
-			fmt.Fprintf(stderr, "failed to change directory to %s: %v\n", pkg, err)
+			fmt.Fprintf(&diags, "failed to change directory to %s: %v\n", pkg, err)
+			finish("failed")
 			allOK = false
 			continue
 		}
 
 		files, err := compiler.FindSourceFiles()
 		if err != nil {
-			fmt.Fprintf(stderr, "failed to find source files for %s: %v\n", pkg, err)
+			fmt.Fprintf(&diags, "failed to find source files for %s: %v\n", pkg, err)
+			finish("failed")
 			_ = os.Chdir(cwd)
 			allOK = false
 			continue
@@ -217,22 +230,24 @@ func build(stdout io.Writer, stderr io.Writer, pkgs []string) bool {
 
 		config, err := compiler.ReadPackageConfig(".")
 		if err != nil {
-			fmt.Fprintf(stderr, "failed to read the package config for %s: %v\n", pkg, err)
+			fmt.Fprintf(&diags, "failed to read the package config for %s: %v\n", pkg, err)
+			finish("failed")
 			_ = os.Chdir(cwd)
 			allOK = false
 			continue
 		}
 
-		sources, idToSource, unreadable := loadSources(stderr, files)
+		sources, idToSource, unreadable := loadSources(&diags, files)
 		output := compiler.CompilePackage(sources, config)
 
-		printErrors(stderr, output, idToSource)
+		printErrors(&diags, output, idToSource)
 
 		// CompilePackage produces no compilation unit when the parse failed, so the loop
 		// writes nothing in that case without needing to test for it here.
 		for moduleName, moduleOutput := range output.CompUnits {
-			if err := writeModuleOutputs(stderr, moduleName, moduleOutput); err != nil {
-				fmt.Fprintln(stderr, err.Error())
+			if err := writeModuleOutputs(&diags, moduleName, moduleOutput); err != nil {
+				fmt.Fprintln(&diags, err.Error())
+				finish("failed")
 				_ = os.Chdir(cwd)
 				return false
 			}
@@ -247,11 +262,11 @@ func build(stdout io.Writer, stderr io.Writer, pkgs []string) bool {
 			}
 		}
 		if errs := unreadable + len(output.ParseErrors) + typeErrors; errs > 0 {
-			fmt.Fprintf(stdout, " - failed (%s)\n", errorCount(errs))
+			finish(fmt.Sprintf("failed (%s)", errorCount(errs)))
 			allOK = false
 			continue
 		}
-		fmt.Fprintf(stdout, " - ok (%s)\n", time.Since(start))
+		finish(fmt.Sprintf("ok (%s)", time.Since(start)))
 	}
 	return allOK
 }

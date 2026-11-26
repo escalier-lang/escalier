@@ -91,6 +91,104 @@ jobs:
             ./bin/dts_to_esc generate --overlay internal/interop/overlay \
             node_modules/typescript/lib internal/interop/data
 
+  # Checks the workspace's npm packages before changesets publishes them.
+  # `changeset publish` publishes every workspace package that isn't
+  # private, so the job fails when a package outside the publish list in
+  # check-private-packages.mjs lacks "private": true. It also fails when
+  # the committed packages under packages/platforms, or the
+  # optionalDependencies of packages/cli/package.json, differ from what
+  # tools/gen-platform-packages.mjs writes from tools/platforms.mjs.
+  check_npm_packages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      # setup-node's pnpm cache needs pnpm on PATH before this step runs.
+      # The job installs no dependencies, so it turns the cache off.
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      # `pnpm ls` reads the workspace manifests, so the job needs pnpm on
+      # PATH but no installed dependencies.
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      - name: Test the scripts
+        run: |
+          node --test .github/scripts/check-private-packages.test.mjs \
+            tools/gen-platform-packages.test.mjs \
+            tools/build-binaries.test.mjs \
+            tools/create-github-releases.test.mjs \
+            tools/copy-stdlib.test.mjs \
+            tools/npm-smoke.test.mjs
+
+      - name: Check that unpublished packages are private
+        run: node .github/scripts/check-private-packages.mjs
+
+      # `git status --porcelain` lists modified, deleted and untracked
+      # files, so a package the generator adds or removes also fails.
+      - name: Check the platform packages against the target list
+        run: |
+          node tools/gen-platform-packages.mjs
+          changes=$(git status --porcelain -- packages/platforms packages/cli/package.json)
+          if [ -n "$changes" ]; then
+            echo "$changes"
+            echo "Run node tools/gen-platform-packages.mjs and commit the result."
+            exit 1
+          fi
+
+  # Fails a PR that changes a published package, or the compiler that
+  # @escalier/cli ships, without a changeset that releases it. Without one,
+  # the change ships in the next release with no version bump or changelog
+  # entry. `pnpm changeset --empty` opts a PR out.
+  check_changesets:
+    # The "Version Packages" PR that changesets/action opens consumes the
+    # changesets, so it changes package versions with none left to find. It
+    # comes from this repository, so a fork's branch with the same name
+    # still runs the check.
+    if: >-
+      github.event_name == 'pull_request' &&
+      !(github.head_ref == 'changeset-release/main' &&
+        github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    steps:
+      # `changeset status --since` diffs against the base branch, which
+      # needs the full history.
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test the check
+        run: node --test .github/scripts/check-changesets.test.mjs
+
+      # The base ref reaches the shell through the environment, so a branch
+      # name that contains shell syntax is passed as data and never runs.
+      - name: Check changesets for changed packages
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: node .github/scripts/check-changesets.mjs "origin/${BASE_REF}"
+
   # Rates each change to the committed fixture outputs by review risk and
   # posts the report as a PR comment, which later runs edit in place. The
   # fixture tests in check_go confirm the committed outputs match the
@@ -213,6 +311,52 @@ jobs:
       - name: Run Tests
         run: pnpm coverage
 
+      - name: Upload results to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6.0.2
+        with:
+          flags: ts
+          verbose: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # The playground's Playwright tests run in a job of their own, in parallel
+  # with check_ts, since they take several minutes. Both jobs build the
+  # lsp-server wasm, which the unit tests and the playground both load.
+  e2e_playground:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Install Go dependencies
+        run: go mod download
+
+      - name: Build lsp-server
+        run: make lsp-server-wasm
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install chromium --with-deps
+
       - name: Playwright E2E tests
         working-directory: playground
         run: pnpm e2e:ci
@@ -230,13 +374,6 @@ jobs:
         with:
           name: playwright-test-results
           path: playground/test-results/
-
-      - name: Upload results to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6.0.2
-        with:
-          flags: ts
-          verbose: true
-          token: ${{ secrets.CODECOV_TOKEN }}
 
   build_escalier_wasm:
     runs-on: ubuntu-latest
@@ -267,19 +404,11 @@ jobs:
 
   build_cli:
     runs-on: ubuntu-latest
-    needs: build_escalier_wasm
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          fetch-depth: 0
           persist-credentials: false
-
-      - name: Download escalier.wasm artifact
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: escalier.wasm
-          path: ./bin
 
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:
@@ -289,14 +418,144 @@ jobs:
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '24'
-      
+
       - name: Install root dependencies
         run: pnpm install
 
       - name: Build
         working-directory: ./packages/cli
         run: pnpm build
- 
+
+      - name: Run Tests
+        working-directory: ./packages/cli
+        run: pnpm test
+
+      # publint checks the package.json fields and the packed file list.
+      # attw resolves the types for ESM consumers, the only kind this
+      # ESM-only package supports.
+      - name: Check the published package
+        working-directory: ./packages/cli
+        run: pnpm lint:package
+
+  # Decides whether e2e_cli runs on a pull request. A workflow-level
+  # `paths` filter would skip every job, so this job diffs the PR against
+  # its base instead. It lists the files that change what @escalier/cli
+  # packs or how the binary finds the stdlib.
+  e2e_cli_changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.diff.outputs.run }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The base ref reaches the shell through the environment, so a branch
+      # name that contains shell syntax is passed as data and never runs.
+      - name: Check for changes to the packed CLI
+        id: diff
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if git diff --quiet "origin/${BASE_REF}...HEAD" -- \
+            packages/cli packages/platforms cmd/escalier \
+            internal/stdlibdir internal/interop/data \
+            fixtures/npm_e2e fixtures/npm_e2e_type_error \
+            tools/build-binaries.mjs tools/copy-stdlib.mjs \
+            tools/e2e-cli.mjs tools/platforms.mjs .github/workflows/ci.yaml
+          then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Builds the linux-x64 binary and packs @escalier/cli and
+  # @escalier/cli-linux-x64 for e2e_cli. It runs on every push to main, and
+  # on a pull request when e2e_cli_changes finds a change to the packed CLI.
+  # It also runs when e2e_cli_changes fails, so a broken diff can't skip the
+  # test.
+  e2e_cli_pack:
+    needs: e2e_cli_changes
+    if: >-
+      !cancelled() &&
+      (needs.e2e_cli_changes.result != 'success' ||
+        needs.e2e_cli_changes.outputs.run == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the linux-x64 binary
+        run: node tools/build-binaries.mjs --only linux-x64
+
+      - name: Pack the npm packages
+        run: |
+          for dir in packages/cli packages/platforms/cli-linux-x64; do
+            (cd "$dir" && pnpm pack --pack-destination "$GITHUB_WORKSPACE/e2e-tarballs")
+          done
+
+      - name: Upload the tarballs
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: e2e-cli-tarballs
+          path: e2e-tarballs/
+          if-no-files-found: error
+
+  # Installs the tarballs from e2e_cli_pack into a project outside the
+  # checkout, then builds the project with ESCALIER_STDLIB_DIR unset. Inside
+  # the checkout the binary finds the stdlib by walking up to
+  # internal/interop/data, so only an install elsewhere catches a package
+  # that leaves out a file the binary reads. The job sets up only Node, so
+  # nothing it runs can reach Go or the workspace's dependencies.
+  e2e_cli:
+    needs: e2e_cli_pack
+    runs-on: ubuntu-latest
+    steps:
+      # The script, the fixtures it compares against and the version it
+      # expects come from the checkout.
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Download the tarballs
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: e2e-cli-tarballs
+          path: e2e-tarballs
+
+      - name: Install the packed CLI and build a project with it
+        run: node tools/e2e-cli.mjs --tarballs e2e-tarballs
+
   build_runtime:
     runs-on: ubuntu-latest
     steps:
@@ -321,7 +580,137 @@ jobs:
       - name: Build
         working-directory: ./packages/runtime
         run: pnpm build
+
+      # publint checks the package.json fields and the packed file list.
+      # attw resolves the types for both the import and require conditions.
+      - name: Check the published package
+        working-directory: ./packages/runtime
+        run: pnpm lint:package
  
       - name: Run Tests
         working-directory: ./packages/runtime
         run: pnpm test
+
+  # Builds the escalier binary for every target in tools/platforms.mjs and
+  # packs @escalier/cli and the platform packages with `pnpm pack`, the way
+  # a release packs them, for smoke_test_npm to install.
+  smoke_test_npm_pack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+
+      # Packing @escalier/cli runs its prepack script, which compiles it
+      # with the workspace's TypeScript.
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the platform binaries
+        run: node tools/build-binaries.mjs
+
+      - name: Pack the npm packages
+        run: |
+          for dir in packages/cli packages/platforms/cli-*; do
+            (cd "$dir" && pnpm pack --pack-destination "$GITHUB_WORKSPACE/npm-tarballs")
+          done
+
+      - name: Upload the tarballs
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: npm-tarballs
+          path: npm-tarballs/
+          if-no-files-found: error
+
+  # Installs the packed tarballs on each platform and runs the installed
+  # `escalier` command, so a wrong `os` or `cpu` field, a binary without its
+  # executable bit, or a wrong path in the wrapper fails here instead of
+  # after a release. tools/npm-smoke.e2e.test.mjs lists the checks.
+  smoke_test_npm:
+    needs: smoke_test_npm_pack
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: linux-x64
+            pnpm: true
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+          # No hosted runner has a 32-bit ARM CPU, so the x64 runner runs
+          # the linux-arm binary under QEMU's user-mode emulator.
+          - runner: ubuntu-latest
+            target: linux-arm
+            emulator: qemu-arm
+          - runner: macos-latest
+            target: darwin-arm64
+          - runner: macos-15-intel
+            target: darwin-x64
+          - runner: windows-latest
+            target: win32-x64
+          - runner: windows-11-arm
+            target: win32-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      # The smoke test script and the version it expects come from the
+      # checkout.
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        if: matrix.pnpm
+        with:
+          run_install: false
+
+      # The job installs nothing from the workspace, so it turns the cache
+      # off.
+      - name: Install Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Install QEMU
+        if: matrix.emulator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user
+
+      - name: Download the tarballs
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: npm-tarballs
+          path: npm-tarballs
+
+      - name: Smoke test the npm install
+        env:
+          ESCALIER_SMOKE_TARBALLS: npm-tarballs
+          ESCALIER_SMOKE_TARGET: ${{ matrix.target }}
+          ESCALIER_SMOKE_EMULATOR: ${{ matrix.emulator }}
+        run: node --test tools/npm-smoke.e2e.test.mjs
+
+      - name: Smoke test the pnpm install
+        if: matrix.pnpm
+        env:
+          ESCALIER_SMOKE_TARBALLS: npm-tarballs
+          ESCALIER_SMOKE_TARGET: ${{ matrix.target }}
+          ESCALIER_SMOKE_PACKAGE_MANAGER: pnpm
+        run: node --test tools/npm-smoke.e2e.test.mjs
