@@ -661,6 +661,21 @@ func TestContentsBorrowedByMutableCall(t *testing.T) {
 			`,
 			want: nil,
 		},
+		// FieldBorrowCannotBeRemovedOk relies on a callee being unable to move a field out
+		// through `&mut`. An object pattern over the borrow binds inner as a borrow, the same
+		// as the member read b.inner, so a body that tries to return it as an owned Flat
+		// fails to check.
+		"CalleeCannotMoveAFieldOutThroughAPattern": {
+			src: `
+				type Box = {inner: Flat, n: number}
+
+				fn reset(b: &mut Box) -> Flat {
+					val {inner} = b
+					return inner
+				}
+			`,
+			want: []string{"2:15-2:26: cannot use borrowed &mut Flat as owned object"},
+		},
 		// A tuple slot is fixed like a field, so touchP cannot remove p[0].
 		"TupleSlotBorrowCannotBeRemovedOk": {
 			src: `
