@@ -12,14 +12,14 @@ import (
 // extra fields to the open param checks.
 func TestInferOpenParam(t *testing.T) {
 	t.Run("open param renders inexact", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn dist(open p) { p.x
+		values, _, errs := inferSource(t, `fn dist(open p: &{x: unknown, y: unknown, ...}) -> undefined { p.x
  p.y }`)
 		require.Empty(t, errs)
 		require.Equal(t, "fn (p: &{x: unknown, y: unknown, ...}) -> undefined", values["dist"])
 	})
 
 	t.Run("un-open peer renders exact", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn dist(p) { p.x
+		values, _, errs := inferSource(t, `fn dist(p: &{x: unknown, y: unknown}) -> undefined { p.x
  p.y }`)
 		require.Empty(t, errs)
 		require.Equal(t, "fn (p: &{x: unknown, y: unknown}) -> undefined", values["dist"])
@@ -28,7 +28,7 @@ func TestInferOpenParam(t *testing.T) {
 	// `open` is provisional and context-sensitive: a param literally named `open`
 	// (no following pattern) is an ordinary binding, not a marker.
 	t.Run("open as a plain param name is not a marker", func(t *testing.T) {
-		values, _, errs := inferSource(t, "fn f(open) { return open }")
+		values, _, errs := inferSource(t, "fn f<T0>(open: T0) -> T0 { return open }")
 		require.Empty(t, errs)
 		require.Equal(t, "fn <T0>(open: T0) -> T0", values["f"])
 	})
@@ -74,13 +74,13 @@ val r = foo({x: 1, y: 2})`,
 // rejects an extra field at ANY depth, while an open param accepts one at any depth.
 func TestInferOpenParamNested(t *testing.T) {
 	t.Run("open renders inexact at every level", func(t *testing.T) {
-		values, _, errs := inferSource(t, "fn foo(open p) { p.a.b }")
+		values, _, errs := inferSource(t, "fn foo(open p: &{a: {b: unknown, ...}, ...}) -> undefined { p.a.b }")
 		require.Empty(t, errs)
 		require.Equal(t, "fn (p: &{a: {b: unknown, ...}, ...}) -> undefined", values["foo"])
 	})
 
 	t.Run("closed seals every level to exact", func(t *testing.T) {
-		values, _, errs := inferSource(t, "fn foo(p) { p.a.b }")
+		values, _, errs := inferSource(t, "fn foo(p: &{a: {b: unknown}}) -> undefined { p.a.b }")
 		require.Empty(t, errs)
 		require.Equal(t, "fn (p: &{a: {b: unknown}}) -> undefined", values["foo"])
 	})

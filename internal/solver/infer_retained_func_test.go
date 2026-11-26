@@ -190,7 +190,7 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 		// hold a borrow.
 		{
 			name: "closure returned from a returned closure",
-			src: `fn outer() {
+			src: `fn outer() -> fn () -> fn () -> 1 {
     val x = {n: 1}
     return fn () { return fn () { return x.n } }
 }`,
@@ -201,7 +201,7 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 		// borrows.
 		{
 			name: "returned closure that captures a local closure",
-			src: `fn outer() {
+			src: `fn outer() -> fn () -> fn () -> 1 {
     val x = {n: 1}
     val inner = fn () { return x.n }
     return fn () { return inner }
@@ -213,7 +213,7 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 		// reaches what it borrows from outside the body.
 		{
 			name: "returned closure that captures an object holding a borrowed parameter",
-			src: `fn f(p: &mut {a: number}) {
+			src: `fn f(p: &mut {a: number}) -> fn () -> number {
     val o = {r: p}
     return fn () { return o.r.a }
 }`,
@@ -222,7 +222,7 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 		},
 		{
 			name: "returned closure that captures an array holding a borrowed parameter",
-			src: `fn f(p: &{a: number}) {
+			src: `fn f(p: &{a: number}) -> fn () -> number {
     val o = [p]
     return fn () { return o[0].a }
 }`,
@@ -231,7 +231,7 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 		},
 		{
 			name: "returned closure that captures a tuple holding a borrowed parameter",
-			src: `fn f(p: &{a: number}) {
+			src: `fn f(p: &{a: number}) -> fn () -> number {
     val o: [&{a: number}, number] = [p, 1]
     return fn () { return o[1] }
 }`,
@@ -240,7 +240,7 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 		},
 		{
 			name: "returned closure that captures a union holding a borrowed parameter",
-			src: `fn f(p: &{a: number}, c: boolean) {
+			src: `fn f<'a>(p: &'a {a: number}, c: boolean) -> fn () -> {r: &'a {a: number}} | number {
     val o: {r: &{a: number}} | number = if c { {r: p} } else { 5 }
     return fn () { return o }
 }`,
@@ -249,7 +249,7 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 		},
 		{
 			name: "returned closure that captures a borrow through a borrowed parameter",
-			src: `fn f(p: &{a: {b: number}}) {
+			src: `fn f(p: &{a: {b: number}}) -> fn () -> number {
     val o = {r: &p.a}
     return fn () { return o.r.b }
 }`,
@@ -259,7 +259,7 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 		// q's type is a variable that a borrow annotation bounds, so q holds a caller's borrow.
 		{
 			name: "returned closure that captures an object holding a parameter used as a borrow",
-			src: `fn f(p: &{a: number}, q) {
+			src: `fn f<T0>(p: &{a: number}, q: T0 & &{a: number}) -> fn () -> T0 {
     val o = {r: q}
     val z: &{a: number} = o.r
     return fn () { return o.r }
@@ -292,7 +292,7 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 		},
 		{
 			name: "returned local that joins a closure and a value",
-			src: `fn mk(c: boolean) {
+			src: `fn mk(c: boolean) -> (fn () -> 1) | 5 {
     val o = {x: 1}
     val a = fn () { return o.x }
     val h = if c { a } else { 5 }
@@ -303,7 +303,7 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 		},
 		{
 			name: "returned local that joins a closure and a call-only parameter",
-			src: `fn mk(c: boolean, g: fn () -> number) {
+			src: `fn mk(c: boolean, g: fn () -> number) -> (fn () -> 1) | (fn () -> number) {
     val o = {x: 1}
     val a = fn () { return o.x }
     val h = if c { a } else { g }
@@ -326,7 +326,7 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 		// function that may hold borrows.
 		{
 			name:    "unannotated parameter only called",
-			src:     `fn f(g) { return g() }`,
+			src:     `fn f<T0>(g: fn () -> T0) -> T0 { return g() }`,
 			binding: "f",
 			want:    "fn <T0>(g: fn () -> T0) -> T0",
 		},
@@ -335,7 +335,7 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 		{
 			name: "unannotated parameter stored into a module-level slot",
 			src: `var sink: fn () -> undefined = fn () {}
-fn f(g) { sink = g }`,
+fn f(g: 'static fn () -> undefined) -> undefined { sink = g }`,
 			binding: "f",
 			want:    "fn (g: 'static fn () -> undefined) -> undefined",
 		},
@@ -531,7 +531,7 @@ fn f(g: 'static fn () -> undefined) -> undefined { onClick(g) }`,
 		{
 			name: "unannotated parameter passed on to a static parameter",
 			src: `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
-fn f(g) { onClick(g) }`,
+fn f(g: 'static fn () -> undefined) -> undefined { onClick(g) }`,
 			want: "fn (g: 'static fn () -> undefined) -> undefined",
 		},
 	}
@@ -1173,7 +1173,7 @@ fn setup() -> undefined {
 			name: "closure in a parameter default that reads a borrowed parameter",
 			src: `import "std:console"
 declare fn keep(cb: 'static fn () -> undefined) -> undefined
-fn setup(x: &{n: number}, g = fn () { console.log(x.n) }) {
+fn setup(x: &{n: number}, g = fn () { console.log(x.n) }: 'static fn () -> undefined) -> undefined {
     keep(g)
 }`,
 			want: []string{"3:31-3:57: this closure borrows `x`, but `keep` keeps it for 'static; pass a function that borrows nothing"},
@@ -1194,7 +1194,7 @@ fn setup() -> undefined {
 			name: "closure that captures an unannotated parameter later used as a number",
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
-fn setup(n) {
+fn setup(n: number) -> number {
     sink = fn () { console.log(n) }
     return n + 1
 }`,
@@ -1203,7 +1203,7 @@ fn setup(n) {
 			name: "closure that captures an unannotated parameter already used as a number",
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
-fn setup(n) {
+fn setup(n: number) -> undefined {
     val m: number = n
     sink = fn () { console.log(n) }
 }`,
@@ -1212,7 +1212,7 @@ fn setup(n) {
 			name: "bound closure that captures an unannotated parameter used as a number",
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
-fn setup(n) {
+fn setup(n: number) -> number {
     val show = fn () { console.log(n) }
     sink = show
     return n * 2
@@ -1222,7 +1222,7 @@ fn setup(n) {
 			name: "closure that captures an unannotated parameter later used as an object",
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
-fn setup(n) {
+fn setup<T0>(n: {x: T0}) -> T0 {
     sink = fn () { console.log(n) }
     return n.x
 }`,
@@ -1232,7 +1232,7 @@ fn setup(n) {
 			name: "bound closure that captures an unannotated parameter used as an object",
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
-fn setup(n) {
+fn setup<T0>(n: {x: T0}) -> T0 {
     val show = fn () { console.log(n) }
     sink = show
     return n.x
@@ -1244,7 +1244,7 @@ fn setup(n) {
 			name: "closure that captures an unconstrained unannotated parameter",
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
-fn setup(n) {
+fn setup(n: unknown) -> undefined {
     sink = fn () { console.log(n) }
 }`,
 			want: []string{"4:12-4:36: this closure borrows `n`, but `sink` keeps it for 'static; pass a function that borrows nothing"},
@@ -1253,7 +1253,7 @@ fn setup(n) {
 			name: "closure that captures an unannotated parameter and an object parameter",
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
-fn setup(n, p: {x: number}) {
+fn setup(n: number, p: {x: number}) -> number {
     sink = fn () { console.log(n + p.x) }
     return n + 1
 }`,
@@ -1265,7 +1265,7 @@ fn setup(n, p: {x: number}) {
 			name: "local joining an unannotated parameter's closure and a call-only parameter",
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
-fn setup(c: boolean, n, g: fn () -> undefined) {
+fn setup(c: boolean, n: number, g: fn () -> undefined) -> number {
     val a = fn () { console.log(n) }
     val h = if c { a } else { g }
     sink = h
@@ -1277,7 +1277,7 @@ fn setup(c: boolean, n, g: fn () -> undefined) {
 			name: "local joining an object parameter's closure and a call-only parameter",
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
-fn setup(c: boolean, n, g: fn () -> undefined) {
+fn setup<T0>(c: boolean, n: {x: T0}, g: fn () -> undefined) -> T0 {
     val a = fn () { console.log(n) }
     val h = if c { a } else { g }
     sink = h
@@ -1295,7 +1295,7 @@ fn setup(c: boolean, n, g: fn () -> undefined) {
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
 declare fn hold(cb: 'static fn () -> undefined) -> 'static fn () -> undefined
-fn setup(n) {
+fn setup<T0>(n: {x: T0}) -> T0 {
     sink = hold(fn () { console.log(n) })
     return n.x
 }`,
@@ -1317,12 +1317,12 @@ fn setup() -> undefined {
 			name: "returned closure and the closure it returns",
 			src: `import "std:console"
 var sinkAny: fn () -> unknown = fn () { return 0 }
-fn outer() {
+fn outer() -> fn () -> fn () -> undefined {
     val x = {n: 1}
     val inner = fn () { console.log(x.n) }
     return fn () { return inner }
 }
-fn setup() {
+fn setup() -> undefined {
     sinkAny = outer()
     sinkAny = outer()()
 }`,
@@ -1632,21 +1632,21 @@ fn use() -> undefined { sink = mk() }`,
 		{
 			name: "closure returned from a returned closure",
 			src: `var sink: fn () -> 1 = fn () { return 1 }
-fn outer() {
+fn outer() -> fn () -> fn () -> 1 {
     val x = {n: 1}
     return fn () { return fn () { return x.n } }
 }
-fn use() { sink = outer()() }`,
+fn use() -> undefined { sink = outer()() }`,
 			want: []string{"6:19-6:28: this function borrows `x`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `x` at module level"},
 		},
 		{
 			name: "returned closure that captures an object holding a borrowed parameter",
 			src: `var sink: fn () -> number = fn () { return 1 }
-fn f(p: &mut {a: number}) {
+fn f(p: &mut {a: number}) -> fn () -> number {
     val o = {r: p}
     return fn () { return o.r.a }
 }
-fn use() {
+fn use() -> undefined {
     val mut q = {a: 1}
     sink = f(&mut q)
 }`,

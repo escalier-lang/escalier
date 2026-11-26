@@ -606,7 +606,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// f holds another closure by the return, so the return does not move p.
 			name: "ReturnOfAReassignedClosureMovesNothing",
 			src: `
-				fn go() {
+				fn go() -> [fn () -> number, {x: 1}] {
 					val p = {x: 1}
 					var f: fn () -> number = fn () { return p.x }
 					f = fn () { return 0 }
@@ -620,7 +620,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// does not move p before `p` is read.
 			name: "ReturnOfAClosureReassignedInABranchMovesNothing",
 			src: `
-				fn go(c: boolean) {
+				fn go(c: boolean) -> [fn () -> number, {x: 1}] | [fn () -> number, fn () -> number] {
 					val p = {x: 1}
 					var f: fn () -> number = fn () { return p.x }
 					if c {
@@ -635,7 +635,7 @@ func TestOwnershipDataflow(t *testing.T) {
 			// f's closure flows into g before f is reassigned, so the return of g moves p.
 			name: "E3ReturnOfAClosureCopiedBeforeItsLocalIsReassigned",
 			src: `
-				fn go() {
+				fn go() -> [fn () -> number, {x: 1}] {
 					val p = {x: 1}
 					var f: fn () -> number = fn () { return p.x }
 					val g = f

@@ -25,7 +25,7 @@ func TestABodyIsCheckedForEveryInstantiation(t *testing.T) {
 			// under test.
 			name: "ACallNarrowingTheBound",
 			src: `fn f<A: string>(a: A) -> A { return a }
-fn g<U: number | string>(u: U) { return f(u) }`,
+fn g<U: number | string>(u: U) -> U { return f(u) }`,
 			binding: "g",
 			want:    "fn <U: number | string>(u: U) -> U",
 			errs:    []string{"2:43-2:44: cannot constrain number <: string"},
@@ -35,7 +35,7 @@ fn g<U: number | string>(u: U) { return f(u) }`,
 			// declared bound alone.
 			name: "ACallerReadsOnlyTheDeclaredBound",
 			src: `fn f<A: string>(a: A) -> A { return a }
-fn g<U: number | string>(u: U) { return f(u) }
+fn g<U: number | string>(u: U) -> U { return f(u) }
 val r = g(5)`,
 			errs: []string{"2:43-2:44: cannot constrain number <: string"},
 		},

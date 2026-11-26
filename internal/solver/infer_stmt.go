@@ -188,9 +188,6 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 			patternT := c.inferDestructureDecl(scope, lvl, vd)
 			if c.fn != nil {
 				if ref, ok := c.fn.stmtToRef[s]; ok {
-					// The pattern takes its parts out of the initializer's place, which
-					// markMovedParams reads for a parameter.
-					c.fn.destructureInits.Add(vd.Init)
 					// The pattern takes its parts from a value of the type it binds against,
 					// so a leaf of an annotated pattern over a borrow borrows for the
 					// annotation's lifetime.

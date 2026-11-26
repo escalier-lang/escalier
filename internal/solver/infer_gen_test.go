@@ -770,7 +770,7 @@ func TestInferGenNext(t *testing.T) {
 			// rather than silently accepted.
 			name: "NextOnAReceiverThatMayNotBeAGenerator",
 			src: `
-				gen fn g() { yield 1 }
+				gen fn g() -> Generator<1, undefined, unknown> { yield 1 }
 				fn f(b: boolean) { val it = if b { g() } else { 5 } return it.next() }
 			`,
 			wantErrs: []string{
@@ -842,7 +842,7 @@ func TestGeneratorSubtyping(t *testing.T) {
 		{
 			name: "SyncGeneratorIsNotAsync",
 			src: `
-				gen fn g() { yield 1 return true }
+				gen fn g() -> Generator<1, true, unknown> { yield 1 return true }
 				val h: fn () -> AsyncGenerator<number, boolean, never> = g
 			`,
 			// The yield slot renders in describe's raw mid-constrain form, so g's

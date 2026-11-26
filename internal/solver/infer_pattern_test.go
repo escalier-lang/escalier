@@ -92,7 +92,7 @@ func TestInferObjectPatternParam(t *testing.T) {
 // (usage-based inference), closing the coalesced object to exact (Policy A).
 func TestInferObjectPatternParamInferred(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn g({a, b}) {
+		fn g<T0, T1>({a, b}: {a: T0, b: T1}) -> [T0, T1] {
 			return [a, b]
 		}
 	`)
@@ -163,29 +163,29 @@ func TestInferParamPatternLeafTypeAnnNamesTypeParam(t *testing.T) {
 	}{
 		{
 			name: "ObjectPattern",
-			src:  `fn f<T0>({x :: T0}) -> T0 { return x }`,
+			src:  `fn f<T0>({x :: T0}: {x: T0}) -> T0 { return x }`,
 			want: "fn <T0>({x}: {x: T0}) -> T0",
 		},
 		{
 			name: "ObjectPatternInferredReturn",
-			src:  `fn f<T0>({x :: T0}) { return x }`,
+			src:  `fn f<T0>({x :: T0}: {x: T0}) -> T0 { return x }`,
 			want: "fn <T0>({x}: {x: T0}) -> T0",
 		},
 		{
 			name: "TuplePattern",
-			src:  `fn f<T0>([a: T0]) -> T0 { return a }`,
+			src:  `fn f<T0>([a: T0]: [T0]) -> T0 { return a }`,
 			want: "fn <T0>([a]: [T0]) -> T0",
 		},
 		{
 			name: "ObjectPatternCallMismatch",
-			src: `fn f<T>({x :: T}) -> T { return x }
+			src: `fn f<T>({x :: T}: {x: T}) -> T { return x }
 val n: number = f({x: "s"})`,
 			want: "fn <T>({x}: {x: T}) -> T",
 			errs: []string{`2:23-2:26: cannot constrain "s" <: number`},
 		},
 		{
 			name: "TuplePatternCallMismatch",
-			src: `fn f<T>([a: T]) -> T { return a }
+			src: `fn f<T>([a: T]: [T]) -> T { return a }
 val n: number = f(["s"])`,
 			want: "fn <T>([a]: [T]) -> T",
 			errs: []string{`2:20-2:23: cannot constrain "s" <: number`},
@@ -205,7 +205,7 @@ val n: number = f(["s"])`,
 func TestInferParamLinkedToTypeParamKeepsConcreteBound(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn numOnly(n: number) -> number { return n }
-		fn g<T>(t: T, y) -> T {
+		fn g<T>(t: T, y: T & number) -> T {
 			val z: T = y
 			numOnly(y)
 			return t
@@ -726,7 +726,7 @@ func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 		{
 			name: "Tuple",
 			src: `
-				fn f([a, ...rest]) {
+				fn f([a, ...rest]: &[unknown, ...]) -> &[...] {
 					return rest
 				}`,
 			want: "fn <'a>([a, ...rest]: &'a [unknown, ...]) -> &'a [...]",
@@ -736,7 +736,7 @@ func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 			// TestInferRestPatternParamAdmitsExtraFields.
 			name: "Object",
 			src: `
-				fn f({x, ...rest}) {
+				fn f({x, ...rest}: &{x: unknown, ...}) -> &{...} {
 					return rest
 				}`,
 			want: "fn <'a>({x, ...rest}: &'a {x: unknown, ...}) -> &'a {...}",
@@ -814,7 +814,7 @@ func TestInferRestPatternUnknownLeftoverUses(t *testing.T) {
 func TestInferRestPatternParamAdmitsExtraFields(t *testing.T) {
 	t.Run("a rest admits extra fields", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			fn f({x, ...rest}) { return x }
+			fn f<T0>({x, ...rest}: &{x: T0, ...}) -> &T0 { return x }
 			val r = f({x: 1, y: 2})
 		`)
 		require.Empty(t, errs)
@@ -822,7 +822,7 @@ func TestInferRestPatternParamAdmitsExtraFields(t *testing.T) {
 	})
 
 	t.Run("no rest still closes to exact", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn f({x}) { return x }`)
+		values, _, errs := inferSource(t, `fn f<T0>({x}: &{x: T0}) -> &T0 { return x }`)
 		require.Empty(t, errs)
 		require.Equal(t, "fn <T0, 'a>({x}: &'a {x: T0}) -> &'a T0", values["f"])
 	})
@@ -839,7 +839,7 @@ func TestInferRestPatternParamAdmitsExtraFields(t *testing.T) {
 
 	t.Run("a tuple rest already admits a longer tuple", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			fn f([a, ...rest]) { return a }
+			fn f<T0>([a, ...rest]: &[T0, ...]) -> &T0 { return a }
 			val r = f([1, 2, 3])
 		`)
 		require.Empty(t, errs)
@@ -1185,7 +1185,7 @@ func TestInferMatchBindsArm(t *testing.T) {
 // never uses lands as `unknown`, and the inferred object closes to exact (Policy A).
 func TestInferMatchParamUsageObject(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p) {
+		fn f<T0>(p: {x: T0, y: unknown}) -> T0 | 0 {
 			return match p {
 				{x, y} => x,
 				_ => 0
@@ -1200,7 +1200,7 @@ func TestInferMatchParamUsageObject(t *testing.T) {
 // tuple whose arity is the pattern's and whose unused element lands as `unknown`.
 func TestInferMatchParamUsageTuple(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p) {
+		fn f<T0>(p: [T0, unknown]) -> T0 {
 			return match p {
 				[a, b] => a
 			}
@@ -1783,14 +1783,14 @@ func TestInferMatchCatchAllNarrowedByArmsAbove(t *testing.T) {
 	}{
 		{
 			name: "AnnotationArm",
-			src: `fn f(x: number | string) {
+			src: `fn f(x: number | string) -> string {
 				return match x { n: number => "n", other => other }
 			}`,
 			want: "fn (x: number | string) -> string",
 		},
 		{
 			name: "TwoAnnotationArms",
-			src: `fn f(x: number | string | boolean) {
+			src: `fn f(x: number | string | boolean) -> 0 | 1 | boolean {
 				return match x { n: number => 0, s: string => 1, other => other }
 			}`,
 			want: "fn (x: number | string | boolean) -> 0 | 1 | boolean",
@@ -1799,7 +1799,7 @@ func TestInferMatchCatchAllNarrowedByArmsAbove(t *testing.T) {
 			name: "ClassArm",
 			src: `class A { a: number }
 			class B { b: string }
-			fn f(x: A | B) {
+			fn f(x: A | B) -> string {
 				return match x { A {a} => "a", other => other.b }
 			}`,
 			want: "fn (x: A | B) -> string",
@@ -1807,28 +1807,28 @@ func TestInferMatchCatchAllNarrowedByArmsAbove(t *testing.T) {
 		{
 			name: "EnumVariantArm",
 			src: `enum E { A(n: number), B(s: string), C(b: boolean) }
-			fn f(e: E) {
+			fn f(e: E) -> number | E.B | E.C {
 				return match e { E.A(n) => n, other => other }
 			}`,
 			want: "fn (e: E) -> number | E.B | E.C",
 		},
 		{
 			name: "LiteralArmOverLiteralUnion",
-			src: `fn f(x: 1 | 2 | 3) {
+			src: `fn f(x: 1 | 2 | 3) -> 0 | 2 | 3 {
 				return match x { 1 => 0, other => other }
 			}`,
 			want: "fn (x: 1 | 2 | 3) -> 0 | 2 | 3",
 		},
 		{
 			name: "LiteralArmCoversPartOfAMember",
-			src: `fn f(x: number | string) {
+			src: `fn f(x: number | string) -> true | number | string {
 				return match x { 0 => true, other => other }
 			}`,
 			want: "fn (x: number | string) -> true | number | string",
 		},
 		{
 			name: "GuardedArm",
-			src: `fn f(x: number | string) {
+			src: `fn f(x: number | string) -> true | number | string {
 				return match x { n: number if n > 0 => true, other => other }
 			}`,
 			want: "fn (x: number | string) -> true | number | string",
@@ -1836,21 +1836,21 @@ func TestInferMatchCatchAllNarrowedByArmsAbove(t *testing.T) {
 		{
 			name: "NestedSubPattern",
 			src: `enum E { A(n: number), B(s: string) }
-			fn f(e: E) {
+			fn f(e: E) -> true | E {
 				return match e { E.A(0) => true, other => other }
 			}`,
 			want: "fn (e: E) -> true | E",
 		},
 		{
 			name: "ObjectPattern",
-			src: `fn f(x: {a: number} | string) {
+			src: `fn f(x: {a: number} | string) -> true | string {
 				return match x { {a} => true, other => other }
 			}`,
 			want: "fn (x: {a: number} | string) -> true | string",
 		},
 		{
 			name: "ObjectPatternOverMemberWithoutTheKey",
-			src: `fn f(x: {a: number} | {b: string}) {
+			src: `fn f(x: {a: number} | {b: string}) -> true | {b: string} {
 				return match x { {a} => true, other => other }
 			}`,
 			want: "fn (x: {a: number} | {b: string}) -> true | {b: string}",
@@ -1858,28 +1858,28 @@ func TestInferMatchCatchAllNarrowedByArmsAbove(t *testing.T) {
 		{
 			name: "ObjectPatternOverClassInstance",
 			src: `class P { a: number }
-			fn f(x: P | string) {
+			fn f(x: P | string) -> true | string {
 				return match x { {a} => true, other => other }
 			}`,
 			want: "fn (x: P | string) -> true | string",
 		},
 		{
 			name: "ObjectPatternOverOptionalKey",
-			src: `fn f(x: {a?: number} | string) {
+			src: `fn f(x: {a?: number} | string) -> true | {a?: number} | string {
 				return match x { {a} => true, other => other }
 			}`,
 			want: "fn (x: {a?: number} | string) -> true | {a?: number} | string",
 		},
 		{
 			name: "ObjectPatternWithRefutableField",
-			src: `fn f(x: {a: number} | string) {
+			src: `fn f(x: {a: number} | string) -> true | {a: number} | string {
 				return match x { {a: 1} => true, other => other }
 			}`,
 			want: "fn (x: {a: number} | string) -> true | {a: number} | string",
 		},
 		{
 			name: "TuplePattern",
-			src: `fn f(x: [number, number] | string) {
+			src: `fn f(x: [number, number] | string) -> true | string {
 				return match x { [a, b] => true, other => other }
 			}`,
 			want: "fn (x: [number, number] | string) -> true | string",

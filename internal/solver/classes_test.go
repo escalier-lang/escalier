@@ -890,7 +890,7 @@ func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
 		{
 			name: "AFunctionReadAsAValue",
 			src: `
-				fn f(o) {
+				fn f<T0>(o: {m: fn () -> T0}) -> T0 {
 					val g = o.m
 					return g()
 				}
@@ -903,18 +903,18 @@ func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
 			// against `o` whether `m` is a method or a field holding a function, so the read
 			// draws no warning. The receiver is still inferred as a field holding a function.
 			name:  "AReadCalledOnTheSpot",
-			src:   `fn f(o) { return o.m() }`,
+			src:   `fn f<T0>(o: {m: fn () -> T0}) -> T0 { return o.m() }`,
 			types: map[string]string{"f": "fn <T0>(o: {m: fn () -> T0}) -> T0"},
 		},
 		{
 			name:  "ADataRead",
-			src:   `fn f(o) { return o.x + 1 }`,
+			src:   `fn f(o: &{x: number}) -> number { return o.x + 1 }`,
 			types: map[string]string{"f": "fn (o: &{x: number}) -> number"},
 		},
 		{
 			// Nothing in the body uses the value as a function.
 			name: "AReadNeverUsedAsAFunction",
-			src: `fn f(o) { val g = o.m
+			src: `fn f<T0>(o: &{m: T0}) -> &T0 { val g = o.m
 				return g }`,
 			types: map[string]string{"f": "fn <T0, 'a>(o: &'a {m: T0}) -> &'a T0"},
 		},
@@ -922,7 +922,7 @@ func TestInferWarnsAboutAFunctionReadOffAnInferredReceiver(t *testing.T) {
 			// The closure reads `o.m` and the enclosing body calls what it returns.
 			name: "AReadUsedOutsideItsClosure",
 			src: `
-				fn f(o) {
+				fn f<T0>(o: {m: fn () -> T0}) -> T0 {
 					val h = fn () { return o.m }
 					return h()()
 				}

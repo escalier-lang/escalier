@@ -1027,7 +1027,7 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 	}{
 		{
 			name: "a getter binds through a structural arm",
-			src:  `fn f(c: &Circle) { return match c { {area} => area, _ => 0 } }`,
+			src:  `fn f<T0>(c: &Circle) -> T0 | 0 { return match c { {area} => area, _ => 0 } }`,
 			want: "fn (c: &Circle) -> number",
 		},
 		{
@@ -1056,7 +1056,7 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 		{
 			// A `match` arm reads the getter through the same rule.
 			name:     "a raising getter's raise reaches a match arm's function",
-			src:      `fn f(c: &Circle) { return match c { {risky} => risky } }`,
+			src:      `fn f<T0>(c: &Circle) -> T0 { return match c { {risky} => risky } }`,
 			wantErrs: []string{"9:39-9:44: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
@@ -1103,7 +1103,7 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 		},
 		{
 			name: "structural arms narrow and cover a union of classes",
-			src: `fn f(o: &(Color | Event)) { return match o {
+			src: `fn f<T0>(o: &(Color | Event)) -> T0 | number { return match o {
 				{r, g, b} => r + g + b,
 				{kind} => kind,
 			} }`,
@@ -1111,7 +1111,7 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 		},
 		{
 			name: "a nominal arm and a structural arm cover a union of classes",
-			src: `fn f(o: &(Color | Event)) { return match o {
+			src: `fn f<T0>(o: &(Color | Event)) -> T0 | number { return match o {
 				Color {r, g, b} => r + g + b,
 				{kind} => kind,
 			} }`,
@@ -1167,19 +1167,19 @@ func TestInferInstancePatBaseClassOverSubclass(t *testing.T) {
 		{
 			// The arm covers the subclass member, so the match needs no catch-all.
 			name: "a base-class arm covers a subclass member",
-			src:  `fn f(p: ParseError | OtherError) { return match p { AppError{code} => code, OtherError{tag} => 0 } }`,
+			src:  `fn f(p: ParseError | OtherError) -> 0 { return match p { AppError{code} => code, OtherError{tag} => 0 } }`,
 			want: "fn (p: ParseError | OtherError) -> number",
 		},
 		{
 			name: "a union keeps the members that reach the class",
-			src:  `fn f(p: ParseError | OtherError) { return match p { AppError{code} => code, _ => 0 } }`,
+			src:  `fn f(p: ParseError | OtherError) -> 0 { return match p { AppError{code} => code, _ => 0 } }`,
 			want: "fn (p: ParseError | OtherError) -> number",
 		},
 		{
 			// A literal member cannot hold an `AppError`, so the union still narrows to the member
 			// that reaches the class.
 			name: "a literal member does not block the narrowing",
-			src:  `fn f(p: ParseError | "none") { return match p { AppError{code} => code, _ => 0 } }`,
+			src:  `fn f(p: ParseError | "none") -> 0 { return match p { AppError{code} => code, _ => 0 } }`,
 			want: `fn (p: ParseError | "none") -> number`,
 		},
 		{

@@ -425,7 +425,7 @@ func TestInferPromiseUnsupportedInnerKeepsWrapper(t *testing.T) {
 // a poisoned `never` or `unknown`, either of which would have cascaded or frozen.
 func TestInferPromiseUnsupportedInnerGeneralizes(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(p: Promise< /(?=x)/ >) {
+		fn f<T0>(p: Promise< /(?=x)/ >) -> Promise<T0> {
 			return p
 		}
 	`)

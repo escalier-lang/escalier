@@ -126,7 +126,7 @@ func TestInferRecordBuilderIsPolymorphic(t *testing.T) {
 	}{
 		{
 			name: "a closure bound at module level",
-			src:  "fn mk(v) { return {a: v} }",
+			src:  "fn mk<T0>(v: T0) -> {a: T0} { return {a: v} }",
 			want: "fn <T0>(v: T0) -> {a: T0}",
 		},
 	}
@@ -480,7 +480,7 @@ func TestBlameMutabilityDiagnostics(t *testing.T) {
 			primary: "mut",
 		},
 		"SharedAwaitIntoMut": {
-			src:     `async fn g(p) { val mut r = await p }`,
+			src:     `async fn g<T0>(p: Promise<unknown, T0>) -> Promise<undefined, T0> { val mut r = await p }`,
 			want:    "1:29-1:36: cannot bind the value 'p' settles to with `mut`, since awaiting 'p' again yields the same value; await a call that makes a new promise instead",
 			primary: "await p",
 		},

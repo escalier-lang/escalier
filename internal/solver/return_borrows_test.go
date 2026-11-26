@@ -243,7 +243,7 @@ func TestReturnValueBorrows(t *testing.T) {
 		// enough.
 		"ReturnOfALocalAlsoStoredImmutablyIntoAParam": {
 			src: `
-				fn f(p: &mut {node: {peer: &{value: number}}}) {
+				fn f(p: &mut {node: {peer: &{value: number}}}) -> &mut {value: number} {
 					val mut b = {value: 0}
 					p.node = {peer: &b}
 					return &mut b
@@ -275,7 +275,7 @@ func TestReturnValueBorrows(t *testing.T) {
 		// The same branches storing `&b` leave the caller reading b while the return writes it.
 		"ReturnOfALocalAlsoStoredImmutablyThroughAnIfElse": {
 			src: `
-				fn f(cond: boolean, p: &mut {node: {peer: &{value: number}}}) {
+				fn f(cond: boolean, p: &mut {node: {peer: &{value: number}}}) -> &mut {value: number} {
 					val mut b = {value: 0}
 					p.node = {peer: if cond { &b } else { &b }}
 					return &mut b
@@ -294,7 +294,7 @@ func TestReturnValueBorrows(t *testing.T) {
 		// pointer, so the signature lists both. The immutable form renders the same way.
 		"IfElseReturnOfALocalAlsoStoredIntoAParam": {
 			src: `
-				fn f(cond: boolean, p: &mut {node: {peer: &mut {value: number}}}) {
+				fn f<'a>(cond: boolean, p: &mut {node: {peer: &'a mut {value: number}}}) -> &'a mut {value: number} | &'a mut {value: number} {
 					val mut b = {value: 0}
 					p.node = {peer: &mut b}
 					return if cond { &mut b } else { &mut b }

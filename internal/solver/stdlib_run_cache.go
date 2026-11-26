@@ -332,8 +332,6 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	// A finished load settles every flow it records, and a pending flow would point into the
 	// loaded checker's tables, so the run starts with none.
 	f.pendingFlows = nil
-	f.paramByVar = maps.Clone(c.paramByVar)
-	f.unsettledParams = maps.Clone(c.unsettledParams)
 
 	// Whether each held diagnostic is reported is the run's own.
 	f.heldLoadErrs = make(map[string]*heldLoadErrors, len(c.heldLoadErrs))

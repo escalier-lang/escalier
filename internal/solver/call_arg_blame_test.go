@@ -25,7 +25,7 @@ func TestACallBlamesTheArgumentThatDoesNotFit(t *testing.T) {
 		},
 		{
 			name: "AParameter",
-			src:  add + `fn strs(a: string) { return add(1, a) }`,
+			src:  add + `fn strs(a: string) -> number { return add(1, a) }`,
 			want: []string{"2:36-2:37: cannot constrain string <: number"},
 		},
 		{
@@ -40,7 +40,7 @@ func TestACallBlamesTheArgumentThatDoesNotFit(t *testing.T) {
 		},
 		{
 			name: "EachArgumentThatDoesNotFit",
-			src:  add + `fn strs(a: string) { return add(a, a) }`,
+			src:  add + `fn strs(a: string) -> number { return add(a, a) }`,
 			want: []string{
 				"2:33-2:34: cannot constrain string <: number",
 				"2:36-2:37: cannot constrain string <: number",

@@ -45,7 +45,7 @@ func TestInferDeclaredJoinBoundSatisfied(t *testing.T) {
 // 'a: 'b cannot hold.
 func TestInferDeclaredBoundUnusedParamUnsatisfied(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f<'a: 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'a mut {x: number} {
+		fn f<'a: 'b, 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'a mut {x: number} {
 			return p
 		}`)
 	be := firstBoundError(errs)

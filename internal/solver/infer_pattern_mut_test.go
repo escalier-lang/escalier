@@ -320,7 +320,7 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 	}{
 		"PatternDefault": {
 			src: `
-			fn f(p) {
+			fn f<T0: {a: number, ...}>(p: {x?: T0}) -> T0 | {a: number} {
 				val {mut x = {a: 1}} = p
 				x.a = 2
 				return x
@@ -329,7 +329,7 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 		},
 		"ParamDefault": {
 			src: `
-			fn f(mut q = {a: 1}) {
+			fn f<T0: {a: number, ...}>(mut q = {a: 1}: T0) -> T0 | {a: number} {
 				q.a = 2
 				return q
 			}`,
@@ -337,7 +337,7 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 		},
 		"InlineAnnotatedDefaultKeepsLiteralTag": {
 			src: `
-			fn f({mut q::{kind: "a", n: number} = {kind: "a", n: 1}}) {
+			fn f({mut q::{kind: "a", n: number} = {kind: "a", n: 1}}: {q?: {kind: "a", n: number}}) -> "a" {
 				q.n = 2
 				return q.kind
 			}`,
@@ -345,7 +345,7 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 		},
 		"InlineAnnotatedLeafRejectsWriteOutsideAnnotation": {
 			src: `
-			fn f(p: {q?: {kind: "a", n: number}}) {
+			fn f(p: {q?: {kind: "a", n: number}}) -> undefined {
 				val {mut q::{kind: "a", n: number} = {kind: "a", n: 1}} = p
 				q.kind = "z"
 			}`,
@@ -354,7 +354,7 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 		},
 		"ValElseFallback": {
 			src: `
-			fn f(p: {x: {a: number}} | {y: string}) {
+			fn f(p: {x: {a: number}} | {y: string}) -> {a: number} {
 				val {mut x} = p else { {x: {a: 1}} }
 				x.a = 2
 				return x
@@ -363,7 +363,7 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 		},
 		"UnionLeafWidensEachMember": {
 			src: `
-			fn f(p: [{a: 1} | {b: "s"}]) {
+			fn f(p: [{a: 1} | {b: "s"}]) -> {a: number} | {b: string} {
 				val [mut x] = p
 				return x
 			}`,
@@ -371,7 +371,7 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 		},
 		"LiteralLeafKeepsLiteral": {
 			src: `
-			fn f(p: {x: "a"}) {
+			fn f(p: {x: "a"}) -> "a" {
 				val {mut x} = p
 				return x
 			}`,
@@ -379,7 +379,7 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 		},
 		"LiteralUnionFieldKeepsLiterals": {
 			src: `
-			fn f(p: {x: "a" | "b"}) {
+			fn f(p: {x: "a" | "b"}) -> "a" | "b" {
 				val {mut x} = p
 				return x
 			}`,
@@ -387,7 +387,7 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 		},
 		"LiteralUnionTupleElemKeepsLiterals": {
 			src: `
-			fn f(p: [1 | 2]) {
+			fn f(p: [1 | 2]) -> 1 | 2 {
 				val [mut x] = p
 				return x
 			}`,
@@ -395,7 +395,7 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 		},
 		"MixedLiteralUnionKeepsLiterals": {
 			src: `
-			fn f(p: [1 | "a"]) {
+			fn f(p: [1 | "a"]) -> 1 | "a" {
 				val [mut x] = p
 				return x
 			}`,
@@ -403,7 +403,7 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 		},
 		"MixedUnionWidensOnlyObjectMember": {
 			src: `
-			fn f(p: [{a: 1} | "s"]) {
+			fn f(p: [{a: 1} | "s"]) -> {a: number} | "s" {
 				val [mut x] = p
 				return x
 			}`,
@@ -411,7 +411,7 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 		},
 		"PlainLeafDefaultKeepsLiteral": {
 			src: `
-			fn f(p) {
+			fn f<T0>(p: {x?: T0}) -> T0 | {a: 1} {
 				val {x = {a: 1}} = p
 				return x
 			}`,
@@ -431,7 +431,7 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 // unannotated `mut` parameter has a literal default. The default's literal widens, so the
 // parameter's type does too.
 func TestMutLeafDefaultSignature(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(mut q = {a: 1}) -> number { return q.a }`)
+	values, _, errs := inferSource(t, `fn f(mut q = {a: 1}: {a: number}) -> number { return q.a }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (q?: {a: number}) -> number", values["f"])
 }
@@ -453,7 +453,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 	}{
 		"TupleElemPlain": {
 			src: `
-			fn f(p: [{a: number} | undefined]) {
+			fn f(p: [{a: number} | undefined]) -> {a: number} {
 				val [x = {a: 1}] = p
 				return x
 			}`,
@@ -461,7 +461,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"TupleElemMut": {
 			src: `
-			fn f(p: [{a: number} | undefined]) {
+			fn f(p: [{a: number} | undefined]) -> {a: number} {
 				val [mut x = {a: 1}] = p
 				x.a = 2
 				return x
@@ -470,7 +470,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"TupleElemPrimPlain": {
 			src: `
-			fn f(p: [number | undefined]) {
+			fn f(p: [number | undefined]) -> number {
 				val [x = 0] = p
 				return x
 			}`,
@@ -478,7 +478,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"TupleElemPrimMut": {
 			src: `
-			fn f(p: [number | undefined]) {
+			fn f(p: [number | undefined]) -> number {
 				val [mut x = 0] = p
 				return x
 			}`,
@@ -486,7 +486,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"FieldPlain": {
 			src: `
-			fn f(p: {x: {a: number} | undefined}) {
+			fn f(p: {x: {a: number} | undefined}) -> {a: number} {
 				val {x = {a: 1}} = p
 				return x
 			}`,
@@ -494,7 +494,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"FieldMut": {
 			src: `
-			fn f(p: {x: {a: number} | undefined}) {
+			fn f(p: {x: {a: number} | undefined}) -> {a: number} {
 				val {mut x = {a: 1}} = p
 				x.a = 2
 				return x
@@ -503,7 +503,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"FieldMutDefaultOfOtherType": {
 			src: `
-			fn f(p: {x: {a: number} | undefined}) {
+			fn f(p: {x: {a: number} | undefined}) -> {a: number} | {a: number, b: string} {
 				val {mut x = {a: 1, b: "s"}} = p
 				x.a = 2
 				return x
@@ -512,7 +512,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"FieldMutRejectsWriteOutsideNarrowedType": {
 			src: `
-			fn f(p: {x: {a: number} | undefined}) {
+			fn f(p: {x: {a: number} | undefined}) -> undefined {
 				val {mut x = {a: 1}} = p
 				x.b = 2
 			}`,
@@ -521,7 +521,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"KeyValueFieldMut": {
 			src: `
-			fn f(p: {x: {a: number} | undefined}) {
+			fn f(p: {x: {a: number} | undefined}) -> {a: number} {
 				val {x: mut y = {a: 1}} = p
 				y.a = 2
 				return y
@@ -530,7 +530,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"OptionalFieldPlain": {
 			src: `
-			fn f(p: {x?: {a: number}}) {
+			fn f(p: {x?: {a: number}}) -> {a: number} {
 				val {x = {a: 1}} = p
 				return x
 			}`,
@@ -538,7 +538,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"OptionalFieldMut": {
 			src: `
-			fn f(p: {x?: {a: number}}) {
+			fn f(p: {x?: {a: number}}) -> {a: number} {
 				val {mut x = {a: 1}} = p
 				x.a = 2
 				return x
@@ -547,7 +547,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"NestedTupleInFieldPlain": {
 			src: `
-			fn f(p: {q: [{a: number} | undefined]}) {
+			fn f(p: {q: [{a: number} | undefined]}) -> {a: number} {
 				val {q: [x = {a: 1}]} = p
 				return x
 			}`,
@@ -555,7 +555,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"NestedTupleInFieldMut": {
 			src: `
-			fn f(p: {q: [{a: number} | undefined]}) {
+			fn f(p: {q: [{a: number} | undefined]}) -> {a: number} {
 				val {q: [mut x = {a: 1}]} = p
 				x.a = 2
 				return x
@@ -564,7 +564,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"MatchArmFieldMut": {
 			src: `
-			fn f(p: {x: {a: number} | undefined}) {
+			fn f(p: {x: {a: number} | undefined}) -> {a: number} {
 				return match p {
 					{mut x = {a: 1}} => {
 						x.a = 2
@@ -576,7 +576,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"TupleElemPrimNullPlain": {
 			src: `
-			fn f(p: [number | null]) {
+			fn f(p: [number | null]) -> number | null {
 				val [x = 0] = p
 				return x
 			}`,
@@ -584,7 +584,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"TupleElemPrimNullAndUndefinedPlain": {
 			src: `
-			fn f(p: [number | null | undefined]) {
+			fn f(p: [number | null | undefined]) -> number | null {
 				val [x = 0] = p
 				return x
 			}`,
@@ -592,7 +592,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"TupleElemNullMut": {
 			src: `
-			fn f(p: [{a: number} | null]) {
+			fn f(p: [{a: number} | null]) -> {a: number} | null {
 				val [mut x = {a: 1}] = p
 				return x
 			}`,
@@ -600,7 +600,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"TupleElemNullAndUndefinedMut": {
 			src: `
-			fn f(p: [{a: number} | null | undefined]) {
+			fn f(p: [{a: number} | null | undefined]) -> {a: number} | null {
 				val [mut x = {a: 1}] = p
 				return x
 			}`,
@@ -608,7 +608,7 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 		},
 		"FieldNullMutRejectsWriteThroughNull": {
 			src: `
-			fn f(p: {x: {a: number} | null}) {
+			fn f(p: {x: {a: number} | null}) -> {a: number} | null {
 				val {mut x = {a: 1}} = p
 				x.a = 2
 				return x

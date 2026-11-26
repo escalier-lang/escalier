@@ -23,11 +23,11 @@ func TestOwnedMutTypeRejected(t *testing.T) {
 			want: []string{"1:9-1:12: " + ownedMutTypeMsg},
 		},
 		"Binding": {
-			src:  "fn f() { val p: mut {x: number} = {x: 1} }",
+			src:  "fn f() -> undefined { val p: mut {x: number} = {x: 1} }",
 			want: []string{"1:17-1:20: " + ownedMutTypeMsg},
 		},
 		"ValMutBinding": {
-			src:  "fn f() { val mut p: mut {x: number} = {x: 1} }",
+			src:  "fn f() -> undefined { val mut p: mut {x: number} = {x: 1} }",
 			want: []string{"1:21-1:24: " + ownedMutTypeMsg},
 		},
 		"DeclareVar": {

@@ -313,7 +313,7 @@ func TestMissingBorrowOfModuleLevelValue(t *testing.T) {
 		{
 			name: "a declaration",
 			src: `val xs: Array<number> = [1]
-fn f() { val b: &Array<number> = xs }`,
+fn f() -> undefined { val b: &Array<number> = xs }`,
 			want: []string{"2:34-2:36: " + borrow},
 		},
 		{
@@ -325,7 +325,7 @@ fn f() -> &Array<number> { return xs }`,
 		{
 			name: "a field store",
 			src: `val xs: Array<number> = [1]
-fn f(o: &mut {r: &Array<number>}) { o.r = xs }`,
+fn f(o: &mut {r: &Array<number>}) -> undefined { o.r = xs }`,
 			want: []string{"2:43-2:45: " + borrow},
 		},
 		{
@@ -408,7 +408,7 @@ fn g() -> undefined {
 			// source, since `g` calls itself.
 			name: "passed to a recursive call's unannotated parameter",
 			src: `val xs: Array<number> = [1]
-fn g(p, c: boolean) -> number {
+fn g(p: unknown, c: boolean) -> number {
 	val q = p
 	if c { return g(xs, false) }
 	return 1

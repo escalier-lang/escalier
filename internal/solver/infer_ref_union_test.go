@@ -283,7 +283,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			// The borrowed literal outlives nothing, so its lifetime stays anonymous while the
 			// scrutinee's half carries the join of the two member lifetimes.
 			name: "val else leaf join accepts a borrowed fallback field",
-			src: `fn f(p: &{x: {a: number}} | &{y: string}) {
+			src: `fn f<'a>(p: &'a {x: {a: number}} | &'a {y: string}) -> &'a {a: number} | &{a: 1} {
   val {x: v} = p else { {x: &{a: 1}} }
   return v
 }`,
@@ -295,7 +295,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			// match ergonomics a borrowed scrutinee's leaves follow, so `v` binds the same type
 			// either way.
 			name: "val else leaf join accepts a borrow of the whole fallback",
-			src: `fn f(p: &{x: {a: number}} | &{y: string}) {
+			src: `fn f<'a>(p: &'a {x: {a: number}} | &'a {y: string}) -> &'a {a: number} | &{a: 1} {
   val {x: v} = p else { &{x: {a: 1}} }
   return v
 }`,
@@ -305,7 +305,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			// The fallback is an owned object, but the value it supplies for `x` is a borrow, so
 			// both halves of the leaf are borrows and ownership is uniform.
 			name: "val else leaf join accepts a fallback field that is a borrow",
-			src: `fn f(p: &{x: {a: number}} | &{y: string}, q: &{a: number}) {
+			src: `fn f<'a, 'b>(p: &'a {x: {a: number}} | &'a {y: string}, q: &'b {a: number}) -> &'a {a: number} | &'b {a: number} {
   val {x: v} = p else { {x: q} }
   return v
 }`,

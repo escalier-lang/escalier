@@ -157,7 +157,6 @@ func (c *checker) runLivenessPrePass(scope *Scope, astParams []*ast.Param, recv 
 	c.fn.exprRefs = exprStmtRefs(cfg)
 
 	c.fn.cfg = cfg
-	c.fn.destructureInits = set.NewSet[ast.Node]()
 
 	c.fn.paramVarIDs = collectParamVarIDs(c.varIDs, astParams)
 	if selfVarID > 0 {

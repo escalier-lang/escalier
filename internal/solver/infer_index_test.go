@@ -218,7 +218,7 @@ func TestInferComputedKey(t *testing.T) {
 			// A parameter's default is one value it may hold, not the only one, so the key
 			// names no single property.
 			name:     "UnannotatedParameterWithADefault",
-			src:      "fn f(k = \"a\") { return {[k]: 1} }",
+			src:      "fn f(k = \"a\": unknown) -> {} { return {[k]: 1} }",
 			wantErrs: []string{"1:26-1:27: Unsupported: ComputedKey"},
 		},
 	})
@@ -311,7 +311,7 @@ func TestInferUniqueSymbolKey(t *testing.T) {
 			// `s` may be `sym`, so the value written under `s` may replace the one under
 			// `sym`.
 			name: "SymbolKeyAfterIt",
-			src:  "fn f(s: symbol) { val o = {[sym]: 1, [s]: \"x\"}\n return o }",
+			src:  "fn f(s: symbol) -> {[K: symbol]?: \"x\"} { val o = {[sym]: 1, [s]: \"x\"}\n return o }",
 			want: map[string]string{"f": `fn (s: symbol) -> {[sym]: 1 | "x", [K: symbol]?: "x"}`},
 		},
 		{
@@ -504,7 +504,7 @@ func TestInferAssignToMemberOrIndex(t *testing.T) {
 		},
 		{
 			name:     "ReceiverInferredFromUse",
-			src:      "fn f(o) { o[0] = 1 }",
+			src:      "fn f(o: unknown) -> undefined { o[0] = 1 }",
 			wantErrs: []string{"1:11-1:15: Unsupported: assignment to a member or index"},
 		},
 	})
@@ -522,7 +522,7 @@ func TestInferParamDefault(t *testing.T) {
 		{
 			// The caller may pass any value, and the body sees either that value or the default.
 			name: "UnannotatedParameter",
-			src:  "fn g(v = 4) { return v }",
+			src:  "fn g<T0>(v = 4: T0) -> T0 | 4 { return v }",
 			want: map[string]string{"g": "fn <T0>(v?: T0) -> T0 | 4"},
 		},
 		{

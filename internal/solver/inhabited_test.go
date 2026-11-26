@@ -192,7 +192,7 @@ func TestNonReturningRecursionAccepts(t *testing.T) {
 			name: "an unannotated parameter reaching the return is a base case",
 			src: `
 				declare fn cond() -> boolean
-				fn f(x) {
+				fn f<T0>(x: T0) -> T0 | {next: T0} {
 					if cond() { return x }
 					return {next: f(x)}
 				}

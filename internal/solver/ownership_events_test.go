@@ -158,7 +158,7 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 			fn:   "store",
 			src: `
 				var sink = {x: 0}
-				fn store(p) { sink = p }
+				fn store(p: {x: number}) -> undefined { sink = p }
 			`,
 			want: []string{
 				"b0.0: move(`p`, `sink`)",  // `sink = p` moves p, so F3 settles p as owned
@@ -169,7 +169,7 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 			name: "ReadThroughUnannotatedParam",
 			fn:   "read",
 			src: `
-				fn read(p) { return p.x }
+				fn read<T0>(p: &{x: T0}) -> &T0 { return p.x }
 			`,
 			want: []string{
 				"b0.0: copy(`p.x`, return)", // `return p.x` copies out of p, which F3 settles as a borrow since the body never moves it
@@ -528,7 +528,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 		{
 			name: "ClosureReturnedThroughLocalMovesCaptureAtReturn",
 			src: `
-				fn go(p) {
+				fn go<T0>(p: T0) -> fn () -> T0 {
 					val f = fn () {
 						val q = p
 						return q
@@ -579,7 +579,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 		{
 			name: "ClosureReturnedThroughLiteralLocalMovesCaptureAtReturn",
 			src: `
-				fn go() {
+				fn go() -> {h: fn () -> 1} {
 					val p = {x: 1}
 					val f = fn () { return p.x }
 					val o = {h: f}
@@ -624,7 +624,7 @@ func TestInferStoreAndReadSignatures(t *testing.T) {
 			name: "StoreOwnsItsParam",
 			src: `
 				var sink = {x: 0}
-				fn store(p) { sink = p }
+				fn store(p: {x: number}) -> undefined { sink = p }
 			`,
 			fn:   "store",
 			want: "fn (p: {x: number}) -> undefined",
@@ -632,7 +632,7 @@ func TestInferStoreAndReadSignatures(t *testing.T) {
 		{
 			// The body only reads p, so p is a borrow and the result carries its lifetime.
 			name: "ReadBorrowsItsParam",
-			src:  `fn read(p) { return p.x }`,
+			src:  `fn read<T0>(p: &{x: T0}) -> &T0 { return p.x }`,
 			fn:   "read",
 			want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
 		},
@@ -654,7 +654,7 @@ func TestOwnershipEventsProvisionalFlows(t *testing.T) {
 			// This case infers `go` and calls it in one source, since `go` calls itself.
 			name: "RecursiveCallIsProvisional",
 			src: `
-				fn go(n: number, p) {
+				fn go(n: number, p: unknown) -> undefined {
 					if n > 0 {
 						go(n - 1, p)
 					}
@@ -674,7 +674,7 @@ func TestOwnershipEventsProvisionalFlows(t *testing.T) {
 			name: "FlowOutOfUnannotatedParamIsProvisional",
 			src: `
 				fn read(p: &{x: number}) -> number { return p.x }
-				fn go(p) {
+				fn go(p: &{x: number}) -> number {
 					val n = read(p)
 					return n
 				}
@@ -689,12 +689,12 @@ func TestOwnershipEventsProvisionalFlows(t *testing.T) {
 			// This case infers `go` and `stop` together, since the two functions call each other.
 			name: "MutualRecursion",
 			src: `
-				fn go(n: number, p) {
+				fn go(n: number, p: unknown) -> undefined {
 					if n > 0 {
 						stop(n - 1, p)
 					}
 				}
-				fn stop(n: number, q) {
+				fn stop(n: number, q: unknown) -> undefined {
 					go(n, q)
 					val r = q
 				}

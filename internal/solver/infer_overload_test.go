@@ -35,8 +35,8 @@ func TestInferOverloadResolvesByArgType(t *testing.T) {
 // arm.
 func TestInferOverloadDispatchesOnArity(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { return x }
-		fn f(x, y) { return x }
+		fn f<T0>(x: T0) -> T0 { return x }
+		fn f<T0>(x: T0, y: unknown) -> T0 { return x }
 		val a = f(5)
 		val b = f(5, "hi")
 	`)
@@ -123,7 +123,7 @@ val r = f(5)`},
 // the string arm even though the generic arm is declared first and would also match.
 func TestInferOverloadSpecificityBeatsDeclarationOrder(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { return x }
+		fn f<T0>(x: T0) -> T0 { return x }
 		fn f(x: string) -> boolean { return true }
 		val r = f("hi")
 	`)
@@ -140,7 +140,7 @@ func TestInferOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x: number) -> number { return x }
 		fn f(x: string) -> string { return x }
-		fn g(y) { return f(y) }
+		fn g(y: number) -> number { return f(y) }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (y: number) -> number", values["g"],
@@ -167,9 +167,9 @@ func TestInferOverloadNoMatch(t *testing.T) {
 // is why the indistinguishable-arms check does not also fire.
 func TestInferOverloadMutualRecursionRequiresAnnotation(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(x) { g(x) }
+		fn f(x: unknown) -> undefined { g(x) }
 		fn f(y) { g(y) }
-		fn g(z) { f(z) }
+		fn g(z: unknown) -> undefined { f(z) }
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
@@ -282,8 +282,8 @@ func TestInferOverloadValuePosition(t *testing.T) {
 // the level-0 intersection and aliases the arm's type variable across uses.)
 func TestInferOverloadGenericArmValuePositionNoAlias(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { return x }
-		fn f(x, y) { return x }
+		fn f<T0>(x: T0) -> T0 { return x }
+		fn f<T0>(x: T0, y: unknown) -> T0 { return x }
 		val g = f
 		val a = g("hi")
 		val b = g(true)
@@ -298,7 +298,7 @@ func TestInferOverloadGenericArmValuePositionNoAlias(t *testing.T) {
 // whether the callee is the overloaded name directly or a let-bound alias.
 func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 	direct, _, errs := inferSource(t, `
-		fn f(x) { return x }
+		fn f<T0>(x: T0) -> T0 { return x }
 		fn f(x: string) -> boolean { return true }
 		val r = f("hi")
 	`)
@@ -306,7 +306,7 @@ func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 	require.Equal(t, "boolean", direct["r"], "direct call picks the more specific arm")
 
 	binding, _, errs := inferSource(t, `
-		fn f(x) { return x }
+		fn f<T0>(x: T0) -> T0 { return x }
 		fn f(x: string) -> boolean { return true }
 		val g = f
 		val r = g("hi")
@@ -320,7 +320,7 @@ func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 // selects the arm that accepts it, most-specific-first with declaration-order tiebreak.
 func TestInferOverloadThreeArmSpecificity(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { return x }
+		fn f<T0>(x: T0) -> T0 { return x }
 		fn f(x: number) -> boolean { return true }
 		fn f(x: string) -> string { return x }
 		val p = f(5)

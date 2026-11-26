@@ -99,7 +99,7 @@ func TestInferTryCatchBindsTheKnownThrows(t *testing.T) {
 			// A callee's throws reach the arms once they are solved. An unannotated callback's
 			// throws are still open when the arms are walked, so the arms see them only later.
 			name: "AnArmMatchesAValueACallbackThrows",
-			src:  `fn f(cb) { return try { cb() } catch { "x" => 1, _ => 2 } }`,
+			src:  `fn f<T0>(cb: fn () -> T0 throws unknown) -> T0 | 1 | 2 { return try { cb() } catch { "x" => 1, _ => 2 } }`,
 			want: "fn <T0>(cb: fn () -> T0 throws unknown) -> T0 | 1 | 2",
 		},
 		{
@@ -682,7 +682,7 @@ func TestUncaughtThrows(t *testing.T) {
 		},
 		{
 			name: "LiteralArmLeavesTheOtherLiterals",
-			src: `fn f(n: number) throws _ {
+			src: `fn f(n: number) -> undefined throws _ {
 					try {
 						if n == 0 { throw "zero" } else if n == 1 { throw "one" } else { throw "many" }
 					} catch {
@@ -727,7 +727,7 @@ func TestUncaughtThrows(t *testing.T) {
 		{
 			// A guarded object pattern names the object it fits, so only the string is left.
 			name: "GuardedObjectArmNamesItsShape",
-			src: `fn f(c: boolean) throws _ {
+			src: `fn f(c: boolean) -> undefined throws _ {
 					try {
 						if c { throw {code: 1} } else { throw "boom" }
 					} catch {
@@ -738,7 +738,7 @@ func TestUncaughtThrows(t *testing.T) {
 		},
 		{
 			name: "NullArmLeavesTheString",
-			src: `fn f(c: boolean) throws _ {
+			src: `fn f(c: boolean) -> undefined throws _ {
 					try {
 						if c { throw null } else { throw "boom" }
 					} catch {
