@@ -104,3 +104,55 @@ func TestClosureCallsAMutSelfMethodThroughItsContext(t *testing.T) {
 		})
 	}
 }
+
+// TestClosureParamWithoutAContext covers assignments whose target gives a closure parameter no
+// type before the body is checked. The parameter reports as untyped unless checking the closure
+// against the target types it afterwards.
+func TestClosureParamWithoutAContext(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		expected []string
+	}{
+		{
+			// The target's receiver is itself a member read, which is not read without
+			// inferring it. Checking the closure against the field's type still types `x`.
+			name: "NestedFieldTarget",
+			src: "fn g(o: &mut {i: {f: fn (x: number) -> number}}) -> undefined {\n" +
+				"\to.i.f = fn (x) { return x }\n}",
+		},
+		{
+			name: "UndeclaredField",
+			src: "fn g(o: &mut {f: fn (x: number) -> number}) -> undefined {\n" +
+				"\to.h = fn (x) { return x }\n}",
+			expected: []string{
+				"2:8-2:27: object is missing property: h",
+				"2:12-2:13: parameter 'x' has no type, and nothing the closure flows into supplies one; write its type",
+			},
+		},
+		{
+			// A generic function binding has no single type to read the parameter's off.
+			name: "PolymorphicBinding",
+			src: "fn id<T>(x: T) -> T { return x }\n" +
+				"fn g() -> undefined {\n\tid = fn (x) { return x }\n}",
+			expected: []string{
+				"3:2-3:26: Cannot assign to immutable binding: id",
+				"3:11-3:12: parameter 'x' has no type, and nothing the closure flows into supplies one; write its type",
+			},
+		},
+		{
+			name: "UnknownTarget",
+			src:  "fn g() -> undefined {\n\tnope = fn (x) { return x }\n}",
+			expected: []string{
+				"2:2-2:6: Unknown identifier: nope",
+				"2:13-2:14: parameter 'x' has no type, and nothing the closure flows into supplies one; write its type",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.expected, messagesWithSpan(t, errs))
+		})
+	}
+}
