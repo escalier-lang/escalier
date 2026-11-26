@@ -117,7 +117,7 @@ fn f() -> undefined {
 			name: "AStoredParameterWidensOnlyInTheMap",
 			src: `import "std:map"
 val mut seen = map.Map()
-fn put<T0: number>(x: T0) -> T0 {
+fn put<T0: number>(x: T0) {
 	val n: number = x
 	seen.set("k", [x])
 	return x
@@ -135,7 +135,7 @@ val one = put(1)
 			name: "AStoredParameterOfUnknownTypeMoves",
 			src: `import "std:map"
 val mut seen = map.Map()
-fn put<T0>(x: T0) -> T0 {
+fn put<T0>(x: T0) {
 	seen.set("k", [x])
 	return x
 }
@@ -186,7 +186,7 @@ fn b() -> undefined { seen.set("k", {a: 2}) }
 			name: "AStoreOfAParameterNothingCalls",
 			src: `import "std:map"
 val mut seen = map.Map()
-fn remember(value: unknown) -> undefined { seen.set("last", value) }
+fn remember(value: unknown) { seen.set("last", value) }
 `,
 			values: map[string]string{
 				"seen":     "Map<string, never>",
@@ -240,7 +240,7 @@ export val mut b = Box(5)
 			// `val five = 5` is.
 			name: "AnExportedValueACallDecides",
 			src: `
-fn id<T0>(x: T0) -> T0 { return x }
+fn id<T0>(x: T0) { return x }
 export val five = id(5)
 `,
 			values: map[string]string{"five": "5"},
@@ -255,7 +255,7 @@ val seen: map.Map<string, number> = map.Map()
 		{
 			name: "AFunctionExpressionStaysPolymorphic",
 			src: `
-val f = fn <T>(x: T) -> T { return x }
+val f = fn <T>(x: T) { return x }
 val a = f(1)
 val b = f("s")
 `,
@@ -383,7 +383,7 @@ export val inc2 = twice(fn (x: number) -> number { return x + 1 })
 			// `val mut o`, which makes the element `number`.
 			name: "APatternTestLeavesASharedElementAlone",
 			src: `
-val mk = fn <T>(v: T) -> [T] { return [v] }
+val mk = fn <T>(v: T) { return [v] }
 val o = mk(5)
 fn f() -> "six" | "other" { return match o[0] { 6 => "six", _ => "other" } }
 `,

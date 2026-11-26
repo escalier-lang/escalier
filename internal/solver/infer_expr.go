@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/provenance"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -698,18 +697,22 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		}
 		// A parameter with no written or contextual type has no type the body can rely on.
 		if v, ok := pt.(*soltype.TypeVarType); ok && !written {
-			if fe, isClosure := node.(*ast.FuncExpr); isClosure && memberName == "" && member == nil && recv == nil {
+			fe, isClosure := node.(*ast.FuncExpr)
+			switch {
+			case p.TypeAnn != nil:
+				// The annotation did not resolve, and resolveTypeAnn reported why.
+				pt = &soltype.UnknownType{}
+			case isClosure && memberName == "" && member == nil && recv == nil:
 				// A closure keeps the variable, through which a generic context such as
 				// `fn apply<F>(f: F)` still reaches it. checkParamTypes reports it when no
 				// context does.
 				c.queueParamTypeCheck(fe, p, pat, v)
-			} else {
+			default:
 				// A declaration or class member is typed by its own signature. The missing
 				// signature check reports the parameter when signatures are required.
 				pt = &soltype.UnknownType{}
 				if !c.requireSignatures {
-					written, _ := printer.Print(pat, printer.DefaultOptions())
-					c.report(&MissingParamTypeError{Param: p, Name: written, Declared: true})
+					c.report(&MissingParamTypeError{Param: p, Name: writtenParamName(pat), Declared: true})
 				}
 			}
 		}
@@ -1027,7 +1030,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		if gen != nil {
 			gen.delegateNexts = c.fn.delegateNexts
 		}
-		recvReads := c.fn.inferredRecvReads
 		mutations := c.fn.unsettledMutations
 		// A closure that moves a local it captures takes the local from the body it is
 		// written in. recordClosureCaptures reads these names there.
@@ -1040,10 +1042,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			}
 		}
 		collected = c.popFuncCtx(saved)
-		// A read inside this body can still learn its receiver's type from the enclosing body,
-		// as a callback's parameter does from the call it is passed to, so the enclosing body
-		// decides it. The outermost body decides once everything it encloses is walked.
-		c.settleInferredRecvReads(recvReads)
 		c.settleUnsettledMutations(mutations)
 		// A body with no `return` that always leaves along the exceptional edge reaches
 		// no normal exit, so it produces `never`, not the `undefined` a fall-through body
@@ -2177,8 +2175,6 @@ func (c *checker) inferCallTarget(scope *Scope, lvl int, e *ast.CallExpr) callTa
 		}
 	}
 	callee, shortCircuits := c.inferCallee(scope, lvl, e)
-	// A member read called on the spot runs against its receiver, so it needs no binding.
-	c.markInferredRecvReadCalled(e.Callee)
 	target := c.calleeTarget(lvl, e, callee, c.calleeFreshlyInstantiated(scope, e))
 	target.shortCircuits = shortCircuits
 	return target
@@ -4404,7 +4400,6 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	// entry (§3.3).
 	c.recordProv(fieldVar, provNode, MemberAccess)
 	c.constrain(blame, recvCarrier, req)
-	c.noteInferredRecvRead(blame, recvCarrier)
 	// fieldReadBorrow takes the whole receiver and unwraps mut/lifetime internally,
 	// applying PR 4 rule 4 to produce the field-bounded borrow.
 	out := c.fieldReadBorrow(fieldVar, recv, name, lvl)

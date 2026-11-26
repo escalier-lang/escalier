@@ -29,14 +29,14 @@ func TestInferModuleTopLevelLetPolymorphism(t *testing.T) {
 	t.Run("render", func(t *testing.T) {
 		// Identity's param and return are the same variable, so its render is
 		// compact even before PR2 — this asserts the <T0> quantifier prefix.
-		values, _, errs := inferSource(t, `fn id<T0>(x: T0) -> T0 { return x }`)
+		values, _, errs := inferSource(t, `fn id<T0>(x: T0) { return x }`)
 		require.Empty(t, errs)
 		require.Equal(t, map[string]string{"id": "fn <T0>(x: T0) -> T0"}, values)
 	})
 
 	t.Run("two types of use", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			fn id<T0>(x: T0) -> T0 { return x }
+			fn id<T0>(x: T0) { return x }
 			val a = id(5)
 			val b = id("hi")
 		`)
@@ -55,7 +55,7 @@ func TestInferModuleTopLevelLetPolymorphism(t *testing.T) {
 // every remaining variable coalesces to a concrete literal.
 func TestInferModuleIdentityPolymorphism(t *testing.T) {
 	src := `
-		fn identity<T0>(x: T0) -> T0 { return x }
+		fn identity<T0>(x: T0) { return x }
 		fn main() -> undefined {
 			val pair = fn () { return [identity("hello"), identity(5)] }
 		}
@@ -78,7 +78,7 @@ func TestInferModuleIdentityPolymorphism(t *testing.T) {
 // confirming the merge preserves the input→output connection.
 func TestInferModuleInnerCapturesOuterParam(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn outer<T0>(y: T0) -> [T0, T0] {
+		fn outer<T0>(y: T0) {
 			val getY = fn () { return y }
 			return [getY(), getY()]
 		}
@@ -110,7 +110,7 @@ func TestInferModuleBodyLevelLetPolymorphism(t *testing.T) {
 // co-occurrence merging leaves them as distinct type parameters — the counterpart
 // to InnerCapturesOuterParam, where the variables always appeared together.
 func TestInferModuleDistinctParamsStayDistinct(t *testing.T) {
-	values, _, errs := inferSource(t, `fn pair<T0, T1>(a: T0, b: T1) -> [T0, T1] { return [a, b] }`)
+	values, _, errs := inferSource(t, `fn pair<T0, T1>(a: T0, b: T1) { return [a, b] }`)
 	require.Empty(t, errs)
 	require.Equal(t, map[string]string{"pair": "fn <T0, T1>(a: T0, b: T1) -> [T0, T1]"}, values)
 }
@@ -120,7 +120,7 @@ func TestInferModuleDistinctParamsStayDistinct(t *testing.T) {
 // `unknown`. Per-call instantiation keeps k(1, "z") and k("s", true) at distinct types.
 func TestInferModulePolymorphicWithParameterOnlyVar(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn k<T0>(x: T0, y: unknown) -> T0 { return x }
+		fn k<T0>(x: T0, y: unknown) { return x }
 		val a = k(1, "z")
 		val b = k("s", true)
 	`)
@@ -144,17 +144,17 @@ func TestInferParamGeneralization(t *testing.T) {
 	}{
 		{
 			name: "a parameter the body never reads",
-			src:  "fn f<T0>(a: unknown, b: T0) -> T0 { return b }",
+			src:  "fn f<T0>(a: unknown, b: T0) { return b }",
 			want: "fn <T0>(a: unknown, b: T0) -> T0",
 		},
 		{
 			name: "a parameter passed to a bounded type parameter",
-			src:  fstNum + "fn f(b: number) -> 1 { return fstNum(1, b) }",
+			src:  fstNum + "fn f(b: number) { return fstNum(1, b) }",
 			want: "fn (b: number) -> 1",
 		},
 		{
 			name: "a bound reaches a parameter the return also holds",
-			src:  fstNum + "fn f<T0: number>(a: T0, b: number) -> T0 { return fstNum(a, b) }",
+			src:  fstNum + "fn f<T0: number>(a: T0, b: number) { return fstNum(a, b) }",
 			want: "fn <T0: number>(a: T0, b: number) -> T0",
 		},
 		{
@@ -164,12 +164,12 @@ func TestInferParamGeneralization(t *testing.T) {
 		},
 		{
 			name: "a concrete bound inlines into the parameter",
-			src:  "fn f(a: number) -> number { return a + 1 }",
+			src:  "fn f(a: number) { return a + 1 }",
 			want: "fn (a: number) -> number",
 		},
 		{
 			name: "a bounded type parameter's bound reaches a field",
-			src:  fstNum + "fn f(o: {x: number}) -> 1 { return fstNum(1, o.x) }",
+			src:  fstNum + "fn f(o: {x: number}) { return fstNum(1, o.x) }",
 			want: "fn (o: {x: number}) -> 1",
 		},
 	}

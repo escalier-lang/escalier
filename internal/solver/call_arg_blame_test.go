@@ -25,7 +25,7 @@ func TestACallBlamesTheArgumentThatDoesNotFit(t *testing.T) {
 		},
 		{
 			name: "AParameter",
-			src:  add + `fn strs(a: string) -> number { return add(1, a) }`,
+			src:  add + `fn strs(a: string) { return add(1, a) }`,
 			want: []string{"2:36-2:37: cannot constrain string <: number"},
 		},
 		{
@@ -40,7 +40,7 @@ func TestACallBlamesTheArgumentThatDoesNotFit(t *testing.T) {
 		},
 		{
 			name: "EachArgumentThatDoesNotFit",
-			src:  add + `fn strs(a: string) -> number { return add(a, a) }`,
+			src:  add + `fn strs(a: string) { return add(a, a) }`,
 			want: []string{
 				"2:33-2:34: cannot constrain string <: number",
 				"2:36-2:37: cannot constrain string <: number",
@@ -84,7 +84,7 @@ func TestACallBlamesTheArgumentThatDoesNotFit(t *testing.T) {
 			// The parameter's type reaches `T` only through the body, so the argument has to
 			// reach the same copy of `T` that the return reads.
 			name: "AGenericCalleeLinkingAParameterToItsTypeParameter",
-			src:  "fn g<T>(p) -> T {\n\tval z: T = p.x\n\treturn z\n}\n" + `val n: number = g({x: "s"})`,
+			src:  "fn g<T>(p: {x: T}) -> T {\n\tval z: T = p.x\n\treturn z\n}\n" + `val n: number = g({x: "s"})`,
 			want: []string{`5:23-5:26: cannot constrain "s" <: number`},
 		},
 		{

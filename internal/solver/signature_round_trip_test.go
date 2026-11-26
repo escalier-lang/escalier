@@ -21,7 +21,7 @@ type roundTripCase struct {
 var roundTripCases = []roundTripCase{
 	{
 		name:      "FieldRead",
-		inferred:  `fn f<T0>(p: &{x: T0}) -> &T0 { return p.x }`,
+		inferred:  `fn f<T0>(p: &{x: T0}) { return p.x }`,
 		annotated: `fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0 { return p.x }`,
 		sig:       `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`,
 		callers: `
@@ -43,7 +43,7 @@ var roundTripCases = []roundTripCase{
 	},
 	{
 		name:      "WrittenBorrowOfField",
-		inferred:  `fn f<T0>(p: &{x: T0}) -> &T0 { return &p.x }`,
+		inferred:  `fn f<T0>(p: &{x: T0}) { return &p.x }`,
 		annotated: `fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0 { return &p.x }`,
 		sig:       `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`,
 		callers: `
@@ -54,7 +54,7 @@ var roundTripCases = []roundTripCase{
 	},
 	{
 		name:      "NestedFieldRead",
-		inferred:  `fn f<T0>(p: &{x: {y: T0}}) -> &T0 { return p.x.y }`,
+		inferred:  `fn f<T0>(p: &{x: {y: T0}}) { return p.x.y }`,
 		annotated: `fn f<T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0 { return p.x.y }`,
 		sig:       `fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0`,
 		callers: `
@@ -67,7 +67,7 @@ var roundTripCases = []roundTripCase{
 		// Inference rejects an index read off an unannotated parameter, so a tuple
 		// element reaches a signature through a destructuring pattern instead.
 		name: "TupleDestructure",
-		inferred: `fn f<T0>(p: &[T0, unknown]) -> &T0 {
+		inferred: `fn f<T0>(p: &[T0, unknown]) {
 				val [a, b] = p
 				return a
 			}`,
@@ -81,7 +81,7 @@ var roundTripCases = []roundTripCase{
 	},
 	{
 		name: "WrittenBorrowOfDestructuredElement",
-		inferred: `fn f<T0>(p: &[T0, unknown]) -> &T0 {
+		inferred: `fn f<T0>(p: &[T0, unknown]) {
 				val [a, b] = p
 				return &a
 			}`,
@@ -95,7 +95,7 @@ var roundTripCases = []roundTripCase{
 	},
 	{
 		name: "ObjectDestructure",
-		inferred: `fn f<T0>(p: &{x: T0}) -> &T0 {
+		inferred: `fn f<T0>(p: &{x: T0}) {
 				val {x} = p
 				return x
 			}`,
@@ -109,7 +109,7 @@ var roundTripCases = []roundTripCase{
 	},
 	{
 		name:      "Identity",
-		inferred:  `fn f<T0>(x: T0) -> T0 { return x }`,
+		inferred:  `fn f<T0>(x: T0) { return x }`,
 		annotated: `fn f<T0>(x: T0) -> T0 { return x }`,
 		sig:       `fn <T0>(x: T0) -> T0`,
 		callers:   `val m = f("hi")`,
@@ -131,7 +131,7 @@ var roundTripCases = []roundTripCase{
 	},
 	{
 		name:      "FieldWrite",
-		inferred:  `fn f<T0>(mut p: {x: T0}, v: T0) -> undefined { p.x = v }`,
+		inferred:  `fn f<T0>(mut p: {x: T0}, v: T0) { p.x = v }`,
 		annotated: `fn f<T0>(mut p: {x: T0}, v: T0) -> undefined { p.x = v }`,
 		sig:       `fn <T0>(p: {x: T0}, v: T0) -> undefined`,
 	},

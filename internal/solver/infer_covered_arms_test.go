@@ -236,7 +236,7 @@ val r = try {
 
 // matchOverUnannotatedParam matches an unannotated parameter against a `string` arm, a
 // `number` arm and a catch-all.
-const matchOverUnannotatedParam = `fn f(x: unknown) -> 1 | 2 | 3 {
+const matchOverUnannotatedParam = `fn f(x: unknown) {
 	return match x {
 		a: string => 1,
 		b: number => 2,

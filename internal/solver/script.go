@@ -162,10 +162,6 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	c.checkRigidLifetimes()
 	c.checkCallOnlyParams()
 	c.settleTentativeFuncEscapes()
-	// The script's top level is the outermost body, so every read off an inferred receiver
-	// it or its functions made is decided here.
-	c.pendingRecvReads = append(c.pendingRecvReads, c.fn.inferredRecvReads...)
-	c.checkPendingRecvReads()
 	c.pendingMutations = append(c.pendingMutations, c.fn.unsettledMutations...)
 	c.checkPendingMutations()
 	// Every flow is settled and every body is walked, so the dataflow pass can read the

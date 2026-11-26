@@ -319,7 +319,7 @@ func TestInferMatchReportsFaultsAfterACatchAll(t *testing.T) {
 // The unreachable diagnostic blames the dead arm and points at the arm that covers it, so
 // both ends of the overlap are on the message.
 func TestInferMatchUnreachableArmBlamesTheCoveringArm(t *testing.T) {
-	src := "fn f(n: number) -> number { return match n { all => all, 1 => 2 } }"
+	src := "fn f(n: number) { return match n { all => all, 1 => 2 } }"
 	_, _, errs := inferSource(t, src)
 	requireBlame(t, src, errs, unreachableArm(1, 48, 54), "1 => 2", "all => all")
 }

@@ -50,7 +50,7 @@ func (c *checker) checkParamTypes() {
 		if ft, ok := c.info.TypeOf(p.closure).(*soltype.FuncType); ok && checked.Contains(ft) {
 			continue
 		}
-		name, _ := printer.Print(p.pat, printer.DefaultOptions())
+		name := writtenParamName(p.pat)
 		err := &MissingParamTypeError{Param: p.param, Name: name}
 		if shown := c.info.TypeOf(p.pat); shown != nil {
 			if inferred := coalesce(shown, soltype.Negative); writable(inferred) {
@@ -117,4 +117,16 @@ func (e *MissingParamTypeError) Message() string {
 		return msg + "; write its type"
 	}
 	return msg + "; write `" + e.Suggestion + "`"
+}
+
+// writtenParamName returns pat as the source writes it, without a default, so it reads as
+// the name an annotation follows.
+func writtenParamName(pat ast.Pat) string {
+	if ip, ok := pat.(*ast.IdentPat); ok && ip.Default != nil {
+		bare := *ip
+		bare.Default = nil
+		pat = &bare
+	}
+	name, _ := printer.Print(pat, printer.DefaultOptions())
+	return name
 }

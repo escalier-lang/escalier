@@ -993,11 +993,9 @@ func (c *checker) inferComponent(
 	// Every call and annotated binding in the component has constrained the closures that
 	// flow into it, so a closure parameter has every bound a context gives it.
 	c.checkParamTypes()
-	// Every call in the component has constrained the functions passed to it, so a callback's
-	// receiver has every lower bound it will get.
-	c.checkPendingRecvReads()
-	// The same holds for a value mutated through an immutable binding before its type was
-	// known.
+	// Every call in the component has constrained the functions passed to it, so a value
+	// mutated through an immutable binding before its type was known has every lower bound it
+	// will get.
 	c.checkPendingMutations()
 	// Every subtype check in the component has recorded what its sub required of a super
 	// signature's quantified lifetimes, so a requirement the signature's caller cannot be

@@ -112,13 +112,13 @@ func TestReadonlyPermitsValueMutationButNotReassignment(t *testing.T) {
 // rather than re-anchoring to the receiver, matching the implicit-read path.
 func TestExplicitBorrowOfBorrowFieldFlowsFieldLifetime(t *testing.T) {
 	t.Run("immutable borrow field", func(t *testing.T) {
-		src := "fn f(obj: {a: &{x: number}}) -> &{x: number} { return &obj.a }"
+		src := "fn f(obj: {a: &{x: number}}) { return &obj.a }"
 		values, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
 		require.Equal(t, "fn <'a>(obj: {a: &'a {x: number}}) -> &'a {x: number}", values["f"])
 	})
 	t.Run("mutable borrow field", func(t *testing.T) {
-		src := "fn f(obj: {a: &mut {x: number}}) -> &mut {x: number} { return &obj.a }"
+		src := "fn f(obj: {a: &mut {x: number}}) { return &obj.a }"
 		values, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
 		require.Equal(t, "fn <'a>(obj: {a: &'a mut {x: number}}) -> &'a mut {x: number}", values["f"])
@@ -273,12 +273,12 @@ func TestNestedWriteInfersMutContainerAndRoundTrips(t *testing.T) {
 	}{
 		{
 			name: "one level",
-			src:  "fn foo(mut obj: {p: {x: number}}) -> undefined { obj.p.x = 5 }",
+			src:  "fn foo(mut obj: {p: {x: number}}) { obj.p.x = 5 }",
 			want: "fn (obj: {p: {x: number}}) -> undefined",
 		},
 		{
 			name: "three levels",
-			src:  "fn foo(mut obj: {a: {b: {c: number}}}) -> undefined { obj.a.b.c = 5 }",
+			src:  "fn foo(mut obj: {a: {b: {c: number}}}) { obj.a.b.c = 5 }",
 			want: "fn (obj: {a: {b: {c: number}}}) -> undefined",
 		},
 	}
@@ -295,7 +295,7 @@ func TestNestedWriteInfersMutContainerAndRoundTrips(t *testing.T) {
 	// since the property it tests is that the inferred `foo` accepts its own displayed type.
 	// A declared `foo` would accept that type by construction.
 	t.Run("round-trip caller", func(t *testing.T) {
-		src := `fn foo(mut obj: {p: {x: number}}) -> undefined { obj.p.x = 5 }
+		src := `fn foo(mut obj: {p: {x: number}}) { obj.p.x = 5 }
 fn caller(a: {p: {x: number}}) -> undefined { foo(a) }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)

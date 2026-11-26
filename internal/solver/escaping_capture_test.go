@@ -417,7 +417,7 @@ func TestEscapingClosureCapture(t *testing.T) {
 		// Reassigning f drops the closure that captured p, so returning f moves nothing.
 		"ReassignedBindingNoLongerCarriesTheClosureOk": {
 			src: `
-				fn go() -> fn () -> number {
+				fn go() {
 					val p = {x: 1}
 					var f: fn () -> number = fn () { return p.x }
 					f = fn () { return 0 }

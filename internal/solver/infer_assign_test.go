@@ -138,7 +138,7 @@ func TestInferAssignUnknownTarget(t *testing.T) {
 // still records `number` as an upper bound of `x`.
 func TestInferUntypedModuleClosureParamStaysUnknown(t *testing.T) {
 	values, errs := inferAgainstTreeWithSpans(t, `
-		var id = fn (x: unknown) -> unknown { return x }
+		var id = fn (x: unknown) { return x }
 		fn f() -> undefined { id = fn (n: number) -> number { return n + 1 } }
 		val r = id("hello")
 	`)
@@ -210,7 +210,7 @@ func TestInferAssignBodyLevelWeakVarWritesItsVariables(t *testing.T) {
 // p's variable, so the reassignment is rejected rather than adding 5 to p's type, and f's
 // signature stays `fn <T0>(p: T0) -> T0`.
 func TestInferAssignBodyLevelWeakVarLeavesCapturedVariables(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f<T0>(p: T0) -> T0 {
+	values, _, errs := inferSource(t, `fn f<T0>(p: T0) {
 	var k = fn (x) { return p }
 	k = fn (x) { return 5 }
 	return p
@@ -268,7 +268,7 @@ func TestInferAssignUnionTarget(t *testing.T) {
 // the whole union, so `x` coalesces as the sound and complete `1 | 2`.
 func TestInferAssignUnionTargetVarRHSWidensToUnion(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(c: boolean, x: 1 | 2) -> undefined {
+		fn f(c: boolean, x: 1 | 2) {
 			var a: 1 | 2 = if c { 1 } else { 2 }
 			a = x
 		}

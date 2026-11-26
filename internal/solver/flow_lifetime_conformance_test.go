@@ -222,8 +222,8 @@ func TestFlowLifetimeNonEscapingParam(t *testing.T) {
 			src: `
 				var sink = {x: 0}
 
-				fn store(p: {x: number}) -> undefined { sink = p }     // store: fn (p: {x: number}) -> undefined
-				fn read<T0>(p: &{x: T0}) -> &T0 { return p.x }    // read: fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0
+				fn store(p: {x: number}) { sink = p }     // store: fn (p: {x: number}) -> undefined
+				fn read<T0>(p: &{x: T0}) { return p.x }    // read: fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0
 
 				fn go() -> number {
 					val a = {x: 1}
@@ -249,7 +249,7 @@ func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 			src: `
 				var sink = {x: 0}
 
-				fn store(p: {x: number}) -> undefined { sink = p }
+				fn store(p: {x: number}) { sink = p }
 			`,
 			values: map[string]string{
 				"store": "fn (p: {x: number}) -> undefined",

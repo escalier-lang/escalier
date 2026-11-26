@@ -694,7 +694,7 @@ func TestUnannotatedMovedParamConsumesArgument(t *testing.T) {
 		{
 			name: "StoreIntoModuleLevelState",
 			src: `var sink = {x: 0}
-fn store(p: {x: number}) -> undefined { sink = p }
+fn store(p: {x: number}) { sink = p }
 fn f() -> number {
   val a = {x: 1}
   store(a)
@@ -704,7 +704,7 @@ fn f() -> number {
 		},
 		{
 			name: "ReturnTheParameter",
-			src: `fn give<T0>(p: T0) -> T0 { return p }
+			src: `fn give<T0>(p: T0) { return p }
 fn f() -> number {
   val a = {x: 1}
   val b = give(a)
@@ -716,8 +716,8 @@ fn f() -> number {
 			// relay moves p into store's parameter, so relay's parameter is moved too.
 			name: "PassToAnotherMovedParameter",
 			src: `var sink = {x: 0}
-fn store(p: {x: number}) -> undefined { sink = p }
-fn relay(p: {x: number}) -> undefined { store(p) }
+fn store(p: {x: number}) { sink = p }
+fn relay(p: {x: number}) { store(p) }
 fn f() -> number {
   val a = {x: 1}
   relay(a)
@@ -745,7 +745,7 @@ fn f() -> number {
 		{
 			// read only reads a field of p, so p is a borrow and the argument stays usable.
 			name: "ReadOnlyParameterKeepsArgument",
-			src: `fn read<T0>(p: &{x: T0}) -> &T0 { return p.x }
+			src: `fn read<T0>(p: &{x: T0}) { return p.x }
 fn f() -> number {
   val a = {x: 1}
   val n = read(&a)
@@ -756,7 +756,7 @@ fn f() -> number {
 			// A number argument copies into the parameter, so moving the parameter moves nothing.
 			name: "ValueTypeArgumentCopies",
 			src: `var total = 0
-fn keep(p: number) -> undefined { total = p }
+fn keep(p: number) { total = p }
 fn f() -> number {
   val n = 1
   keep(n)
@@ -800,7 +800,7 @@ fn g() -> number {
 		},
 		{
 			name: "InferredTypeParameter",
-			src: `fn id<T0>(x: T0) -> T0 { return x }
+			src: `fn id<T0>(x: T0) { return x }
 fn g() -> number {
 	val xs: Array<number> = [1]
 	val mut r = id(xs)

@@ -615,7 +615,7 @@ func TestInferObjectRestOverUnion(t *testing.T) {
 		{
 			name: "a plain read through a non-object member",
 			src: `
-				fn f(p: {kind: "a", b: string} | number) -> string | undefined {
+				fn f(p: {kind: "a", b: string} | number) {
 					return p.b
 				}
 			`,

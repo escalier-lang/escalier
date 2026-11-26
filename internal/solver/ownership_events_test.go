@@ -169,7 +169,7 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 			name: "ReadThroughUnannotatedParam",
 			fn:   "read",
 			src: `
-				fn read<T0>(p: &{x: T0}) -> &T0 { return p.x }
+				fn read<T0>(p: &{x: T0}) { return p.x }
 			`,
 			want: []string{
 				"b0.0: copy(`p.x`, return)", // `return p.x` copies out of p, which F3 settles as a borrow since the body never moves it
@@ -528,7 +528,7 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 		{
 			name: "ClosureReturnedThroughLocalMovesCaptureAtReturn",
 			src: `
-				fn go<T0>(p: T0) -> fn () -> T0 {
+				fn go<T0>(p: T0) {
 					val f = fn () {
 						val q = p
 						return q
@@ -632,7 +632,7 @@ func TestInferStoreAndReadSignatures(t *testing.T) {
 		{
 			// The body only reads p, so p is a borrow and the result carries its lifetime.
 			name: "ReadBorrowsItsParam",
-			src:  `fn read<T0>(p: &{x: T0}) -> &T0 { return p.x }`,
+			src:  `fn read<T0>(p: &{x: T0}) { return p.x }`,
 			fn:   "read",
 			want: "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
 		},
@@ -654,7 +654,7 @@ func TestOwnershipEventsProvisionalFlows(t *testing.T) {
 			// This case infers `go` and calls it in one source, since `go` calls itself.
 			name: "RecursiveCallIsProvisional",
 			src: `
-				fn go(n: number, p: unknown) -> undefined {
+				fn go(n: number, p: unknown) {
 					if n > 0 {
 						go(n - 1, p)
 					}
@@ -674,7 +674,7 @@ func TestOwnershipEventsProvisionalFlows(t *testing.T) {
 			name: "FlowOutOfUnannotatedParamIsProvisional",
 			src: `
 				fn read(p: &{x: number}) -> number { return p.x }
-				fn go(p: &{x: number}) -> number {
+				fn go(p: &{x: number}) {
 					val n = read(p)
 					return n
 				}
@@ -689,12 +689,12 @@ func TestOwnershipEventsProvisionalFlows(t *testing.T) {
 			// This case infers `go` and `stop` together, since the two functions call each other.
 			name: "MutualRecursion",
 			src: `
-				fn go(n: number, p: unknown) -> undefined {
+				fn go(n: number, p: unknown) {
 					if n > 0 {
 						stop(n - 1, p)
 					}
 				}
-				fn stop(n: number, q: unknown) -> undefined {
+				fn stop(n: number, q: unknown) {
 					go(n, q)
 					val r = q
 				}

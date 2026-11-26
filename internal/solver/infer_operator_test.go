@@ -78,7 +78,7 @@ val x = n + 1`)
 // parameter its type, so the function's signature is inferred from the operator
 // alone.
 func TestInferBinaryConstrainsUnannotatedParam(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(a: number) -> number { return a + 1 }`)
+	values, _, errs := inferSource(t, `fn f(a: number) { return a + 1 }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (a: number) -> number", values["f"])
 }
@@ -174,7 +174,7 @@ func TestInferUnaryYieldsDeclaredReturn(t *testing.T) {
 // The prefix and binary `-` bind under different names, so one source applies both
 // and each checks its own arity.
 func TestInferUnaryMinusBesideBinaryMinus(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(a: number, b: number) -> number { return a - -b }`)
+	values, _, errs := inferSource(t, `fn f(a: number, b: number) { return a - -b }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (a: number, b: number) -> number", values["f"])
 }

@@ -29,7 +29,7 @@ declare val ns: number | string
 	}{
 		{
 			name: "OwnedLocalFromLiteral",
-			src: `fn f() -> undefined {
+			src: `fn f() {
     val mut u: U = {kind: "a", a: 1}
     u.kind = "b"
 }`,
@@ -46,7 +46,7 @@ declare val ns: number | string
 		},
 		{
 			name: "UnannotatedLocal",
-			src: `fn f(init: U) -> undefined {
+			src: `fn f(init: U) {
     val mut u = init
     u.kind = "b"
 }`,
@@ -54,22 +54,22 @@ declare val ns: number | string
 		},
 		{
 			name: "MutBorrowParam",
-			src:  `fn f(q: &mut U) -> undefined { q.kind = "b" }`,
+			src:  `fn f(q: &mut U) { q.kind = "b" }`,
 			want: []string{"8:19-8:25: cannot assign \"b\" to 'q.kind', since 'q' may hold an 'A', whose 'kind' is \"a\"; narrow 'q' with a `match` and write through the narrowed binding"},
 		},
 		{
 			name: "MutBorrowParamNamesSecondMember",
-			src:  `fn f(q: &mut U) -> undefined { q.kind = "a" }`,
+			src:  `fn f(q: &mut U) { q.kind = "a" }`,
 			want: []string{"8:19-8:25: cannot assign \"a\" to 'q.kind', since 'q' may hold a 'B', whose 'kind' is \"b\"; narrow 'q' with a `match` and write through the narrowed binding"},
 		},
 		{
 			name: "InlineUnion",
-			src:  `fn f(q: &mut ({kind: "a", n: number} | {kind: "b", n: number})) -> undefined { q.kind = "b" }`,
+			src:  `fn f(q: &mut ({kind: "a", n: number} | {kind: "b", n: number})) { q.kind = "b" }`,
 			want: []string{"8:67-8:73: cannot assign \"b\" to 'q.kind', since 'q' may hold a '{kind: \"a\", n: number}', whose 'kind' is \"a\"; narrow 'q' with a `match` and write through the narrowed binding"},
 		},
 		{
 			name: "Nested",
-			src: `fn f(init: {inner: U}) -> undefined {
+			src: `fn f(init: {inner: U}) {
     val mut h = init
     h.inner.kind = "b"
 }`,
@@ -77,12 +77,12 @@ declare val ns: number | string
 		},
 		{
 			name: "NestedThroughBorrow",
-			src:  `fn f(h: &mut {inner: U}) -> undefined { h.inner.kind = "b" }`,
+			src:  `fn f(h: &mut {inner: U}) { h.inner.kind = "b" }`,
 			want: []string{"8:28-8:40: cannot assign \"b\" to 'h.inner.kind', since 'h.inner' may hold an 'A', whose 'kind' is \"a\"; narrow 'h.inner' with a `match` and write through the narrowed binding"},
 		},
 		{
 			name: "ConstantStringIndex",
-			src: `fn f(init: U) -> undefined {
+			src: `fn f(init: U) {
     val mut u: U = init
     u["kind"] = "b"
 }`,
@@ -90,7 +90,7 @@ declare val ns: number | string
 		},
 		{
 			name: "ArrayElement",
-			src:  `fn f(mut arr: Array<U>) -> undefined { arr[0].kind = "b" }`,
+			src:  `fn f(mut arr: Array<U>) { arr[0].kind = "b" }`,
 			want: []string{"8:27-8:38: cannot assign \"b\" to 'arr[0].kind', since 'arr[0]' may hold an 'A', whose 'kind' is \"a\"; narrow 'arr[0]' with a `match` and write through the narrowed binding"},
 		},
 		{
@@ -104,7 +104,7 @@ declare val ns: number | string
 		},
 		{
 			name: "EveryMemberAccepts",
-			src: `fn f(init: A | C) -> undefined {
+			src: `fn f(init: A | C) {
     val mut u: A | C = init
     u.a = 2
 }`,
@@ -112,26 +112,26 @@ declare val ns: number | string
 		},
 		{
 			name: "EveryMemberAcceptsThroughBorrow",
-			src:  `fn f(q: &mut (A | C)) -> undefined { q.a = 2 }`,
+			src:  `fn f(q: &mut (A | C)) { q.a = 2 }`,
 			want: nil,
 		},
 		{
 			name: "UndefinedIntoFieldOptionalInOneMember",
 			src: `type MA = {kind: "a", n?: number}
 type MC = {kind: "c", n: number}
-fn f(q: &mut (MA | MC)) -> undefined { q.n = undefined }`,
+fn f(q: &mut (MA | MC)) { q.n = undefined }`,
 			want: []string{"10:27-10:30: cannot assign undefined to 'q.n', since 'q' may hold a 'MC', whose 'n' is number; narrow 'q' with a `match` and write through the narrowed binding"},
 		},
 		{
 			name: "NumberIntoFieldOptionalInOneMember",
 			src: `type MA = {kind: "a", n?: number}
 type MC = {kind: "c", n: number}
-fn f(q: &mut (MA | MC)) -> undefined { q.n = 2 }`,
+fn f(q: &mut (MA | MC)) { q.n = 2 }`,
 			want: nil,
 		},
 		{
 			name: "OptionalReceiverIsNotAUnionWrite",
-			src: `fn f(init: A | undefined) -> undefined {
+			src: `fn f(init: A | undefined) {
     val mut u: A | undefined = init
     u.a = 2
 }`,
@@ -139,7 +139,7 @@ fn f(q: &mut (MA | MC)) -> undefined { q.n = 2 }`,
 		},
 		{
 			name: "NullableReceiverIsNotAUnionWrite",
-			src: `fn f(init: A | null) -> undefined {
+			src: `fn f(init: A | null) {
     val mut u: A | null = init
     u.a = 2
 }`,
@@ -147,7 +147,7 @@ fn f(q: &mut (MA | MC)) -> undefined { q.n = 2 }`,
 		},
 		{
 			name: "ImmutableBindingReportsOnlyTheBinding",
-			src: `fn f(init: U) -> undefined {
+			src: `fn f(init: U) {
     val u: U = init
     u.kind = "b"
 }`,
@@ -155,12 +155,12 @@ fn f(q: &mut (MA | MC)) -> undefined { q.n = 2 }`,
 		},
 		{
 			name: "ImmutableBorrowReportsTheBorrow",
-			src:  `fn f(q: &U) -> undefined { q.kind = "b" }`,
+			src:  `fn f(q: &U) { q.kind = "b" }`,
 			want: []string{"8:9-8:11: cannot constrain immutable U <: mutable object"},
 		},
 		{
 			name: "MissingFieldOnSomeMember",
-			src: `fn f(init: U) -> undefined {
+			src: `fn f(init: U) {
     val mut u: U = init
     u.a = 2
 }`,
@@ -170,12 +170,12 @@ fn f(q: &mut (MA | MC)) -> undefined { q.n = 2 }`,
 			name: "ReadonlyMemberField",
 			src: `type RA = {readonly kind: "a"}
 type RB = {readonly kind: "b"}
-fn f(q: &mut (RA | RB)) -> undefined { q.kind = "a" }`,
+fn f(q: &mut (RA | RB)) { q.kind = "a" }`,
 			want: []string{"10:27-10:33: cannot assign to 'kind' because it is a readonly property"},
 		},
 		{
 			name: "JoinedVariableIsNotAUnionWrite",
-			src: `fn f(p: {x: {a: number}} | {y: string}) -> undefined {
+			src: `fn f(p: {x: {a: number}} | {y: string}) {
     val {mut x} = p else { {x: {a: 1}} }
     x.a = 2
 }`,
@@ -183,7 +183,7 @@ fn f(q: &mut (RA | RB)) -> undefined { q.kind = "a" }`,
 		},
 		{
 			name: "JoinOfDeclaredMembers",
-			src: `fn f<T0: {kind: string}>(c: boolean, a: A, b: B) -> undefined {
+			src: `fn f<T0: {kind: string}>(c: boolean, a: A, b: B) {
     val mut x = if c { a } else { b }
     x.kind = "b"
 }`,
@@ -196,7 +196,7 @@ fn f(q: &mut (RA | RB)) -> undefined { q.kind = "a" }`,
 		// checks.
 		{
 			name: "JoinOfFreshLiterals",
-			src: `fn f(c: boolean) -> undefined {
+			src: `fn f(c: boolean) {
     val mut x = if c { {kind: "a", a: 1} } else { {kind: "b", b: "s"} }
     x.kind = "c"
 }`,
@@ -206,7 +206,7 @@ fn f(q: &mut (RA | RB)) -> undefined { q.kind = "a" }`,
 			name: "JoinOfClassInstances",
 			src: `class Foo { n: number }
 class Bar { n: number }
-fn f(c: boolean) -> undefined {
+fn f(c: boolean) {
     val mut x = if c { Foo(1) } else { Bar(2) }
     x.n = 3
 }`,
@@ -214,7 +214,7 @@ fn f(c: boolean) -> undefined {
 		},
 		{
 			name: "JoinOfSameShape",
-			src: `fn f(c: boolean, p: {a: number}) -> undefined {
+			src: `fn f(c: boolean, p: {a: number}) {
     val mut x = if c { p } else { {a: 1} }
     x.a = 2
 }`,
@@ -222,7 +222,7 @@ fn f(c: boolean) -> undefined {
 		},
 		{
 			name: "NarrowedBindingWrite",
-			src: `fn f(q: &mut U) -> undefined {
+			src: `fn f(q: &mut U) {
     match q {
         v: &mut A => { v.a = 2 },
         _ => {},
@@ -232,12 +232,12 @@ fn f(c: boolean) -> undefined {
 		},
 		{
 			name: "NonUnionReceiver",
-			src:  `fn f(q: &mut A) -> undefined { q.a = 2 }`,
+			src:  `fn f(q: &mut A) { q.a = 2 }`,
 			want: nil,
 		},
 		{
 			name: "WholeBindingReassignment",
-			src: `fn f(init: U) -> undefined {
+			src: `fn f(init: U) {
     var u: U = init
     u = {kind: "b", b: "x"}
 }`,
@@ -258,7 +258,7 @@ fn f(c: boolean) -> undefined {
 func TestUnionFieldWriteSignature(t *testing.T) {
 	values, _, errs := inferSource(t, `type A = {kind: "a", a: number}
 type C = {kind: "c", a: number}
-fn f(q: &mut (A | C), v: number) -> undefined { q.a = v }`)
+fn f(q: &mut (A | C), v: number) { q.a = v }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (q: &mut (A | C), v: number) -> undefined", values["f"])
 }

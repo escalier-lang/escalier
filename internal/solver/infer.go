@@ -54,14 +54,8 @@ type checker struct {
 	// pattern that holds one.
 	rejectedPatElems set.Set[ast.Node]
 
-	// pendingRecvReads holds the member reads off inferred receivers that top-level bodies
-	// collected. A value initializer can still pass such a body to a call that types its
-	// receiver, so checkPendingRecvReads checks them once the component is constrained.
-	pendingRecvReads []inferredRecvRead
-
 	// pendingMutations holds the unsettled mutations that top-level bodies collected, which
-	// checkPendingMutations checks once the component is constrained, for the same reason
-	// pendingRecvReads waits.
+	// checkPendingMutations checks once the component is constrained.
 	pendingMutations []unsettledMutation
 
 	// topThrows is the throws sink for a `try` block written at module top level, where
@@ -611,9 +605,6 @@ type funcCtx struct {
 	// does one that yields `never`. inferFunc reads it to warn about a `gen` marker the
 	// body never uses. It is the generator twin of raised.
 	yielded bool
-	// inferredRecvReads holds each member read in this body, or in a body it encloses, whose
-	// receiver is an identifier typed only by how the body uses it.
-	inferredRecvReads []inferredRecvRead
 	// unsettledMutations holds each mutating operation in this body, or in a body it
 	// encloses, through an immutable binding whose value had no known type yet. See
 	// unsettledMutation.

@@ -331,7 +331,7 @@ func TestInferIncompatibleBorrowUnionReadsBorrowedField(t *testing.T) {
 // lifetime constraint, so the union is built with no subsumption to keep `'a` and
 // `'b` separate rather than collapsing one borrow into the other.
 func TestInferIncompatibleBorrowJoinKeepsDistinctLifetimes(t *testing.T) {
-	src := `fn f<'a, 'b, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: &'c mut {x: string}) -> &'a mut {x: number} | &'b mut {x: number} | &'c mut {x: string} {
+	src := `fn f<'a, 'b, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: &'c mut {x: string}) {
   if true {
     return p
   } else {
@@ -483,7 +483,7 @@ func TestBorrowIntoAnUnannotatedLiteral(t *testing.T) {
 		{
 			name: "LiteralInEachBranch",
 			src: `
-				fn f<'a, 'b>(c: boolean, r: &'a {x: number}, s: &'b {x: number}) -> {f: &'a {x: number}} | {f: &'b {x: number}} {
+				fn f<'a, 'b>(c: boolean, r: &'a {x: number}, s: &'b {x: number}) {
 					val o = if c { {f: r} } else { {f: s} }
 					return o
 				}
@@ -953,7 +953,7 @@ func TestInferExplicitMutBorrowOfMemberOnImmutableRejected(t *testing.T) {
 // call passing `{x: 5}` gets the field's primitive type `5` back rather than a borrow.
 func TestInferMemberReadInferredReceiverUnchanged(t *testing.T) {
 	t.Run("the read borrows through the param", func(t *testing.T) {
-		values, _, errs := inferSource(t, "fn f<T0>(p: &{x: T0}) -> &T0 { return p.x }")
+		values, _, errs := inferSource(t, "fn f<T0>(p: &{x: T0}) { return p.x }")
 		require.Empty(t, errs)
 		require.Equal(t, "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0", values["f"])
 	})

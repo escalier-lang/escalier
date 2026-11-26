@@ -64,7 +64,7 @@ func TestInferModuleFuncDeclRecordsInfoType(t *testing.T) {
 // NOT var-free for generalized bindings — the inverse of
 // TestInferModuleFuncDeclRecordsInfoType, whose fixture is monomorphic.)
 func TestInferModulePolymorphicFuncDeclInfoNeedsPrintScheme(t *testing.T) {
-	module := parseModule(t, `fn id<T0>(x: T0) -> T0 { return x }`)
+	module := parseModule(t, `fn id<T0>(x: T0) { return x }`)
 	_, info, errs := InferModule(module, testStdlibSource())
 	require.Empty(t, errs)
 

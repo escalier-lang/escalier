@@ -321,7 +321,7 @@ fn readP(x: &I) -> "x" { return p[x.key] }`},
 		},
 		{
 			name: "NoValOfTheType",
-			srcs: map[string]string{"input.esc": iface + "fn read(x: &I) -> {[unique symbol#0]: 1} { return {[x.key]: 1} }"},
+			srcs: map[string]string{"input.esc": iface + "fn read(x: &I) { return {[x.key]: 1} }"},
 			want: map[string]string{"read": "fn (x: &I) -> {[unique symbol#0]: 1}"},
 		},
 		{
@@ -497,7 +497,7 @@ func TestModuleSymbols(t *testing.T) {
 		},
 		{
 			name:       "FunctionBody",
-			src:        "fn f() -> typeof s {\n\tdeclare val s: unique symbol\n\treturn s\n}",
+			src:        "fn f() {\n\tdeclare val s: unique symbol\n\treturn s\n}",
 			wantMinted: nil,
 			wantOwners: map[string]string{},
 		},

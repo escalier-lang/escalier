@@ -419,19 +419,17 @@ func TestInferPromiseUnsupportedInnerKeepsWrapper(t *testing.T) {
 	require.Equal(t, "fn (p: Promise<unknown>) -> 0", values["f"])
 }
 
-// A recovered Promise inner that the body returns behaves like any unconstrained
-// variable. It generalizes to a type parameter, so the wrapper carries through both
-// positions as Promise<T0>. That proves the recovery is a real fresh var rather than
-// a poisoned `never` or `unknown`, either of which would have cascaded or frozen.
-func TestInferPromiseUnsupportedInnerGeneralizes(t *testing.T) {
+// A Promise inner that does not resolve recovers to `unknown`, and returning the parameter
+// draws no second error.
+func TestInferPromiseUnsupportedInnerRecovers(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f<T0>(p: Promise< /(?=x)/ >) -> Promise<T0> {
 			return p
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:20-2:27: regex type /(?=x)/ uses lookahead, which RE2 does not support", msgWithSpan(t, errs[0]))
-	require.Equal(t, "fn <T0>(p: Promise<T0>) -> Promise<T0>", values["f"])
+	require.Equal(t, "2:24-2:31: regex type /(?=x)/ uses lookahead, which RE2 does not support", msgWithSpan(t, errs[0]))
+	require.Equal(t, "fn <T0>(p: Promise<unknown>) -> Promise<T0>", values["f"])
 }
 
 // --- Rejected forms (#6, #7) ---

@@ -180,11 +180,11 @@ func TestAStoredMethodValueBindsItsLifetimesPerCall(t *testing.T) {
 			// declared, so the display elides it.
 			name: "a receiver lifetime is fixed by the access",
 			src: view + `
-				fn reader<'a>(v: &'a View) -> fn () -> &'a {x: number} {
+				fn reader<'a>(v: &'a View) {
 					val f = v.peek
 					return f
 				}
-				fn use(v: &View) -> &{x: number} {
+				fn use(v: &View) {
 					val f = reader(v)
 					return f()
 				}

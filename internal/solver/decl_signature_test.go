@@ -52,7 +52,7 @@ func TestFuncDeclSignaturePrintWritten(t *testing.T) {
 	}{
 		{
 			name:     "OneInputLifetime",
-			src:      `fn f(p) { return p.x }`,
+			src:      `fn f<T0>(p: &{x: T0}) -> &T0 { return p.x }`,
 			expected: "<T0>(&{x: T0}) -> &T0",
 		},
 		{

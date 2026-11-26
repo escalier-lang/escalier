@@ -499,7 +499,7 @@ func TestStoreIntoCallerOwnedTarget(t *testing.T) {
 		"ReturnOfALocalACallReadOk": {
 			src: `
 				declare fn take(x: {peer: &{value: number}}) -> undefined
-				fn f<'a>(p: &mut {peer: &'a mut {value: number}}) -> &mut {x: &'a mut {value: number}, y: &mut {value: number}} {
+				fn f<'a>(p: &mut {peer: &'a mut {value: number}}) {
 					val mut a = {value: 0}
 					val mut c = {value: 1}
 					p.peer = &mut a
