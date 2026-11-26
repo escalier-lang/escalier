@@ -76,8 +76,9 @@ func (v *removableSlotVisitor) EnterType(t soltype.Type, pol soltype.Polarity) s
 		}
 		return descend
 	case *soltype.TupleType:
-		// A rest element holds any number of values, which a callee can remove like the
-		// elements of an array. It is a RestSpreadType, which the default case rejects.
+		// An inexact tuple `[A, ...]` may hold elements its type does not list, and the walk
+		// cannot see what they hold. A rest element `...Array<T>` reaches the default case
+		// when the walk descends into the elements.
 		if t.Inexact {
 			break
 		}
@@ -92,7 +93,11 @@ func (v *removableSlotVisitor) EnterType(t soltype.Type, pol soltype.Polarity) s
 			return descend
 		}
 		v.aliases.Add(t.Name)
-		v.c.ctx.expandAlias(t).Accept(v, pol)
+		body, ok := v.c.ctx.aliasBody(t)
+		if !ok {
+			break
+		}
+		body.Accept(v, pol)
 		return skip
 	case *soltype.ClassType:
 		if v.classes.Contains(t.Name) {
@@ -168,8 +173,9 @@ func immutableReceiver(p *soltype.FuncParam) bool {
 
 // fieldClassBody returns the projected instance body of ct when ct is a class declared in
 // Escalier source without `declare`, and so is each class it extends. It returns false for
-// any other class, such as `Array` or `Map`, whose internals are unknown. Its methods are
-// checked like any other function, so the slots of such a class are exactly its fields.
+// any other class, such as `Array` or `Map`, whose internals are unknown. The methods of a
+// class declared in Escalier are checked like any other function, so its slots are exactly
+// its fields.
 func (c *checker) fieldClassBody(ct *soltype.ClassType) (*soltype.ObjectType, bool) {
 	seen := set.NewSet[string]()
 	pending := []string{ct.Name}

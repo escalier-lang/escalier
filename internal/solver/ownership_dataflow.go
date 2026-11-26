@@ -1614,8 +1614,9 @@ func slotExpr(call *ast.CallExpr, slot callSlot) ast.Expr {
 //     of `arr`. Each holder of m then holds the value. `&mut b.inner` reaches a field of `b`,
 //     which no callee can remove.
 //   - A holder of m does not hold m's borrow itself, as heldPlace.own and liveLoan.heldSlots
-//     record, and the value m borrows holds a removable slot. The result of `first(&mut arr)`
-//     holds what the callee hands back through the borrow of arr, which can be an element.
+//     record. The result of `first(&mut arr)` holds what the callee hands back through the
+//     borrow of arr, which can be an element. m then holds such a borrow when the deeper of
+//     m's value and r's container holds a removable slot, as holdsRemovable decides.
 func (d *bodyDataflow) contentsHold(m, r *liveLoan, depth int, ev *callEvent, at liveness.StmtRef) (ast.Node, bool) {
 	deeper := d.borrowDepth(m) > depth
 	if deeper && d.removedOnPath(m, depth) {
@@ -1629,8 +1630,9 @@ func (d *bodyDataflow) contentsHold(m, r *liveLoan, depth int, ev *callEvent, at
 	}
 
 	// What a callee hands back through m lies somewhere inside the value m borrows. When m
-	// reaches below r, that value lies inside r's container, and only its own slots can be
-	// removed. Otherwise r's container lies inside it, and only the container's slots can.
+	// reaches below r and no link between them reads an element, the callee holding r can
+	// remove that value only from a slot inside m's value. Otherwise r's container lies inside
+	// m's value, and the callee can remove it only from a slot inside the container.
 	inner := r
 	if deeper {
 		inner = m
