@@ -689,6 +689,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// variable for each parameter, since the callee's signature gives each one its type.
 		if v, ok := pt.(*soltype.TypeVarType); ok && !written {
 			c.addUnannotatedParamVar(v)
+			// W3 asks a closure's context to type a parameter the closure leaves unannotated.
+			// A class member is typed by its own signature, which W2 checks.
+			if fe, isClosure := node.(*ast.FuncExpr); isClosure && memberName == "" && member == nil && recv == nil {
+				c.queueParamTypeCheck(fe, p, pat, v)
+			}
 		}
 		if v, ok := pt.(*soltype.TypeVarType); ok && !written && !isArg && body != nil && paramOnlyReadThrough(pat, rest, optional, body) {
 			pt = soltype.NewRef(false, c.ctx.freshLifetime(lvl), v)

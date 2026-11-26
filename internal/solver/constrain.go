@@ -1448,6 +1448,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		}
 	case *soltype.FuncType:
 		if sup, ok := super.(*soltype.FuncType); ok {
+			// sup is the function type sub flows into, which types the parameters a closure
+			// leaves unannotated.
+			c.noteFuncChecked(sub)
 			// Higher-rank subtyping: skolemize a super quantifier, instantiate a sub one, then
 			// re-enter. Contravariant param recursion swaps the sides, so polarity needs no flag.
 			if quantified(sup) {

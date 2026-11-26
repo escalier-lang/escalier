@@ -36,7 +36,7 @@ func TestInferModuleTopLevelLetPolymorphism(t *testing.T) {
 
 	t.Run("two types of use", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			val id = fn (x) { return x }
+			fn id(x) { return x }
 			val a = id(5)
 			val b = id("hi")
 		`)
@@ -55,7 +55,7 @@ func TestInferModuleTopLevelLetPolymorphism(t *testing.T) {
 // every remaining variable coalesces to a concrete literal.
 func TestInferModuleIdentityPolymorphism(t *testing.T) {
 	src := `
-		val identity = fn (x) { return x }
+		fn identity(x) { return x }
 		fn main() -> undefined {
 			val pair = fn () { return [identity("hello"), identity(5)] }
 		}
@@ -78,7 +78,7 @@ func TestInferModuleIdentityPolymorphism(t *testing.T) {
 // confirming the merge preserves the input→output connection.
 func TestInferModuleInnerCapturesOuterParam(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		val outer = fn (y) {
+		fn outer(y) {
 			val getY = fn () { return y }
 			return [getY(), getY()]
 		}
@@ -97,7 +97,7 @@ func TestInferModuleBodyLevelLetPolymorphism(t *testing.T) {
 	f, errs := inferLocal(t, `
 		fn main() -> undefined {
 			val f = fn () {
-				val id = fn (x) { return x }
+				val id = fn <T>(x: T) { return x }
 				return [id(5), id("hi")]
 			}
 		}
@@ -120,7 +120,7 @@ func TestInferModuleDistinctParamsStayDistinct(t *testing.T) {
 // `unknown`. Per-call instantiation keeps k(1, "z") and k("s", true) at distinct types.
 func TestInferModulePolymorphicWithParameterOnlyVar(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		val k = fn (x, y) { return x }
+		fn k(x, y) { return x }
 		val a = k(1, "z")
 		val b = k("s", true)
 	`)

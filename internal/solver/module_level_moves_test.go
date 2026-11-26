@@ -423,7 +423,7 @@ fn g(p, c: boolean) -> number {
 			name: "passed to a closure's unannotated parameter",
 			src: `val xs: Array<number> = [1]
 fn g() -> undefined {
-	val h = fn(p) { val q = p }
+	val h = fn(p: Array<number>) { val q = p }
 	h(xs)
 }`,
 			want: []string{"4:4-4:6: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},

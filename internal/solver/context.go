@@ -244,6 +244,12 @@ type Context struct {
 	// resolved to. markHole fills it and freshenBoundHoles reads it.
 	holeVars set.Set[*soltype.TypeVarType]
 
+	// checkedFuncs holds each function type constrain has checked against another function
+	// type, the one it flows into. noteFuncChecked fills it, and a probe's rollback leaves it
+	// alone, since a trial check still had a function type to check against.
+	// checkParamTypes reads it.
+	checkedFuncs set.Set[*soltype.FuncType]
+
 	// frozenVars and frozenLts hold the type and lifetime variables reachable from a
 	// cached stdlib checker, when frozenVarChecks is set. loadAmbientChecker fills
 	// them, and every fork of the cached checker shares them along with the variables
@@ -255,6 +261,14 @@ type Context struct {
 	// them.
 	frozenClasses set.Set[*ClassDef]
 	frozenAliases set.Set[*AliasDef]
+}
+
+// noteFuncChecked records ft as checked against a function type it flows into.
+func (c *Context) noteFuncChecked(ft *soltype.FuncType) {
+	if c.checkedFuncs == nil {
+		c.checkedFuncs = set.NewSet[*soltype.FuncType]()
+	}
+	c.checkedFuncs.Add(ft)
 }
 
 // markHole records v as the variable a `_` resolved to.

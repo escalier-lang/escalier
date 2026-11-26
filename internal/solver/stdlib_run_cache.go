@@ -325,6 +325,7 @@ func (c *checker) fork(source ModuleSource, groupSource GroupSource, groups Pack
 	f.pendingMutations = slices.Clip(c.pendingMutations)
 	f.deferredArgBounds = slices.Clip(c.deferredArgBounds)
 	f.pendingReturns = slices.Clip(c.pendingReturns)
+	f.pendingParamTypes = slices.Clip(c.pendingParamTypes)
 	f.pendingOverrides = slices.Clip(c.pendingOverrides)
 	f.pendingImplements = slices.Clip(c.pendingImplements)
 	f.provisionalVariance = slices.Clip(c.provisionalVariance)
@@ -379,6 +380,7 @@ func (c *Context) fork() *Context {
 	f.slotVars = maps.Clone(c.slotVars)
 	f.unionCommits = maps.Clone(c.unionCommits)
 	f.holeVars = maps.Clone(c.holeVars)
+	f.checkedFuncs = maps.Clone(c.checkedFuncs)
 	return &f
 }
 

@@ -141,7 +141,10 @@ func TestInferAssignWeakVarWritesItsVariables(t *testing.T) {
 		fn f() -> undefined { id = fn (n: number) -> number { return n + 1 } }
 		val r = id("hello")
 	`)
-	require.Equal(t, []string{`4:14-4:21: cannot constrain "hello" <: number`}, errs)
+	require.Equal(t, []string{
+		"2:16-2:17: parameter 'x' has no type, and nothing the closure flows into supplies one; write its type",
+		`4:14-4:21: cannot constrain "hello" <: number`,
+	}, errs)
 	require.Equal(t, `fn (x: number | "hello") -> number | "hello"`, values["id"])
 }
 
@@ -160,7 +163,7 @@ func TestInferAssignBodyLevelWeakVarWritesItsVariables(t *testing.T) {
 	var k = fn (x) { return x }
 	k = fn (x) { return x }
 }`,
-			want: nil,
+			want: []string{"2:14-2:15: parameter 'x' has no type, and nothing the closure flows into supplies one; write its type"},
 		},
 		{
 			name: "an identical function with an unread parameter checks",
@@ -168,7 +171,10 @@ func TestInferAssignBodyLevelWeakVarWritesItsVariables(t *testing.T) {
 	var k = fn (x, y) { return x }
 	k = fn (x, y) { return x }
 }`,
-			want: nil,
+			want: []string{
+				"2:14-2:15: parameter 'x' has no type, and nothing the closure flows into supplies one; write its type",
+				"2:17-2:18: parameter 'y' has no type, and nothing the closure flows into supplies one; write its type",
+			},
 		},
 		{
 			name: "a reassignment settles the parameter for a later call",
@@ -207,7 +213,10 @@ func TestInferAssignBodyLevelWeakVarLeavesCapturedVariables(t *testing.T) {
 	k = fn (x) { return 5 }
 	return p
 }`)
-	require.Equal(t, []string{"3:22-3:23: cannot constrain 5 <: never"}, messagesWithSpan(t, errs))
+	require.Equal(t, []string{
+		"3:22-3:23: cannot constrain 5 <: never",
+		"2:14-2:15: parameter 'x' has no type, and nothing the closure flows into supplies one; write its type",
+	}, messagesWithSpan(t, errs))
 	require.Equal(t, "fn <T0>(p: T0) -> T0", values["f"])
 }
 

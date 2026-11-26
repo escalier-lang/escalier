@@ -455,6 +455,9 @@ type checker struct {
 	// binding var that is still unbounded while the body is walked, so the μ-knot the check reads
 	// does not exist yet when inferFunc finishes. checkCanReturn spells the ordering out.
 	pendingReturns []pendingReturn
+	// pendingParamTypes holds each unannotated closure parameter inferFunc has typed since the
+	// last checkParamTypes, which reports the ones no context gave a type.
+	pendingParamTypes []pendingParamType
 
 	// classShells holds the type parameters and declaration scope preBindClassTypeParams
 	// resolved for a class, keyed by its declaration. inferClassDecl reuses the entry rather

@@ -457,7 +457,7 @@ func inferSignature(t *testing.T, src string) (string, []int, []string) {
 func TestInferCallbackParamTakesCalleeType(t *testing.T) {
 	values, errs := inferAgainstTreeWithSpans(t, `
 		declare fn measure(f: fn (s: {n: number}) -> number) -> number
-		val g = fn (s) { return s.n }
+		fn g(s) { return s.n }
 		val r = measure(fn (s) { return s.n })
 	`)
 	require.Empty(t, errs)

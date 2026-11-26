@@ -126,7 +126,7 @@ func TestInferRecordBuilderIsPolymorphic(t *testing.T) {
 	}{
 		{
 			name: "a closure bound at module level",
-			src:  "val mk = fn (v) { return {a: v} }",
+			src:  "fn mk(v) { return {a: v} }",
 			want: "fn <T0>(v: T0) -> {a: T0}",
 		},
 	}

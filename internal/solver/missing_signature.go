@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -158,7 +159,7 @@ func (c *checker) checkDeclSignatures(d ast.Decl, funcSite, closureSite signatur
 		if ok {
 			suggest = func() string { return writtenSignature("fn "+d.Name.Name, &d.FuncSig, sig) }
 		}
-		c.checkSignature(&d.FuncSig, true, d.Name.Name, funcSite, d.Name, suggest)
+		c.checkSignature(&d.FuncSig, true, true, d.Name.Name, funcSite, d.Name, suggest)
 		c.checkPlaceholders(&d.FuncSig, d.Name.Name, funcSite, func() (soltype.FuncSignature, bool) {
 			return writtenParts(sig, ok)
 		})
@@ -177,7 +178,9 @@ func (c *checker) checkDeclSignatures(d ast.Decl, funcSite, closureSite signatur
 		if typed {
 			suggest = func() string { return writtenSignature("fn ", &fn.FuncSig, DeclSignature{Type: ft}) }
 		}
-		c.checkSignature(&fn.FuncSig, true, ident.Name, closureSite, d.Pattern, suggest)
+		// checkParamTypes reports a closure parameter left unannotated, since no context
+		// types a closure bound with no annotation.
+		c.checkSignature(&fn.FuncSig, false, true, ident.Name, closureSite, d.Pattern, suggest)
 		c.checkPlaceholders(&fn.FuncSig, ident.Name, closureSite, func() (soltype.FuncSignature, bool) {
 			return writtenParts(DeclSignature{Type: ft}, typed)
 		})
@@ -242,7 +245,7 @@ func (c *checker) checkMemberSignatures(class *ast.ClassDecl) {
 			continue
 		}
 		_, setter := elem.(*ast.SetterElem)
-		c.checkSignature(&fn.FuncSig, !setter, memberName(key), method, key, suggest)
+		c.checkSignature(&fn.FuncSig, true, !setter, memberName(key), method, key, suggest)
 		c.checkPlaceholders(&fn.FuncSig, memberName(key), method, rendered)
 	}
 }
@@ -352,12 +355,13 @@ func isIdentByte(b byte) bool {
 }
 
 // checkSignature reports sig, which name declares at site, when it leaves out a parameter
-// type, or its return type when needsReturn is set. node carries the blame span. suggest
+// type and needsParams is set, or its return type when needsReturn is set. node carries the
+// blame span. suggest
 // renders what to write when only the return type is left out, or the empty string when the
 // checker has nothing to suggest.
 func (c *checker) checkSignature(
 	sig *ast.FuncSig,
-	needsReturn bool,
+	needsParams, needsReturn bool,
 	name string,
 	site signatureSite,
 	node ast.Node,
@@ -365,7 +369,7 @@ func (c *checker) checkSignature(
 ) {
 	var params []string
 	for _, p := range sig.Params {
-		if p.TypeAnn == nil {
+		if needsParams && p.TypeAnn == nil {
 			written, _ := printer.Print(p.Pattern, printer.DefaultOptions())
 			params = append(params, written)
 		}
@@ -375,7 +379,9 @@ func (c *checker) checkSignature(
 		return
 	}
 	err := &MissingSignatureError{Name: name, Site: site, Params: params, MissingReturn: missingReturn, Node: node}
-	if len(params) == 0 {
+	// A suggested return type can name a type the parameters bind, so it is offered only
+	// once every parameter is written.
+	if !slices.ContainsFunc(sig.Params, func(p *ast.Param) bool { return p.TypeAnn == nil }) {
 		err.Suggestion = suggest()
 	}
 	c.report(err)

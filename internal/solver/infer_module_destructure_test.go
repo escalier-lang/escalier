@@ -97,11 +97,11 @@ func TestInferModuleDestructuring(t *testing.T) {
 			// shared monomorphic projection.
 			name: "leaf generalizes",
 			src: `
-				val {id} = {id: fn (x) { return x }}
+				val {id} = {id: fn <T>(x: T) { return x }}
 				val a = id(1)
 				val b = id("hi")
 			`,
-			values: map[string]string{"id": "fn <T0>(x: T0) -> T0", "a": "1", "b": `"hi"`},
+			values: map[string]string{"id": "fn <T>(x: T) -> T", "a": "1", "b": `"hi"`},
 		},
 		{
 			// An un-annotated `var` object destructuring widens each leaf to its

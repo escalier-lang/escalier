@@ -990,6 +990,9 @@ func (c *checker) inferComponent(
 	// closes a recursive cycle, so coalescing a return type now yields the μ-knot that cycle
 	// implies. Report each function in the component whose return type no finite value inhabits.
 	c.checkCanReturn()
+	// Every call and annotated binding in the component has constrained the closures that
+	// flow into it, so a closure parameter has every bound a context gives it.
+	c.checkParamTypes()
 	// Every call in the component has constrained the functions passed to it, so a callback's
 	// receiver has every lower bound it will get.
 	c.checkPendingRecvReads()
