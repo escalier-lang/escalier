@@ -419,6 +419,17 @@ func TestNonReturningRecursionThroughAlias(t *testing.T) {
 			src:  "type Next = {next: Next}\nfn f(x: Next) -> Next { return x }",
 		},
 		{
+			// The structure is built around a value the caller passed in.
+			name: "BuildsAroundAParameter",
+			src:  "type Next = {next: Next}\nfn f(x: Next) -> Next { return {next: x} }",
+		},
+		{
+			// A written return type whose body returns a call that never returns.
+			name: "ReturnsACallThatNeverReturns",
+			src:  "type Next = {next: Next}\ndeclare fn mk() -> Next\nfn f() -> Next { return mk() }",
+			expected: []string{nonReturningMsg("3:4-3:5", "f", "fn () -> Next")},
+		},
+		{
 			name: "AliasAlone",
 			src:  "type Next = {next: Next}",
 		},

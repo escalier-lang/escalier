@@ -1062,9 +1062,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// declaration. A bare `return` and a body with no return point are checked at the
 	// declaration.
 	returnPoints := []returnPoint{{site: node, t: ret}}
-	// bodyReturns holds the type each return point produces, for checkCanReturn to read when
-	// the return type is written. It stays nil otherwise.
-	var bodyReturns []soltype.Type
+	// bodyReturns holds the expression each return point returns, nil for a bare `return` or a
+	// body with none, for checkCanReturn to read when the return type is written. It stays nil
+	// otherwise.
+	var bodyReturns []ast.Expr
 	if len(collected) > 0 {
 		returnPoints = make([]returnPoint, len(collected))
 		for i, t := range collected {
@@ -1156,7 +1157,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			if hasBody {
 				for _, rp := range returnPoints {
 					c.constrain(rp.site, rp.t, annT) // body <: declared return
-					bodyReturns = append(bodyReturns, rp.t)
+					returned, _ := rp.site.(ast.Expr)
+					if rp.site == node {
+						returned = nil
+					}
+					bodyReturns = append(bodyReturns, returned)
 				}
 				// No caller can observe an annotated return the body never reaches, so warn
 				// and point at the annotation. A body that diverges into `never` on purpose

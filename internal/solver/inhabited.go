@@ -96,30 +96,53 @@ func (c *checker) checkCanReturn() {
 	}
 }
 
-// someReturnInhabited reports whether one of a function's return points produces a value a
-// finite construction can reach, given the types each one produces. A function whose return type
-// is written reaches here, so a return type the source writes as a recursive alias with no finite
-// value is checked through the values the body builds.
+// someReturnInhabited reports whether one of a function's return points can return, given
+// the expression each one returns. A function whose return type is written reaches here, so a
+// return type the source writes as a recursive alias with no finite value is checked through
+// what the body does.
 //
-// A return point whose whole type is an alias passes along a value someone else built, as
-// `return x` does for a parameter `x: Next`, so it counts as reaching one. One that builds
-// structure around such an alias does not, as `return {next: g()}` does when `g` returns `Next`.
-// A body with no return point, such as one that only throws, reaches none of them and counts as
-// returning, since it diverges rather than recursing.
-func (c *checker) someReturnInhabited(returns []soltype.Type) bool {
+// A return point that calls a function whose result no finite value has never gets past that
+// call, as `return {next: g()}` does when `g` returns `type Next = {next: Next}`. Any other
+// return point returns, `return {next: x}` for a parameter `x: Next` included, since it builds
+// its value from what it was given. A bare `return`, and a body that only throws, return too.
+func (c *checker) someReturnInhabited(returns []ast.Expr) bool {
 	if len(returns) == 0 {
 		return true
 	}
-	for _, t := range returns {
-		shown := coalesce(t, soltype.Positive)
-		if _, passed := shown.(*soltype.AliasType); passed {
-			return true
-		}
-		if finitelyInhabitedGiven(shown, c.aliasInhabited) {
+	for _, e := range returns {
+		if e == nil || !c.callsNonReturning(e) {
 			return true
 		}
 	}
 	return false
+}
+
+// callsNonReturning reports whether e calls a function whose result no finite value has. A
+// function expression in e runs only when called, so its body is not searched.
+func (c *checker) callsNonReturning(e ast.Expr) bool {
+	finder := &nonReturningCallFinder{c: c}
+	e.Accept(finder)
+	return finder.found
+}
+
+// nonReturningCallFinder records whether an expression calls a function whose result no finite
+// value has.
+type nonReturningCallFinder struct {
+	ast.DefaultVisitor
+	c     *checker
+	found bool
+}
+
+func (v *nonReturningCallFinder) EnterExpr(e ast.Expr) bool {
+	switch e := e.(type) {
+	case *ast.FuncExpr:
+		return false
+	case *ast.CallExpr:
+		if t := v.c.info.TypeOf(e); t != nil && !finitelyInhabitedGiven(coalesce(t, soltype.Positive), v.c.aliasInhabited) {
+			v.found = true
+		}
+	}
+	return !v.found
 }
 
 // pendingReturn is one function body waiting for checkCanReturn.
@@ -133,9 +156,9 @@ type pendingReturn struct {
 	name     string
 	fn       *soltype.FuncType
 	genLevel int
-	// bodyReturns holds the type each return point produces, when the function's return type
-	// is written, and is nil otherwise.
-	bodyReturns []soltype.Type
+	// bodyReturns holds the expression each return point returns, nil for a bare `return` or a
+	// body with none, when the function's return type is written. It is nil otherwise.
+	bodyReturns []ast.Expr
 }
 
 // queueReturnCheck queues one body-carrying function for checkCanReturn. node is the *ast.FuncDecl
@@ -148,7 +171,7 @@ type pendingReturn struct {
 // A queued entry is rolled back with the probe that recorded it, mirroring the errs snapshot
 // openProbe takes. A discarded trial must leave no diagnostic behind, and the queue turns into
 // diagnostics after the trial is over.
-func (c *checker) queueReturnCheck(node ast.Node, ft *soltype.FuncType, genLevel int, memberName string, bodyReturns []soltype.Type) {
+func (c *checker) queueReturnCheck(node ast.Node, ft *soltype.FuncType, genLevel int, memberName string, bodyReturns []ast.Expr) {
 	site, name := node, memberName
 	if fd, isDecl := node.(*ast.FuncDecl); isDecl && fd.Name != nil {
 		site, name = fd.Name, fd.Name.Name
