@@ -169,14 +169,21 @@ func Apply(contents string, edits []Edit) string {
 // writes is kept as written, unless it needs a lifetime the edits add to the binder list, in
 // which case it is rewritten. ok is false when the inferred signature cannot be written into
 // the source:
-// for a function type that carries its own lifetime, for a parameter list whose length
-// differs from the inferred one, and for a binder list that needs rewriting while the
-// source writes a `where` clause or declares a lifetime that elision assigns.
+// for a parameter the source leaves untyped, for a function type that carries its own
+// lifetime, for a parameter list whose length differs from the inferred one, and for a binder
+// list that needs rewriting while the source writes a `where` clause or declares a lifetime
+// that elision assigns.
 func (target Target) Edits(contents string) ([]Edit, bool) {
 	ft := target.Signature.Type
 	sig := target.Sig
 	if ft.Lt != nil || len(ft.Params) != len(sig.Params) {
 		return nil, false
+	}
+	// The checker types an untyped parameter as an error, so it has no type to write.
+	for _, p := range sig.Params {
+		if p.TypeAnn == nil {
+			return nil, false
+		}
 	}
 	rendered := target.Signature.PrintWritten()
 	var edits []Edit
@@ -187,40 +194,23 @@ func (target Target) Edits(contents string) ([]Edit, bool) {
 	replaceSpan := func(span ast.Span, text string) { replace(span.Start.Offset, span.End.Offset, text) }
 
 	// The binder list is rewritten when the inferred signature binds a lifetime the source
-	// does not declare, or a type parameter the source does not write while it leaves a part
-	// out, and every part that names one of the added lifetimes is rewritten with it.
+	// does not declare, and every part that names one of the added lifetimes is rewritten
+	// with it.
 	declared := set.NewSet[string]()
 	for _, lp := range sig.LifetimeParams {
 		declared.Add("'" + lp.Name)
 	}
-	writtenTypeParams := set.NewSet[string]()
-	for _, tp := range sig.TypeParams {
-		writtenTypeParams.Add(tp.Name)
-	}
-	// A type parameter the source does not write can appear only in a part the source
-	// leaves out, so a signature that writes every parameter type and its return type gets
-	// no binder added for one.
-	inferred := sig.Return == nil
-	for _, p := range sig.Params {
-		inferred = inferred || p.TypeAnn == nil
-	}
 	renderedNames := set.NewSet[string]()
 	var added []*regexp.Regexp
-	addsTypeParam := false
 	for _, b := range rendered.Binders {
 		name, _, _ := strings.Cut(b, ":")
 		name = strings.TrimSpace(name)
 		renderedNames.Add(name)
-		switch {
-		case strings.HasPrefix(name, "'"):
-			if !declared.Contains(name) {
-				added = append(added, regexp.MustCompile(regexp.QuoteMeta(name)+`\b`))
-			}
-		case inferred && !writtenTypeParams.Contains(name):
-			addsTypeParam = true
+		if strings.HasPrefix(name, "'") && !declared.Contains(name) {
+			added = append(added, regexp.MustCompile(regexp.QuoteMeta(name)+`\b`))
 		}
 	}
-	if len(added) > 0 || addsTypeParam {
+	if len(added) > 0 {
 		// A rewritten list would repeat a `where` clause's bounds, and would drop a lifetime
 		// the source declares that elision assigns, which the parts kept as written still
 		// name.
@@ -256,17 +246,7 @@ func (target Target) Edits(contents string) ([]Edit, bool) {
 		replaceSpan(target.Receiver.Span_, rendered.Receiver)
 	}
 	for i, p := range sig.Params {
-		switch {
-		case p.TypeAnn == nil:
-			end := p.Pattern.Span().End.Offset
-			if p.Optional {
-				var ok bool
-				if end, ok = skipPast(contents, end, '?', ""); !ok {
-					return nil, false
-				}
-			}
-			insert(end, ": "+rendered.Params[i])
-		case namesAdded(rendered.Params[i]):
+		if namesAdded(rendered.Params[i]) {
 			replaceSpan(p.TypeAnn.Span(), rendered.Params[i])
 		}
 	}
