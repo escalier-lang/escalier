@@ -26,8 +26,8 @@ export async fn fetchJSON(url: string) -> Promise<unknown, _> {
 // The parsed body is `unknown`. A `match` arm with a type annotation narrows it
 // to the shape the page expects, and any other shape rejects with `ShapeError`.
 // Awaiting `fetchJSON` adds its `HttpError` to this function's rejection type,
-// so the inferred type is `Promise<string, HttpError | ShapeError>`.
-export async fn loadTitle(id: number) -> Promise<_, _> {
+// so its `_` infers `HttpError | ShapeError`.
+export async fn loadTitle(id: number) -> Promise<string, _> {
     val body = await fetchJSON(`https://jsonplaceholder.typicode.com/todos/${id}`)
     return match body {
         todo: {title: string, ...} => todo.title,

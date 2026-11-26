@@ -2,4 +2,4 @@ export declare function conditionalFetch(useCache: boolean, url: string): Promis
 export declare function fetchData(url: string): Promise<string>;
 export declare function fetchMultiple(url1: string, url2: string): Promise<string>;
 export declare function fetchWithAwait(url: string): Promise<string>;
-export declare function fetchWithError(shouldError: boolean): Promise<"success">;
+export declare function fetchWithError(shouldError: boolean): Promise<string>;

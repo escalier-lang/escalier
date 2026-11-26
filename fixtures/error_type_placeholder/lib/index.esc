@@ -1,0 +1,10 @@
+declare fn fail(n: number) -> number throws string
+declare fn load(n: number) -> Promise<number, string>
+
+export fn parse(n: number) -> number throws _ {
+    return fail(n)
+}
+
+export async fn fetch(n: number) -> Promise<number, _> {
+    return await load(n)
+}

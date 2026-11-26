@@ -262,7 +262,11 @@ classes are inferred:
 | `throws &'a mut _`, `Promise<T, &'a mut _>` | An inferred error behind a written mutable borrow |
 | `throws NetError`, `Promise<T, NetError>` | A written error type |
 
-The type `_` infers must hold no lifetime. A borrowed error has its borrow
+A `_` may also stand for part of a written error type, as in
+`throws Array<_>`. Each `_` in the error type infers the part it stands for,
+under the same rule.
+
+The type each `_` infers must hold no lifetime. A borrowed error has its borrow
 and lifetime written, as `&'a _` writes them. An error that raises a borrow
 comes from awaiting a promise someone else may await too, as A6 in #2430
 states, so the borrow is real, and the signature says so.

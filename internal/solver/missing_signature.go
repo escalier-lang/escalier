@@ -44,7 +44,13 @@ type MissingSignatureError struct {
 	// a parameter type is also left out, since the checker has nothing to suggest once it no
 	// longer infers parameter types.
 	Suggestion string
-	// Node is the name the function is declared under, which carries the blame span.
+	// Placeholder reports that the signature writes `_` outside its error type. Params then
+	// names the one parameter whose type writes it, or MissingReturn reports that the return
+	// type does, and neither is set when another part of the signature does. Suggestion holds
+	// the inferred type to write in its place, or is empty when the checker has none.
+	Placeholder bool
+	// Node is the name the function is declared under, or the misplaced `_` when Placeholder
+	// is set. It carries the blame span.
 	Node ast.Node
 }
 
@@ -67,6 +73,24 @@ func (e *MissingSignatureError) Message() string {
 		where, closure = "is a closure at a script's top level", true
 	}
 	msg := "'" + e.Name + "' " + where + ", so "
+	if e.Placeholder {
+		switch {
+		case len(e.Params) > 0:
+			msg += "parameter '" + e.Params[0] + "' needs a type in place of `_`"
+		case e.MissingReturn:
+			msg += "its return type may write `_` only for its error type"
+		default:
+			msg += "its signature may write `_` only for its error type"
+		}
+		if e.Suggestion == "" {
+			return msg
+		}
+		msg += "; write `" + e.Suggestion + "`"
+		if closure {
+			msg += " on the closure, or annotate '" + e.Name + "'"
+		}
+		return msg
+	}
 	if len(e.Params) > 0 {
 		quoted := make([]string, len(e.Params))
 		for i, p := range e.Params {
@@ -135,6 +159,9 @@ func (c *checker) checkDeclSignatures(d ast.Decl, funcSite, closureSite signatur
 			suggest = func() string { return writtenSignature("fn "+d.Name.Name, &d.FuncSig, sig) }
 		}
 		c.checkSignature(&d.FuncSig, true, d.Name.Name, funcSite, d.Name, suggest)
+		c.checkPlaceholders(&d.FuncSig, d.Name.Name, funcSite, func() (soltype.FuncSignature, bool) {
+			return writtenParts(sig, ok)
+		})
 	case *ast.ClassDecl:
 		c.checkMemberSignatures(d)
 	case *ast.VarDecl:
@@ -146,11 +173,24 @@ func (c *checker) checkDeclSignatures(d ast.Decl, funcSite, closureSite signatur
 			return
 		}
 		suggest := func() string { return "" }
-		if ft, ok := c.info.TypeOf(d.Pattern).(*soltype.FuncType); ok {
+		ft, typed := c.info.TypeOf(d.Pattern).(*soltype.FuncType)
+		if typed {
 			suggest = func() string { return writtenSignature("fn ", &fn.FuncSig, DeclSignature{Type: ft}) }
 		}
 		c.checkSignature(&fn.FuncSig, true, ident.Name, closureSite, d.Pattern, suggest)
+		c.checkPlaceholders(&fn.FuncSig, ident.Name, closureSite, func() (soltype.FuncSignature, bool) {
+			return writtenParts(DeclSignature{Type: ft}, typed)
+		})
 	}
+}
+
+// writtenParts returns sig's parts as PrintWritten renders them. It returns false, and no
+// parts, when ok is false or sig has no type.
+func writtenParts(sig DeclSignature, ok bool) (soltype.FuncSignature, bool) {
+	if !ok || sig.Type == nil {
+		return soltype.FuncSignature{}, false
+	}
+	return sig.PrintWritten(), true
 }
 
 // checkMemberSignatures reports each method, getter and setter of class whose signature is
@@ -160,11 +200,15 @@ func (c *checker) checkMemberSignatures(class *ast.ClassDecl) {
 		var key ast.ObjKey
 		var fn *ast.FuncExpr
 		suggest := func() string { return "" }
+		var rendered func() (soltype.FuncSignature, bool)
 		// checkSignature calls suggest only for a member that leaves out just its return
 		// type, so the lookups of the member's registered type run for those members alone.
 		switch e := elem.(type) {
 		case *ast.MethodElem:
 			key, fn = e.Name, e.Fn
+			rendered = func() (soltype.FuncSignature, bool) {
+				return writtenParts(c.info.MethodSignature(class, e))
+			}
 			suggest = func() string {
 				sig, ok := c.info.MethodSignature(class, e)
 				if !ok {
@@ -174,8 +218,12 @@ func (c *checker) checkMemberSignatures(class *ast.ClassDecl) {
 			}
 		case *ast.GetterElem:
 			key, fn = e.Name, e.Fn
+			rendered = func() (soltype.FuncSignature, bool) {
+				t, ok := c.accessorType(class, e.Name, e.Static, false)
+				return soltype.FuncSignature{Ret: t}, ok
+			}
 			suggest = func() string {
-				t, ok := c.getterType(class, e)
+				t, ok := c.accessorType(class, e.Name, e.Static, false)
 				if !ok {
 					return ""
 				}
@@ -183,6 +231,10 @@ func (c *checker) checkMemberSignatures(class *ast.ClassDecl) {
 			}
 		case *ast.SetterElem:
 			key, fn = e.Name, e.Fn
+			rendered = func() (soltype.FuncSignature, bool) {
+				t, ok := c.accessorType(class, e.Name, e.Static, true)
+				return soltype.FuncSignature{Params: []string{t}}, ok
+			}
 		default:
 			continue
 		}
@@ -191,6 +243,7 @@ func (c *checker) checkMemberSignatures(class *ast.ClassDecl) {
 		}
 		_, setter := elem.(*ast.SetterElem)
 		c.checkSignature(&fn.FuncSig, !setter, memberName(key), method, key, suggest)
+		c.checkPlaceholders(&fn.FuncSig, memberName(key), method, rendered)
 	}
 }
 
@@ -207,28 +260,41 @@ func memberName(key ast.ObjKey) string {
 	return written
 }
 
-// getterType renders the type the getter g of class reads, under the names of the class's
-// type and lifetime parameters. ok is false when the checker registered no such getter.
-func (c *checker) getterType(class *ast.ClassDecl, g *ast.GetterElem) (string, bool) {
+// accessorType renders the type an accessor of class named key reads or writes, under the
+// names of the class's type and lifetime parameters. static picks the class's static side,
+// and setter picks the setter's parameter type over the getter's type. ok is false when the
+// checker registered no such accessor.
+func (c *checker) accessorType(class *ast.ClassDecl, key ast.ObjKey, static, setter bool) (string, bool) {
 	instance, ok := c.info.TypeOf(class.Name).(*soltype.ClassType)
 	if !ok {
 		return "", false
 	}
 	def, ok := c.ctx.classDef(instance.Name)
-	name, named := objKeyName(g.Name)
+	name, named := objKeyName(key)
 	if !ok || !named {
 		return "", false
 	}
 	members := def.Body
-	if g.Static {
+	if static {
 		members = def.Static
 	}
 	if members == nil {
 		return "", false
 	}
 	for _, elem := range members.Elems {
-		if ge, isGetter := elem.(*soltype.GetterElem); isGetter && ge.Name == name {
-			return soltype.PrintWithDeclaredParams(ge.Type, def.TypeParams, def.LifetimeParams), true
+		var t soltype.Type
+		switch elem := elem.(type) {
+		case *soltype.GetterElem:
+			if !setter && elem.Name == name {
+				t = elem.Type
+			}
+		case *soltype.SetterElem:
+			if setter && elem.Name == name && elem.Param != nil {
+				t = elem.Param.Type
+			}
+		}
+		if t != nil {
+			return soltype.PrintWithDeclaredParams(t, def.TypeParams, def.LifetimeParams), true
 		}
 	}
 	return "", false

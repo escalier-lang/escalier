@@ -696,6 +696,22 @@ func TestHoverFromSolver(t *testing.T) {
 			expected: escalierCode("x: 5"),
 		},
 		{
+			name: "ThrowsPlaceholder",
+			files: map[string]string{
+				"lib/a.esc": "declare fn fail() -> number throws string\nexport fn f() -> number throws _ { return fail() }",
+			},
+			open: "lib/a.esc", line: 1, col: 10,
+			expected: escalierCode("fn f() -> number throws string"),
+		},
+		{
+			name: "PromiseErrorPlaceholder",
+			files: map[string]string{
+				"lib/a.esc": "declare fn fail() -> Promise<number, string>\nexport async fn g() -> Promise<number, _> { return await fail() }",
+			},
+			open: "lib/a.esc", line: 1, col: 16,
+			expected: escalierCode("fn g() -> Promise<number, string>"),
+		},
+		{
 			name:  "ValMutBinding",
 			files: map[string]string{"bin/main.esc": "val mut p = {x: 1}"},
 			open:  "bin/main.esc", line: 0, col: 8,
