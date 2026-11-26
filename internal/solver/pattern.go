@@ -241,7 +241,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 	case *ast.IdentPat:
 		t := scrutinee
 		if purpose == forBinding {
-			t = c.applyLeafExtras(scope, lvl, p, scrutinee, concrete, p.TypeAnn, p.Default)
+			t, concrete = c.applyLeafExtras(scope, lvl, p, scrutinee, concrete, p.TypeAnn, p.Default)
 		}
 		t = c.applyBindMode(lvl, p, leafMut(p.Mutable, purpose), t, c.concreteLeaf(concrete, p.TypeAnn), scrutineeMode)
 		c.bindLeaf(scope, p.Name, t, p, leafTypes, emit, purpose)
@@ -327,10 +327,11 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				// absent, so the requirement must not demand it.
 				beta := c.readPatternField(e, lvl, scrutinee, e.Key.Name, e.Default != nil, purpose)
 				var t soltype.Type = beta
+				leafConcrete := fieldConcrete(concrete, e.Key.Name)
 				if purpose == forBinding {
-					t = c.applyLeafExtras(scope, lvl, e, beta, fieldConcrete(concrete, e.Key.Name), e.TypeAnn, e.Default)
+					t, leafConcrete = c.applyLeafExtras(scope, lvl, e, beta, leafConcrete, e.TypeAnn, e.Default)
 				}
-				t = c.applyBindMode(lvl, e, leafMut(e.Mutable, purpose), t, c.concreteLeaf(fieldConcrete(concrete, e.Key.Name), e.TypeAnn), scrutineeMode)
+				t = c.applyBindMode(lvl, e, leafMut(e.Mutable, purpose), t, c.concreteLeaf(leafConcrete, e.TypeAnn), scrutineeMode)
 				c.bindLeaf(scope, e.Key.Name, t, e, leafTypes, emit, purpose)
 				named.Add(e.Key.Name)
 				fields = append(fields, &soltype.ObjectPatField{
@@ -1422,7 +1423,11 @@ func (c *checker) freshClassInstance(ct *soltype.ClassType, lvl int) *soltype.Cl
 // `[string | undefined]` with `[x = "hello"]` binds `x` as `string`. concrete is the
 // leaf's statically known type, the same value bindPatMode receives, or nil. Without an
 // annotation the union is read from it, since leafType is often a projection variable.
-func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, leafType, concrete soltype.Type, typeAnn ast.TypeAnn, def ast.Expr) soltype.Type {
+//
+// The second result is the leaf's statically known type once the default applies. It is
+// the narrowed union when concrete is non-nil and the default removed `undefined` from it,
+// and concrete otherwise.
+func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, leafType, concrete soltype.Type, typeAnn ast.TypeAnn, def ast.Expr) (soltype.Type, soltype.Type) {
 	bound := leafType
 	shape := concrete
 	if typeAnn != nil {
@@ -1446,9 +1451,14 @@ func (c *checker) applyLeafExtras(scope *Scope, lvl int, node ast.Node, leafType
 		c.markOpenVar(bound)
 		if narrowed {
 			bound = newUnion(c.ctx, []soltype.Type{present, defT})
+			// Without a known shape, present came from leafType's lower bounds, which can
+			// still grow. The leaf's type stays unknown so it binds through a variable.
+			if concrete != nil {
+				return bound, bound
+			}
 		}
 	}
-	return bound
+	return bound, concrete
 }
 
 // definedMembers returns the members of t other than `undefined`, and false when t is not
@@ -1548,19 +1558,35 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 // The leaf's binding may write every owned layer of the value, so the value's literals widen
 // to their primitives, the destructuring analogue of `val mut q = p` in inferVarDeclInit.
 // When the leaf's projected type is statically known, the result is that type widened, so
-// `val [mut p] = [{y: 1}]` binds `p: {y: number}`.
+// `val [mut p] = [{y: 1}]` binds `p: {y: number}`. A primitive or function has no layer to
+// write, so it keeps its literal, mirroring `val mut a = 1`. A union applies both rules
+// member by member, so `p: [{a: 1} | "s"]` with `val [mut x] = p` binds
+// `x: {a: number} | "s"`. When no member has a layer, the leaf keeps its leaf type.
 //
 // When the projected type is not statically known, concrete is nil. The leaf type then flows
 // into the variable mutableSlotOf returns.
 func (c *checker) widenOwnedLeaf(lvl int, node ast.Node, leafType, concrete soltype.Type) soltype.Type {
 	if concrete != nil {
-		widened := widen(concrete)
-		if _, ok := widened.(soltype.RefInner); !ok {
-			// A primitive or function leaf has no layer to write, so it keeps its leaf type,
-			// mirroring `val mut a = 1` keeping the literal.
+		members := []soltype.Type{concrete}
+		if union, ok := concrete.(*soltype.UnionType); ok {
+			members = union.Types
+		}
+		widened := make([]soltype.Type, len(members))
+		hasLayer := false
+		for i, member := range members {
+			widened[i] = member
+			if w, ok := widen(member).(soltype.RefInner); ok {
+				widened[i] = w
+				hasLayer = true
+			}
+		}
+		if !hasLayer {
 			return leafType
 		}
-		return widened
+		if len(widened) == 1 {
+			return widened[0]
+		}
+		return newUnion(c.ctx, widened)
 	}
 	return c.mutableSlotOf(lvl, node, leafType)
 }

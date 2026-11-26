@@ -310,6 +310,8 @@ func TestMatchBorrowedScrutineeMutLeaf(t *testing.T) {
 // as it binds, so a write later in the same body checks against the widened type. Each case
 // returns the binding, so its signature shows the type the binding renders at. A leaf with an
 // inline annotation binds at the annotation as written, and a plain leaf keeps its literal.
+// A `mut` leaf whose projected type is a union applies those rules to each member, so an
+// object member widens and a literal member keeps its literal.
 func TestMutLeafWidensEagerly(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -359,6 +361,54 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 			}`,
 			sig: "fn (p: {x: {a: number}} | {y: string}) -> {a: number}",
 		},
+		"UnionLeafWidensEachMember": {
+			src: `
+			fn f(p: [{a: 1} | {b: "s"}]) {
+				val [mut x] = p
+				return x
+			}`,
+			sig: `fn (p: [{a: 1} | {b: "s"}]) -> {a: number} | {b: string}`,
+		},
+		"LiteralLeafKeepsLiteral": {
+			src: `
+			fn f(p: {x: "a"}) {
+				val {mut x} = p
+				return x
+			}`,
+			sig: `fn (p: {x: "a"}) -> "a"`,
+		},
+		"LiteralUnionFieldKeepsLiterals": {
+			src: `
+			fn f(p: {x: "a" | "b"}) {
+				val {mut x} = p
+				return x
+			}`,
+			sig: `fn (p: {x: "a" | "b"}) -> "a" | "b"`,
+		},
+		"LiteralUnionTupleElemKeepsLiterals": {
+			src: `
+			fn f(p: [1 | 2]) {
+				val [mut x] = p
+				return x
+			}`,
+			sig: "fn (p: [1 | 2]) -> 1 | 2",
+		},
+		"MixedLiteralUnionKeepsLiterals": {
+			src: `
+			fn f(p: [1 | "a"]) {
+				val [mut x] = p
+				return x
+			}`,
+			sig: `fn (p: [1 | "a"]) -> 1 | "a"`,
+		},
+		"MixedUnionWidensOnlyObjectMember": {
+			src: `
+			fn f(p: [{a: 1} | "s"]) {
+				val [mut x] = p
+				return x
+			}`,
+			sig: `fn (p: [{a: 1} | "s"]) -> {a: number} | "s"`,
+		},
 		"PlainLeafDefaultKeepsLiteral": {
 			src: `
 			fn f(p) {
@@ -384,4 +434,194 @@ func TestMutLeafDefaultSignature(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f(mut q = {a: 1}) -> number { return q.a }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (q?: {a: number}) -> number", values["f"])
+}
+
+// TestDefaultedLeafDropsUndefined covers a defaulted leaf whose position the scrutinee types
+// as a union with `undefined`, for a plain leaf and a `mut` leaf. The default replaces an
+// `undefined` value, so each binding renders without `undefined`. A case that returns the
+// binding shows the type it renders at in the signature. A `mut` case also writes through
+// the binding, which checks against that type, and a write outside it is rejected.
+//
+// The default replaces only `undefined`, so a `null` member stays in the binding's type. The
+// `Null` cases cover a union with `null`, alone and beside `undefined`, and a write through a
+// binding that may still hold `null`, which is rejected.
+func TestDefaultedLeafDropsUndefined(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		sig  string
+		want []string
+	}{
+		"TupleElemPlain": {
+			src: `
+			fn f(p: [{a: number} | undefined]) {
+				val [x = {a: 1}] = p
+				return x
+			}`,
+			sig: "fn (p: [{a: number} | undefined]) -> {a: number}",
+		},
+		"TupleElemMut": {
+			src: `
+			fn f(p: [{a: number} | undefined]) {
+				val [mut x = {a: 1}] = p
+				x.a = 2
+				return x
+			}`,
+			sig: "fn (p: [{a: number} | undefined]) -> {a: number}",
+		},
+		"TupleElemPrimPlain": {
+			src: `
+			fn f(p: [number | undefined]) {
+				val [x = 0] = p
+				return x
+			}`,
+			sig: "fn (p: [number | undefined]) -> number",
+		},
+		"TupleElemPrimMut": {
+			src: `
+			fn f(p: [number | undefined]) {
+				val [mut x = 0] = p
+				return x
+			}`,
+			sig: "fn (p: [number | undefined]) -> number",
+		},
+		"FieldPlain": {
+			src: `
+			fn f(p: {x: {a: number} | undefined}) {
+				val {x = {a: 1}} = p
+				return x
+			}`,
+			sig: "fn (p: {x: {a: number} | undefined}) -> {a: number}",
+		},
+		"FieldMut": {
+			src: `
+			fn f(p: {x: {a: number} | undefined}) {
+				val {mut x = {a: 1}} = p
+				x.a = 2
+				return x
+			}`,
+			sig: "fn (p: {x: {a: number} | undefined}) -> {a: number}",
+		},
+		"FieldMutDefaultOfOtherType": {
+			src: `
+			fn f(p: {x: {a: number} | undefined}) {
+				val {mut x = {a: 1, b: "s"}} = p
+				x.a = 2
+				return x
+			}`,
+			sig: "fn (p: {x: {a: number} | undefined}) -> {a: number} | {a: number, b: string}",
+		},
+		"FieldMutRejectsWriteOutsideNarrowedType": {
+			src: `
+			fn f(p: {x: {a: number} | undefined}) {
+				val {mut x = {a: 1}} = p
+				x.b = 2
+			}`,
+			sig:  "fn (p: {x: {a: number} | undefined}) -> undefined",
+			want: []string{"4:5-4:12: object is missing property: b"},
+		},
+		"KeyValueFieldMut": {
+			src: `
+			fn f(p: {x: {a: number} | undefined}) {
+				val {x: mut y = {a: 1}} = p
+				y.a = 2
+				return y
+			}`,
+			sig: "fn (p: {x: {a: number} | undefined}) -> {a: number}",
+		},
+		"OptionalFieldPlain": {
+			src: `
+			fn f(p: {x?: {a: number}}) {
+				val {x = {a: 1}} = p
+				return x
+			}`,
+			sig: "fn (p: {x?: {a: number}}) -> {a: number}",
+		},
+		"OptionalFieldMut": {
+			src: `
+			fn f(p: {x?: {a: number}}) {
+				val {mut x = {a: 1}} = p
+				x.a = 2
+				return x
+			}`,
+			sig: "fn (p: {x?: {a: number}}) -> {a: number}",
+		},
+		"NestedTupleInFieldPlain": {
+			src: `
+			fn f(p: {q: [{a: number} | undefined]}) {
+				val {q: [x = {a: 1}]} = p
+				return x
+			}`,
+			sig: "fn (p: {q: [{a: number} | undefined]}) -> {a: number}",
+		},
+		"NestedTupleInFieldMut": {
+			src: `
+			fn f(p: {q: [{a: number} | undefined]}) {
+				val {q: [mut x = {a: 1}]} = p
+				x.a = 2
+				return x
+			}`,
+			sig: "fn (p: {q: [{a: number} | undefined]}) -> {a: number}",
+		},
+		"MatchArmFieldMut": {
+			src: `
+			fn f(p: {x: {a: number} | undefined}) {
+				return match p {
+					{mut x = {a: 1}} => {
+						x.a = 2
+						x
+					}
+				}
+			}`,
+			sig: "fn (p: {x: {a: number} | undefined}) -> {a: number}",
+		},
+		"TupleElemPrimNullPlain": {
+			src: `
+			fn f(p: [number | null]) {
+				val [x = 0] = p
+				return x
+			}`,
+			sig: "fn (p: [number | null]) -> number | null",
+		},
+		"TupleElemPrimNullAndUndefinedPlain": {
+			src: `
+			fn f(p: [number | null | undefined]) {
+				val [x = 0] = p
+				return x
+			}`,
+			sig: "fn (p: [number | null | undefined]) -> number | null",
+		},
+		"TupleElemNullMut": {
+			src: `
+			fn f(p: [{a: number} | null]) {
+				val [mut x = {a: 1}] = p
+				return x
+			}`,
+			sig: "fn (p: [{a: number} | null]) -> {a: number} | null",
+		},
+		"TupleElemNullAndUndefinedMut": {
+			src: `
+			fn f(p: [{a: number} | null | undefined]) {
+				val [mut x = {a: 1}] = p
+				return x
+			}`,
+			sig: "fn (p: [{a: number} | null | undefined]) -> {a: number} | null",
+		},
+		"FieldNullMutRejectsWriteThroughNull": {
+			src: `
+			fn f(p: {x: {a: number} | null}) {
+				val {mut x = {a: 1}} = p
+				x.a = 2
+				return x
+			}`,
+			sig:  "fn (p: {x: {a: number} | null}) -> {a: number} | null",
+			want: []string{"4:5-4:12: cannot constrain null <: object"},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+			require.Equal(t, tt.sig, values["f"])
+		})
+	}
 }
