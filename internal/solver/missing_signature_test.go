@@ -222,6 +222,6 @@ func TestMissingSignature(t *testing.T) {
 // TestMissingSignatureOff asserts that a run without Options.RequireSignatures reports no
 // MissingSignatureError.
 func TestMissingSignatureOff(t *testing.T) {
-	res := InferModuleAgainstStdlib(parseModule(t, `fn read(p) { return p.x }`), committedTree, Options{})
+	res := InferModuleAgainstStdlib(parseModule(t, `fn read(p: {x: number}) { return p.x }`), committedTree, Options{})
 	require.Empty(t, res.Errors)
 }

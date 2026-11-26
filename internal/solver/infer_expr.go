@@ -711,8 +711,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				c.queueParamTypeCheck(fe, p, pat, v)
 			default:
 				// A declaration or class member is typed by its own signature. The missing
-				// signature check reports the parameter when signatures are required.
-				pt = &soltype.UnknownType{}
+				// signature check reports the parameter when signatures are required. The
+				// error type accepts every use, so the body reports nothing further.
+				pt = &soltype.ErrorType{}
 				if !c.requireSignatures {
 					c.report(&MissingParamTypeError{Param: p, Name: writtenParamName(pat), Declared: true})
 				}

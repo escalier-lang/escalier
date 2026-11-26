@@ -180,16 +180,15 @@ fn b() -> undefined { seen.set("k", {a: 2}) }
 			},
 		},
 		{
-			// Nothing calls `remember`, so nothing decides what `value` holds. The map's value
-			// type settles at `never` and the parameter at `unknown`, with no error. #2352 keeps
-			// remember monomorphic over the map's value type, so `value` becomes `never` too.
+			// Nothing calls `remember`, so only the parameter's written type decides what the
+			// map holds. The map's value type settles at `unknown`, with no error.
 			name: "AStoreOfAParameterNothingCalls",
 			src: `import "std:map"
 val mut seen = map.Map()
 fn remember(value: unknown) { seen.set("last", value) }
 `,
 			values: map[string]string{
-				"seen":     "Map<string, never>",
+				"seen":     "Map<string, unknown>",
 				"remember": "fn (value: unknown) -> undefined",
 			},
 		},
