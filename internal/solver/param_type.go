@@ -58,6 +58,12 @@ func (c *checker) checkParamTypes() {
 			}
 		}
 		c.report(err)
+		// The parameter has no type, so it recovers as `unknown`. A later component that uses
+		// the closure, such as a function that assigns a module-level `var` holding it, then
+		// checks against `unknown` rather than deciding the parameter's type. What pinning
+		// raises in the closure's own body is a consequence of the error reported above, so it
+		// is dropped.
+		c.ctx.constrain(&soltype.UnknownType{}, p.v, newSeenPairs(), false)
 	}
 }
 
