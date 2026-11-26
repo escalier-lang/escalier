@@ -2004,13 +2004,16 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 	// only when neither is known. borrowInnerOf peels owned-mut cells (deep-mut
 	// output) but leaves borrow fields intact so they keep their own lifetime.
 	var inner soltype.RefInner = fieldVar
+	var fieldBorrow *soltype.RefType
 	if cachedT != nil {
 		if ri, ok := borrowInnerOf(cachedT); ok {
 			inner = ri
 		}
 	} else if recvObj, ok := recvCarrier.(*soltype.ObjectType); ok {
 		if prop, ok := recvObj.Prop(propName); ok {
-			if ri, ok := borrowInnerOf(prop.Type); ok {
+			if ref, isRef := prop.Type.(*soltype.RefType); isRef {
+				fieldBorrow = ref
+			} else if ri, ok := borrowInnerOf(prop.Type); ok {
 				inner = ri
 			}
 		}
@@ -2020,6 +2023,16 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 		lt = c.ctx.freshLifetime(lvl)
 	}
 	target := &soltype.RefType{Mut: e.Mut, Lt: lt, Inner: inner}
+	if fieldBorrow != nil {
+		// A field that holds a borrow lends that borrow again, so `&obj.a` with
+		// `a: &'a T` is `&'a T`, the field's lifetime and referent, rather than a
+		// borrow of the borrow. A written return type `&'a T` then accepts it.
+		target = &soltype.RefType{Mut: e.Mut, Lt: fieldBorrow.Lt, Inner: fieldBorrow.Inner}
+		if e.Mut {
+			// `&mut obj.a` lends a mutable borrow, which an immutable borrow in `a` cannot give.
+			c.constrain(e, fieldBorrow, target)
+		}
+	}
 	c.recordProv(target, e, BorrowExprOrigin)
 	// Record on the access node the shape an implicit read would produce.
 	// fieldReadBorrow makes the same wrap decision valueProp uses, so hover
