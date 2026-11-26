@@ -105,7 +105,7 @@ func TestClosureCallsAMutSelfMethodThroughItsContext(t *testing.T) {
 	}
 }
 
-// TestClosureParamWithoutAContext covers assignments whose target gives a closure parameter no
+// TestClosureParamWithoutAContext covers assignments and calls that give a closure parameter no
 // type before the body is checked. The parameter reports as untyped unless checking the closure
 // against the target types it afterwards.
 func TestClosureParamWithoutAContext(t *testing.T) {
@@ -138,6 +138,15 @@ func TestClosureParamWithoutAContext(t *testing.T) {
 			expected: []string{
 				"3:2-3:26: Cannot assign to immutable binding: id",
 				"3:11-3:12: parameter 'x' has no type, and nothing the closure flows into supplies one; write its type",
+			},
+		},
+		{
+			// A generic `F` gives the closure no parameter types, so the `open` parameter keeps its
+			// variable and reports.
+			name: "OpenParamInAGenericContext",
+			src:  "fn apply<F>(f: F) -> F { return f }\nval g = apply(fn (open x) { return x.a })",
+			expected: []string{
+				"2:24-2:25: parameter 'x' has no type, and nothing the closure flows into supplies one; write its type",
 			},
 		},
 		{

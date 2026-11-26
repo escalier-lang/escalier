@@ -3811,6 +3811,21 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			want: []string{"cannot mutate 'x' because its binding is immutable; declare it as `mut x`"},
 		},
 		{
+			// `id(x)` belongs to no binding, so the nested write asks its result for a mutable
+			// borrow holding the field.
+			name: "a nested write through a call result a type parameter types",
+			src: `
+				declare fn id<U>(u: U) -> U
+				declare fn each<T>(v: T, cb: fn (x: T) -> undefined) -> undefined
+				fn f(c: &mut {a: {b: number, ...}, ...}) -> undefined {
+					each(c, fn (x) {
+						id(x).a.b = 1
+						return undefined
+					})
+				}
+			`,
+		},
+		{
 			// The missing property is reported once, by the shape `T` is checked against.
 			name: "a callback reads a missing field through a borrowed variable",
 			src: `

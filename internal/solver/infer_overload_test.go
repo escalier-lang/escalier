@@ -493,3 +493,47 @@ func TestInferOverloadObjectArgDisjointFieldTypes(t *testing.T) {
 	require.Empty(t, ne)
 	require.Equal(t, "boolean", nv["r"], "a number-valued argument matches only the number arm")
 }
+
+// TestInferOverloadDeferredFallsBackToFirstMatch asserts that a call whose argument is still an
+// unconstrained variable tries the arms in declaration order. The callback's `x` takes `T`,
+// which `each` has not bound when `on(x)` is checked, so the call picks the first arm.
+func TestInferOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn on(x: number) -> number { return x }
+		fn on(x: string) -> string { return x }
+		declare fn each<T>(v: T, cb: fn (x: T) -> undefined) -> undefined
+		fn f(c: number) -> undefined {
+			each(c, fn (x) {
+				val r = on(x)
+				return undefined
+			})
+		}
+	`)
+	require.Empty(t, errs)
+}
+
+// TestInferOverloadArmWithoutAFullSignature covers an overload set with an arm that leaves part
+// of its signature out, so the set is not bound from its signatures alone.
+func TestInferOverloadArmWithoutAFullSignature(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		expected []string
+	}{
+		{
+			name:     "UntypedParam",
+			src:      "fn on(x: number) -> number { return 1 }\nfn on(x: string, y) -> number { return 2 }\nval r = on(1)",
+			expected: []string{"2:18-2:19: parameter 'y' has no type; write its type"},
+		},
+		{
+			name: "NoReturnType",
+			src:  "fn on(x: number) -> number { return 1 }\nfn on(x: string) { return 2 }\nval r = on(1)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.expected, messagesWithSpan(t, errs))
+		})
+	}
+}
