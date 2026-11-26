@@ -247,13 +247,20 @@ func finitelyInhabitedGiven(t soltype.Type, aliasInhabited func(*soltype.AliasTy
 // mark and one inside it as inhabited only once that alias has been shown to be. Every alias in
 // the component starts uninhabited, and the loop repeats until no more become inhabited, so an
 // alias whose every path leads back into the component stays uninhabited. An alias
-// checkProductive rejected is left unmarked, since it names no type to ask about.
+// checkProductive rejected names no type to ask about, so it is left unmarked and reads as
+// inhabited, as it does to a reference from outside the component. checkProductive has
+// already reported it.
 func (c *checker) markUninhabitedAliases(shells []*aliasShell) {
 	inComponent := set.NewSet[string]()
 	for _, sh := range shells {
 		inComponent.Add(sh.qname)
 	}
 	inhabited := set.NewSet[string]()
+	for _, sh := range shells {
+		if sh.def.NotProductive {
+			inhabited.Add(sh.qname)
+		}
+	}
 	given := func(a *soltype.AliasType) bool {
 		if inComponent.Contains(a.Name) {
 			return inhabited.Contains(a.Name)
@@ -263,7 +270,7 @@ func (c *checker) markUninhabitedAliases(shells []*aliasShell) {
 	for changed := true; changed; {
 		changed = false
 		for _, sh := range shells {
-			if sh.def.NotProductive || inhabited.Contains(sh.qname) {
+			if inhabited.Contains(sh.qname) {
 				continue
 			}
 			if finitelyInhabitedGiven(sh.def.Body, given) {
@@ -273,7 +280,7 @@ func (c *checker) markUninhabitedAliases(shells []*aliasShell) {
 		}
 	}
 	for _, sh := range shells {
-		sh.def.Uninhabited = !sh.def.NotProductive && !inhabited.Contains(sh.qname)
+		sh.def.Uninhabited = !inhabited.Contains(sh.qname)
 	}
 }
 

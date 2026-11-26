@@ -394,6 +394,17 @@ func TestNonReturningRecursionThroughAlias(t *testing.T) {
 			expected: []string{nonReturningMsg("2:4-2:5", "g", "fn () -> {first: Next}")},
 		},
 		{
+			// checkProductive rejects Bad, so X's reference to it reads as inhabited and f
+			// reports nothing more.
+			name: "DependsOnARejectedAlias",
+			src:  "type X = {b: Bad}\ntype Bad = {x: X} | Bad\ndeclare fn mk() -> X\nfn f() -> X { return mk() }",
+			expected: []string{
+				"2:6-2:9: recursive type alias `Bad` reaches itself without passing under a type constructor, " +
+					"so no lap of the recursion emits any structure and the alias names no type; wrap the " +
+					"recursive reference in an object, tuple, or function type",
+			},
+		},
+		{
 			name: "AliasAlone",
 			src:  "type Next = {next: Next}",
 		},
