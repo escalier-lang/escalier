@@ -1424,6 +1424,16 @@ type UnhandledRethrowError struct {
 	Sink     soltype.Type
 }
 
+// AnnotationTestError fires when a narrowing annotation names an object type and no runtime
+// test tells the values it admits apart from the scrutinee's other members. Such a test reads
+// a property whose literal type differs between the two, the `kind` of
+// `{kind: "a", a: number} | {kind: "b", b: string}`. It blames the annotation, and Type is
+// the type the annotation resolved to.
+type AnnotationTestError struct {
+	Ann  ast.TypeAnn
+	Type soltype.Type
+}
+
 // MixedOwnershipError fires when an inferred union or intersection has a borrowed
 // member beside an owned one, such as `{x: number} | &{y: number}`, which has no
 // single owned-or-borrowed verdict. It blames the inference join where it forms.
@@ -1468,6 +1478,7 @@ func (*CoveredMatchArmError) isSolverError()                {}
 func (*MissingCatchArmError) isSolverError()                {}
 func (*UnhandledRethrowError) isSolverError()               {}
 func (*MixedOwnershipError) isSolverError()                 {}
+func (*AnnotationTestError) isSolverError()                 {}
 func (*MutLeafThroughSharedBorrowError) isSolverError()     {}
 func (*MissingSelfReceiverError) isSolverError()            {}
 func (*MethodOverloadReceiverMismatchError) isSolverError() {}
@@ -2358,6 +2369,13 @@ func quoteJoin(names []string, quote string) string {
 		quoted[i] = quote + n + quote
 	}
 	return strings.Join(quoted, ", ")
+}
+
+func (e *AnnotationTestError) Span() ast.Span      { return e.Ann.Span() }
+func (e *AnnotationTestError) Related() []ast.Span { return nil }
+func (e *AnnotationTestError) Message() string {
+	return "no runtime test tells `" + soltype.Print(e.Type) + "` apart from the scrutinee's other members. " +
+		"Give each object type a property such as `kind` with a distinct literal type."
 }
 
 func (e *MixedOwnershipError) Span() ast.Span      { return spanOfNode(e.Node) }

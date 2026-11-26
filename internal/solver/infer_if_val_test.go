@@ -171,23 +171,23 @@ func TestInferIfValAndValElse(t *testing.T) {
 			// against it and the scrutinee keeps its full borrow-union type.
 			name: "if-val narrows borrow union for write",
 			src: `fn main() -> undefined {
-				val f = fn (p: &mut {x: number}, q: &mut {x: string}) {
+				val f = fn (p: &mut {k: "n", x: number}, q: &mut {k: "s", x: string}) {
 					val r = if true { p } else { q }
-					if val r2: &mut {x: number} = r {
+					if val r2: &mut {k: "n", x: number} = r {
 						r2.x = 5
 					}
 					return r
 				}
 			}`,
 			local: true,
-			want:  "fn <'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: string}) -> &'a mut {x: number} | &'b mut {x: string}",
+			want:  `fn <'a, 'b>(p: &'a mut {k: "n", x: number}, q: &'b mut {k: "s", x: string}) -> &'a mut {k: "n", x: number} | &'b mut {k: "s", x: string}`,
 		},
 		{
-			// r2 binds at &mut {x: number}, so a string write to r2.x is rejected.
+			// r2 binds at &mut {k: "n", x: number}, so a string write to r2.x is rejected.
 			name: "if-val narrowed write is type-checked",
-			src: `fn f(p: &mut {x: number}, q: &mut {x: string}) -> undefined {
+			src: `fn f(p: &mut {k: "n", x: number}, q: &mut {k: "s", x: string}) -> undefined {
 				val r = if true { p } else { q }
-				if val r2: &mut {x: number} = r {
+				if val r2: &mut {k: "n", x: number} = r {
 					r2.x = "hi"
 				}
 			}`,

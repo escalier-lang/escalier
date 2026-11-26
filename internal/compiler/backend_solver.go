@@ -80,6 +80,14 @@ func (t *solverSolTypes) AbsentKeys(p *ast.ObjectPat) []string {
 	return t.info.AbsentKeys(p)
 }
 
+func (t *solverSolTypes) AnnDiscriminant(ta ast.TypeAnn) (codegen.Discriminant, bool) {
+	d, ok := t.info.AnnDiscriminant(ta)
+	if !ok {
+		return codegen.Discriminant{}, false
+	}
+	return codegen.Discriminant{Always: d.Always, Key: d.Key, Lits: d.Lits, NullCheck: d.NullCheck}, true
+}
+
 func (t *solverSolTypes) Expand(typ soltype.Type) soltype.Type {
 	return t.info.Expand(typ)
 }

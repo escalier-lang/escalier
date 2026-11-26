@@ -23,6 +23,9 @@ type SolTypes interface {
 	// AbsentKeys returns the keys the object pattern p's runtime test also checks are
 	// absent.
 	AbsentKeys(p *ast.ObjectPat) []string
+	// AnnDiscriminant returns the runtime test the run recorded for the narrowing
+	// annotation ta, and reports whether it recorded one.
+	AnnDiscriminant(ta ast.TypeAnn) (Discriminant, bool)
 	// Expand returns t with each alias on the outside expanded, until none is left.
 	Expand(t soltype.Type) soltype.Type
 }
@@ -85,6 +88,11 @@ func (s SolverJSTypes) Expand(t soltype.Type) soltype.Type {
 // AbsentKeys reads the keys the run recorded for p.
 func (s SolverJSTypes) AbsentKeys(p *ast.ObjectPat) []string {
 	return s.Types.AbsentKeys(p)
+}
+
+// AnnDiscriminant reads the test the run recorded for ta.
+func (s SolverJSTypes) AnnDiscriminant(ta ast.TypeAnn) (Discriminant, bool) {
+	return s.Types.AnnDiscriminant(ta)
 }
 
 // NullableArms reads the union arms that are `null` and `undefined`. soltype gives

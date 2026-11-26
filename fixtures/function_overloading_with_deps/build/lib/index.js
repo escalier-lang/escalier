@@ -1,11 +1,11 @@
 export function process(param0) {
-  if (arguments.length === 1) {
+  if (arguments.length === 1 && param0 !== null && typeof param0 === "object" && "value" in param0 && typeof param0.value === "number") {
     const config = param0;
     return "Number: " + config.value.toString();
-  } else if (arguments.length === 1) {
+  } else if (arguments.length === 1 && param0 !== null && typeof param0 === "object" && "text" in param0 && typeof param0.text === "string") {
     const config = param0;
     return "String: " + config.text;
-  } else if (arguments.length === 1) {
+  } else if (arguments.length === 1 && param0 !== null && typeof param0 === "object" && "flag" in param0 && typeof param0.flag === "boolean") {
     const config = param0;
     if (config.flag) {
       return "Boolean: true";

@@ -1291,15 +1291,27 @@ func buildPropertyInObjectCheck(propName string, objectExpr Expr, source ast.Nod
 
 // buildTypeGuard generates a runtime type check expression for a given type annotation
 func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
-	// A reference to an alias hides the regex type or the union it names from typeAnn. Any
-	// other reference keeps the guard below, such as `instanceof` for a class.
+	// The checker records a test for an object type annotation at the root of a conditional
+	// form. The test reads a property whose literal type tells the scrutinee's members
+	// apart, which the annotation alone cannot say. An annotation with no recorded test
+	// takes the guard built from the annotation below.
+	if d, recorded := b.types().AnnDiscriminant(typeAnn); recorded {
+		return buildDiscriminantTest(valueExpr, d, typeAnn)
+	}
+	// A reference to an alias hides the regex type, the union, or the object type it names
+	// from typeAnn. Any other reference keeps the guard below, such as `instanceof` for a
+	// class.
 	if ref, isRef := typeAnn.(*ast.TypeRefTypeAnn); isRef {
 		switch t := b.types().ExpandedTypeOf(ref).(type) {
-		case *soltype.RegexType, *soltype.UnionType:
+		case *soltype.RegexType, *soltype.UnionType, *soltype.ObjectType:
 			return b.buildSolTypeGuard(valueExpr, t, ref, set.NewSet[string]())
 		}
 	}
 	switch t := typeAnn.(type) {
+	case *ast.RefTypeAnn:
+		// A borrow reads the value it borrows, so the value is tested against the type
+		// inside it.
+		return b.buildTypeGuard(valueExpr, t.Inner)
 	case *ast.UnionTypeAnn:
 		guards := make([]Expr, len(t.Types))
 		for i, member := range t.Types {
@@ -1357,10 +1369,17 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 				}
 
 				propExistsCheck := buildPropertyInObjectCheck(propName, valueExpr, nil)
-				conditions = append(conditions, propExistsCheck)
-				propAccess := NewMemberExpr(valueExpr, NewIdentifier(propName, nil), false, nil)
+				propAccess := buildPropertyRead(valueExpr, propName, nil)
 				propTypeGuard := b.buildTypeGuard(propAccess, objElem.Value)
-				conditions = append(conditions, propTypeGuard)
+				if !objElem.Optional {
+					conditions = append(conditions, propExistsCheck, propTypeGuard)
+					continue
+				}
+				// An optional property passes when it is absent.
+				if !isTrueLiteral(propTypeGuard) {
+					absent := NewUnaryExpr(LogicalNot, propExistsCheck, nil)
+					conditions = append(conditions, NewBinaryExpr(absent, LogicalOr, propTypeGuard, nil))
+				}
 			}
 		}
 
@@ -1393,6 +1412,41 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		// For complex types we can't easily check at runtime, accept anything
 		return NewLitExpr(NewBoolLit(true, nil), nil)
 	}
+}
+
+// buildDiscriminantTest returns the runtime test d describes for valueExpr. `&B` with
+// `type B = {kind: "b", b: string}` over a `{kind: "a", a: number} | B` scrutinee tests
+// `value.kind === "b"`. source is the annotation every node of the test maps back to.
+func buildDiscriminantTest(valueExpr Expr, d Discriminant, source ast.Node) Expr {
+	if d.Always {
+		return NewLitExpr(NewBoolLit(true, source), source)
+	}
+	var conditions []Expr
+	if d.NullCheck {
+		conditions = append(conditions,
+			NewBinaryExpr(valueExpr, NotEqual, NewLitExpr(NewNullLit(source), source), source))
+	}
+	if len(d.Lits) > 0 {
+		read := buildPropertyRead(valueExpr, d.Key, source)
+		equalities := make([]Expr, len(d.Lits))
+		for i, lit := range d.Lits {
+			equalities[i] = NewBinaryExpr(read, StrictEqual, NewLitExpr(buildSolLit(lit, source), source), source)
+		}
+		conditions = append(conditions, anyCondition(equalities, source))
+	}
+	return combineConditions(conditions, source)
+}
+
+// buildSolLit converts a literal type to a codegen Lit. A soltype literal is a string,
+// number, or boolean. source is the node the literal maps back to.
+func buildSolLit(lit *soltype.LitType, source ast.Node) Lit {
+	switch l := lit.Lit.(type) {
+	case *soltype.StrLit:
+		return NewStrLit(l.Value, source)
+	case *soltype.NumLit:
+		return NewNumLit(l.Value, source)
+	}
+	return NewBoolLit(lit.Lit.(*soltype.BoolLit).Value, source)
 }
 
 // buildSolTypeGuard returns a runtime test that value is of type t, for a type an alias
@@ -1429,18 +1483,7 @@ func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type, source ast.N
 			return b.buildTypeOfCheck(valueExpr, "boolean", StrictEqual, source)
 		}
 	case *soltype.LitType:
-		var lit Lit
-		switch l := t.Lit.(type) {
-		case *soltype.StrLit:
-			lit = NewStrLit(l.Value, source)
-		case *soltype.NumLit:
-			lit = NewNumLit(l.Value, source)
-		case *soltype.BoolLit:
-			lit = NewBoolLit(l.Value, source)
-		}
-		if lit != nil {
-			return NewBinaryExpr(valueExpr, StrictEqual, NewLitExpr(lit, source), source)
-		}
+		return NewBinaryExpr(valueExpr, StrictEqual, NewLitExpr(buildSolLit(t, source), source), source)
 	case *soltype.RegexType:
 		return b.buildRegexGuard(valueExpr, t.Source, source)
 	case *soltype.FunctionTopType:
@@ -1453,6 +1496,11 @@ func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type, source ast.N
 		conditions := []Expr{
 			NewBinaryExpr(valueExpr, StrictNotEqual, NewLitExpr(NewNullLit(source), source), source),
 			b.buildTypeOfCheck(valueExpr, "object", StrictEqual, source),
+		}
+		if isCallableObject(t) {
+			// A value with a call or constructor signature is a function, whose `typeof`
+			// reads "function" and which is never `null`.
+			conditions = []Expr{b.buildTypeOfCheck(valueExpr, "function", StrictEqual, source)}
 		}
 		for _, elem := range t.Elems {
 			prop, isProp := elem.(*soltype.PropertyElem)
@@ -1481,6 +1529,17 @@ func (b *Builder) buildSolTypeGuard(valueExpr Expr, t soltype.Type, source ast.N
 		return anyCondition(guards, source)
 	}
 	return NewLitExpr(NewBoolLit(true, source), source)
+}
+
+// isCallableObject reports whether t declares a call or constructor signature.
+func isCallableObject(t *soltype.ObjectType) bool {
+	for _, elem := range t.Elems {
+		switch elem.(type) {
+		case *soltype.CallableElem, *soltype.ConstructorElem:
+			return true
+		}
+	}
+	return false
 }
 
 // buildPropertyRead returns the read of the property name off valueExpr, as `value.name`
