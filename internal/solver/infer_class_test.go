@@ -3736,6 +3736,22 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			want: []string{"cannot constrain null <: object"},
 		},
 		{
+			// The callback's `x` takes `T`, which the call binds to the borrow `&(C | null)`, so
+			// the read goes through each member of the borrowed union.
+			name: "a read through a type parameter bound to a borrow that may be null",
+			src: `
+				class C { readonly n: number }
+				declare fn each<T>(v: T, cb: fn (x: T) -> undefined) -> undefined
+				fn f(c: &(C | null)) -> undefined {
+					each(c, fn (x) {
+						val b: number = x.n
+						return undefined
+					})
+				}
+			`,
+			want: []string{"cannot constrain null <: object"},
+		},
+		{
 			// The missing property is reported once, by the shape `T` is checked against.
 			name: "a callback reads a missing field through a borrowed variable",
 			src: `
