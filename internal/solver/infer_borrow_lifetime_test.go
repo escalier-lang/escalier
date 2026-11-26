@@ -131,9 +131,8 @@ fn f(p: &mut {x: number}) -> number {
 // the written field's type. The receiver is a concrete mutable borrow, so
 // valueProp peels it via CarrierOf before emitting the read requirement.
 // Without the peel this would trip the escape guard on the bare read
-// requirement. Unlike the usage-inferred read-after-write tests, which key off
-// the `written` map on a receiver var, this exercises the peel-and-constrain
-// path on a concrete borrow.
+// requirement. Unlike a read-after-write on a receiver var, which keys off the
+// `written` map, this exercises the peel-and-constrain path on a concrete borrow.
 func TestInferReadAfterWriteThroughBorrowParam(t *testing.T) {
 	src := `fn f(p: &mut {x: number}) -> number {
   p.x = 5
@@ -944,26 +943,6 @@ func TestInferExplicitMutBorrowOfMemberOnImmutableRejected(t *testing.T) {
 	require.Equal(t, []string{
 		"1:11-1:28: cannot constrain immutable object <: mutable object",
 	}, messagesWithSpan(t, errs))
-}
-
-// TestInferMemberReadInferredReceiverUnchanged covers a member read off a usage-inferred
-// receiver. A usage-inferred receiver is an un-annotated param whose shape the body's uses
-// determine. The wrap fires only off a concrete ObjectType carrier, so a TypeVar carrier
-// returns the field's result var directly. The param closes to its inferred object shape. A
-// call passing `{x: 5}` gets the field's primitive type `5` back rather than a borrow.
-func TestInferMemberReadInferredReceiverUnchanged(t *testing.T) {
-	t.Run("the read borrows through the param", func(t *testing.T) {
-		values, _, errs := inferSource(t, "fn f<T0>(p: &{x: T0}) { return p.x }")
-		require.Empty(t, errs)
-		require.Equal(t, "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0", values["f"])
-	})
-
-	// `f` is declared with the signature "the read borrows through the param" asserts.
-	t.Run("a call returns the field's primitive type", func(t *testing.T) {
-		values, _, errs := inferSource(t, "declare fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0\nval r = f({x: 5})")
-		require.Empty(t, errs)
-		require.Equal(t, "5", values["r"])
-	})
 }
 
 // `&mut obj["foo"]` for a reference-shaped field matches the dot form. The

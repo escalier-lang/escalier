@@ -211,8 +211,8 @@ func TestFlowLifetimeRules(t *testing.T) {
 	})
 }
 
-// TestFlowLifetimeNonEscapingParam covers F3's `store` and `read`, whose unannotated parameters
-// take their ownership from the body.
+// TestFlowLifetimeNonEscapingParam covers F3's `store` and `read`, whose written parameter
+// types decide whether a call moves or borrows its argument.
 func TestFlowLifetimeNonEscapingParam(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
 		// F3. `store` lets `p` escape into module-level state, so its parameter is owned. `read`

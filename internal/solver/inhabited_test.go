@@ -183,13 +183,11 @@ func TestNonReturningRecursionAccepts(t *testing.T) {
 			src:  `fn todo() -> never throws string { throw "todo" }`,
 		},
 		{
-			// The base case is an UNANNOTATED parameter flowing straight to the return, which
-			// displays as `fn <T0>(x: T0) -> T0 | {next: T0}`. Reading the return alone through
-			// plain coalesce would render that arm `never`, the union constructor would drop it,
-			// and the base case would vanish. Annotating `x` gives the arm a concrete type, so
-			// only the unannotated form exercises the retention checkCanReturn depends on.
-			// This case infers `f` and calls it in one source, since `f` calls itself.
-			name: "an unannotated parameter reaching the return is a base case",
+			// The base case is a parameter of type parameter type flowing straight to the return,
+			// which displays as `fn <T0>(x: T0) -> T0 | {next: T0}`. Reading the return alone
+			// through plain coalesce would render that arm `never`, the union constructor would
+			// drop it, and the base case would vanish.
+			name: "a type parameter reaching the return is a base case",
 			src: `
 				declare fn cond() -> boolean
 				fn f<T0>(x: T0) {

@@ -575,7 +575,7 @@ func (c *checker) bindRecoveredElem(scope *Scope, lvl int, e ast.Pat, scrutineeM
 
 // tupleRestType resolves what a trailing `...rest` binds: the scrutinee's elements past the
 // fixed prefix, re-gathered into a tuple. An inexact scrutinee hands its open tail on. With
-// no tuple shape, as for an un-annotated parameter, the leftover is still SOME tuple, so it
+// no tuple shape, as for an untyped closure parameter, the leftover is still SOME tuple, so it
 // binds a variable bounded below by `[...]`. Unbounded it would coalesce to `never`, which
 // lets a caller assign the result to anything. restConcrete drives the borrow wrap.
 func (c *checker) tupleRestType(lvl int, node ast.Node, scrutinee soltype.Type, scrutTup, concreteTup *soltype.TupleType, prefix int) (bind, restConcrete soltype.Type) {

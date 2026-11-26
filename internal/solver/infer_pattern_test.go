@@ -88,18 +88,6 @@ func TestInferObjectPatternParam(t *testing.T) {
 	require.Equal(t, "fn ({x, y}: {x: number, y: string}) -> [number, string]", values["g"])
 }
 
-// An UN-annotated destructuring parameter infers its shape from the leaves' uses
-// (usage-based inference), closing the coalesced object to exact (Policy A).
-func TestInferObjectPatternParamInferred(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		fn g<T0, T1>({a, b}: {a: T0, b: T1}) {
-			return [a, b]
-		}
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn <T0, T1>({a, b}: {a: T0, b: T1}) -> [T0, T1]", values["g"])
-}
-
 // Patterns nest: an object pattern whose field is itself an object pattern binds
 // the inner leaves at the nested field types.
 func TestInferNestedObjectPattern(t *testing.T) {

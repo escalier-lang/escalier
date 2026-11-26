@@ -97,7 +97,7 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 // The lifetime joins closureBorrows with the first capture that holds a borrow, for a
 // FuncKeptForStaticError to name.
 //
-// A `val` binding whose type is still a type variable, such as an unannotated parameter, may
+// A `val` binding whose type is still a type variable, such as an untyped closure parameter, may
 // turn out to hold a value type or an object. The closure takes a lifetime for it, and the
 // lifetime joins tentativeClosures with the variables still undecided, for
 // settleTentativeFuncEscapes to read once they settle.

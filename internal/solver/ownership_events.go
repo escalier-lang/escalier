@@ -22,13 +22,10 @@ import (
 // as the binding `d` in `val d = c`. A flow of a value type, such as `val a = n` with
 // `n: number`, makes no holder of a borrow, so it is recorded as a read of its source.
 //
-// A flow whose destination or source F3 has not settled yet is a provisional flow. The
-// walk records a placeholder for it, and settleFlowsWaitingOn replaces the placeholder
-// with the copy, borrow, or move F2 gives once F3 is settled. Three kinds of flow are
-// provisional:
+// A flow whose destination F3 has not settled yet is a provisional flow. The walk records
+// a placeholder for it, and settleFlowsWaitingOn replaces the placeholder with the copy,
+// borrow, or move F2 gives once F3 is settled. Two kinds of flow are provisional:
 //
-//   - A flow out of an unannotated parameter of a body still being walked. The body
-//     decides whether the parameter is owned or a borrow.
 //   - A flow into a parameter of a callee whose body is still being walked, or whose
 //     signature the call cannot see yet.
 //   - A closure capture. A closure stored into module-level state borrows what it
@@ -219,7 +216,7 @@ type useEvent struct {
 	fromRead bool
 }
 
-// provisionalEvent holds the slot of a provisional flow until F3 settles it. No event
+// provisionalEvent holds the slot of a provisional flow until its destination settles. No event
 // of this kind survives settleAllFlows.
 type provisionalEvent struct {
 	flowBase

@@ -161,18 +161,18 @@ func TestOwnershipEventsCheckingModel(t *testing.T) {
 				fn store(p: {x: number}) -> undefined { sink = p }
 			`,
 			want: []string{
-				"b0.0: move(`p`, `sink`)",  // `sink = p` moves p, so F3 settles p as owned
+				"b0.0: move(`p`, `sink`)",  // `sink = p` moves p
 				"b0.0: use(`sink`, write)", // `sink = p` writes the module binding
 			},
 		},
 		{
-			name: "ReadThroughUnannotatedParam",
+			name: "ReadThroughBorrowParam",
 			fn:   "read",
 			src: `
 				fn read<T0>(p: &{x: T0}) { return p.x }
 			`,
 			want: []string{
-				"b0.0: copy(`p.x`, return)", // `return p.x` copies out of p, which F3 settles as a borrow since the body never moves it
+				"b0.0: copy(`p.x`, return)", // `return p.x` copies out of the borrow p
 			},
 		},
 		{
@@ -608,7 +608,8 @@ func TestOwnershipEventsClosureCaptures(t *testing.T) {
 	})
 }
 
-// TestInferStoreAndReadSignatures asserts the signatures that F3 infers for `store` and `read`.
+// TestInferStoreAndReadSignatures asserts the signatures of `store` and `read`, whose return
+// types are inferred.
 // The ArgumentIntoEscapingParam case of TestOwnershipEventsCheckingModel calls functions
 // written with these signatures.
 func TestInferStoreAndReadSignatures(t *testing.T) {

@@ -311,10 +311,10 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 			binding: "mk",
 			want:    "fn () -> {cb: fn () -> 1, n: 1}",
 		},
-		// A call only runs its callee, so an unannotated parameter that is only called takes a
-		// function that may hold borrows.
+		// A call only runs its callee, so a parameter that is only called takes a function that
+		// may hold borrows.
 		{
-			name:    "unannotated parameter only called",
+			name:    "parameter only called",
 			src:     `fn f<T0>(g: fn () -> T0) { return g() }`,
 			binding: "f",
 			want:    "fn <T0>(g: fn () -> T0) -> T0",
@@ -322,7 +322,7 @@ fn mk(x: number) -> fn () -> undefined { return fn () {} }`,
 		// A parameter stored into a module-level slot must hold no borrow, so it renders
 		// `'static fn`. A bare `fn` would read as a parameter only called during the call.
 		{
-			name: "unannotated parameter stored into a module-level slot",
+			name: "parameter stored into a module-level slot",
 			src: `var sink: fn () -> undefined = fn () {}
 fn f(g: 'static fn () -> undefined) { sink = g }`,
 			binding: "f",
@@ -513,12 +513,6 @@ fn f() -> undefined { onClick(handle) }`,
 		},
 		{
 			name: "static parameter passed on to a static parameter",
-			src: `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
-fn f(g: 'static fn () -> undefined) -> undefined { onClick(g) }`,
-			want: "fn (g: 'static fn () -> undefined) -> undefined",
-		},
-		{
-			name: "unannotated parameter passed on to a static parameter",
 			src: `declare fn onClick(handler: 'static fn () -> undefined) -> undefined
 fn f(g: 'static fn () -> undefined) -> undefined { onClick(g) }`,
 			want: "fn (g: 'static fn () -> undefined) -> undefined",
@@ -1177,10 +1171,9 @@ fn setup() -> undefined {
     sink = fn () { console.log(cfg.msg) }
 }`,
 		},
-		// An unannotated parameter's type settles after the closure is written, so whether the
-		// closure copies it or borrows it is decided once the body is checked.
+		// A closure copies a number parameter it captures, so it borrows nothing.
 		{
-			name: "closure that captures an unannotated parameter later used as a number",
+			name: "closure that captures a number parameter",
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
 fn setup(n: number) {
@@ -1189,16 +1182,7 @@ fn setup(n: number) {
 }`,
 		},
 		{
-			name: "closure that captures an unannotated parameter already used as a number",
-			src: `import "std:console"
-var sink: fn () -> undefined = fn () {}
-fn setup(n: number) {
-    val m: number = n
-    sink = fn () { console.log(n) }
-}`,
-		},
-		{
-			name: "bound closure that captures an unannotated parameter used as a number",
+			name: "bound closure that captures a number parameter",
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
 fn setup(n: number) {
@@ -1228,9 +1212,9 @@ fn setup(n: {x: number}) {
 }`,
 			want: []string{"5:12-5:16: `show` borrows `n`, but `sink` keeps it for 'static; pass a function that borrows nothing"},
 		},
-		// A parameter nothing constrains may hold an object, so the closure may borrow it.
+		// An `unknown` parameter may hold an object, so the closure may borrow it.
 		{
-			name: "closure that captures an unconstrained unannotated parameter",
+			name: "closure that captures an `unknown` parameter",
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
 fn setup(n: unknown) {
@@ -1239,7 +1223,7 @@ fn setup(n: unknown) {
 			want: []string{"4:12-4:36: this closure borrows `n`, but `sink` keeps it for 'static; pass a function that borrows nothing"},
 		},
 		{
-			name: "closure that captures an unannotated parameter and an object parameter",
+			name: "closure that captures a number parameter and an object parameter",
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
 fn setup(n: number, p: {x: number}) {
@@ -1248,10 +1232,10 @@ fn setup(n: number, p: {x: number}) {
 }`,
 			want: []string{"4:12-4:42: this closure borrows `p`, but `sink` keeps it for 'static; pass a function that borrows nothing"},
 		},
-		// g's own check reports that it is kept for 'static, and the closure's borrow of n is
-		// decided once n settles to a number.
+		// g's own check reports that it is kept for 'static. The closure copies n, a number, so
+		// it borrows nothing.
 		{
-			name: "local joining an unannotated parameter's closure and a call-only parameter",
+			name: "local joining a number parameter's closure and a call-only parameter",
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
 fn setup(c: boolean, n: number, g: fn () -> undefined) {
@@ -1280,7 +1264,7 @@ fn setup(c: boolean, n: {x: number}, g: fn () -> undefined) {
 		// hold keeps its argument for 'static, so the closure is rejected there, and its 'static
 		// result fits the slot.
 		{
-			name: "closure that captures an unannotated parameter kept through a static result",
+			name: "closure that captures an object parameter kept through a static result",
 			src: `import "std:console"
 var sink: fn () -> undefined = fn () {}
 declare fn hold(cb: 'static fn () -> undefined) -> 'static fn () -> undefined

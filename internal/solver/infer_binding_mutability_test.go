@@ -196,18 +196,10 @@ func TestMutParamSignature(t *testing.T) {
 			src:  `fn f(mut p: {x: number}) -> undefined { p.x = 1 }`,
 			want: "fn (p: {x: number}) -> undefined",
 		},
-		// An unannotated `mut` parameter is mutable, and its type comes from its uses.
+		// Binding mutability is never inferred, so a write through a parameter without `mut`
+		// is rejected.
 		{
-			name: "UnannotatedWrite",
-			src:  `fn f(mut p: {x: number}) -> undefined { p.x = 1 }`,
-			want: "fn (p: {x: number}) -> undefined",
-		},
-		// Binding mutability is never inferred, so a write through an unannotated
-		// parameter without `mut` is rejected. The parameter's shape still comes from its
-		// uses. The write could not tell whether `p` is owned, so it asked only that the
-		// field exist, and the field's type is left open.
-		{
-			name: "UnannotatedWriteWithoutMut",
+			name: "WriteWithoutMut",
 			src:  `fn f(p: {x: unknown}) { p.x = 1 }`,
 			want: "fn (p: {x: unknown}) -> undefined",
 			errs: []string{"1:25-1:32: cannot mutate 'p' because its binding is immutable; declare it as `mut p`"},

@@ -1313,7 +1313,7 @@ func (c *checker) typeofCarrier(recv soltype.Type) soltype.Type {
 //  1. A rest parameter written anywhere but last, since acceptSet reads the flag off the last
 //     parameter only. last says whether this is that parameter.
 //  2. A rest parameter with no type annotation. The slot's type is what says how many
-//     arguments the parameter binds, and the fresh var an unannotated parameter recovers to
+//     arguments the parameter binds, and the fresh var an untyped rest parameter recovers to
 //     says nothing, so keeping Rest would let the initializer decide the declared type's
 //     arity.
 //  3. A rest parameter marked `?`. A slot binding zero or more arguments is already omittable

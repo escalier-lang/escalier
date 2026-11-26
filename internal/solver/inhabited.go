@@ -71,11 +71,11 @@ import (
 // occurring in both polarities. Only the parameter list shows the negative occurrence, which is why
 // the return alone is not enough.
 //
-// Both parts are load-bearing. Plain coalesce renders an unannotated parameter as `never` wherever
+// Both parts are needed. Plain coalesce renders a variable the caller chooses as `never` wherever
 // it reaches the return, and the union constructor drops a `never` arm, so this function would lose
 // the base case it plainly has and be rejected:
 //
-//	fn f(x) {
+//	fn f<T0>(x: T0) {
 //	    if cond() { return x }
 //	    return {next: f(x)}
 //	}

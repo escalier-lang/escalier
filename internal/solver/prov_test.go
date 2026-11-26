@@ -152,7 +152,7 @@ func TestProvMemberAccessRecordedAgainstProp(t *testing.T) {
 }
 
 // A function records its own FuncType (FuncInference) against the function node and
-// each un-annotated param's fresh var (ParamBinding) against the param's pattern.
+// each untyped closure param's fresh var (ParamBinding) against the param's pattern.
 func TestProvFuncTypeAndParamBinding(t *testing.T) {
 	c := newTestChecker()
 	e := funcExpr([]*ast.Param{param("x", nil)}, nil, block(exprStmt(identExpr("x"))))

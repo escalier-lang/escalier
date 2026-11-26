@@ -261,22 +261,6 @@ func TestInferAssignUnionTarget(t *testing.T) {
 	})
 }
 
-// Assigning an inference-variable source into a union target records the WHOLE union as
-// the variable's upper bound rather than committing to one member. `a = x` for an
-// un-annotated param `x` and `var a: 1 | 2` defers, because the union-super exists rule
-// is gated to a concrete sub. The variable falls through to the subVar arm, which records
-// the whole union, so `x` coalesces as the sound and complete `1 | 2`.
-func TestInferAssignUnionTargetVarRHSWidensToUnion(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		fn f(c: boolean, x: 1 | 2) {
-			var a: 1 | 2 = if c { 1 } else { 2 }
-			a = x
-		}
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (c: boolean, x: 1 | 2) -> undefined", values["f"])
-}
-
 // A namespace name as an assignment target reports NamespaceUsedAsValue, mirroring
 // inferIdent's value-position behavior (not UnknownIdentifier). Hand-built because
 // namespace declarations are themselves unsupported in M3, so a namespace never

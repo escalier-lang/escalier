@@ -37,7 +37,7 @@ func TestInferFuncExprAnnotated(t *testing.T) {
 	require.Same(t, got, c.info.TypeOf(e))
 }
 
-// An un-annotated param gets a fresh var. M2 is monomorphic — without
+// An untyped closure param gets a fresh var. M2 is monomorphic — without
 // generalization (M3) the var coalesces to the lattice bounds (unknown in
 // contravariant param position, never in covariant return position) rather than
 // a <T0> quantifier.

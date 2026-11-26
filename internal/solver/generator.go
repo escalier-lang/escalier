@@ -41,8 +41,8 @@ func (c *checker) generatorMember(lvl int, blame, provNode ast.Node, name string
 //
 // A receiver standing for anything besides generators is declined, so `if b { g() } else { 5 }`
 // keeps the structural field-requirement path, where the non-generator part is rejected. A var
-// with no lower bound is declined too, since nothing yet says it holds a generator. That is what
-// an unannotated parameter is, so `fn f(it) { it.next() }` still infers `{next: fn () -> T0}`.
+// with no lower bound is declined too, since nothing yet says it holds a generator. An untyped
+// closure parameter is such a var, so `it.next()` on one still infers `{next: fn () -> T0}`.
 func generatorCarrier(c *Context, t soltype.Type) (*soltype.GeneratorType, bool) {
 	parts, ok := generatorParts(t)
 	if !ok || len(parts) == 0 {
