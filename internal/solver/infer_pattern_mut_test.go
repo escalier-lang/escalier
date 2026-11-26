@@ -441,6 +441,10 @@ func TestMutLeafDefaultSignature(t *testing.T) {
 // `undefined` value, so each binding renders without `undefined`. A case that returns the
 // binding shows the type it renders at in the signature. A `mut` case also writes through
 // the binding, which checks against that type, and a write outside it is rejected.
+//
+// The default replaces only `undefined`, so a `null` member stays in the binding's type. The
+// `Null` cases cover a union with `null`, alone and beside `undefined`, and a write through a
+// binding that may still hold `null`, which is rejected.
 func TestDefaultedLeafDropsUndefined(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -569,6 +573,48 @@ func TestDefaultedLeafDropsUndefined(t *testing.T) {
 				}
 			}`,
 			sig: "fn (p: {x: {a: number} | undefined}) -> {a: number}",
+		},
+		"TupleElemPrimNullPlain": {
+			src: `
+			fn f(p: [number | null]) {
+				val [x = 0] = p
+				return x
+			}`,
+			sig: "fn (p: [number | null]) -> number | null",
+		},
+		"TupleElemPrimNullAndUndefinedPlain": {
+			src: `
+			fn f(p: [number | null | undefined]) {
+				val [x = 0] = p
+				return x
+			}`,
+			sig: "fn (p: [number | null | undefined]) -> number | null",
+		},
+		"TupleElemNullMut": {
+			src: `
+			fn f(p: [{a: number} | null]) {
+				val [mut x = {a: 1}] = p
+				return x
+			}`,
+			sig: "fn (p: [{a: number} | null]) -> {a: number} | null",
+		},
+		"TupleElemNullAndUndefinedMut": {
+			src: `
+			fn f(p: [{a: number} | null | undefined]) {
+				val [mut x = {a: 1}] = p
+				return x
+			}`,
+			sig: "fn (p: [{a: number} | null | undefined]) -> {a: number} | null",
+		},
+		"FieldNullMutRejectsWriteThroughNull": {
+			src: `
+			fn f(p: {x: {a: number} | null}) {
+				val {mut x = {a: 1}} = p
+				x.a = 2
+				return x
+			}`,
+			sig:  "fn (p: {x: {a: number} | null}) -> {a: number} | null",
+			want: []string{"4:5-4:12: cannot constrain null <: object"},
 		},
 	}
 	for name, tt := range tests {
