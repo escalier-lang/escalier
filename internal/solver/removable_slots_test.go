@@ -102,6 +102,17 @@ func TestHoldsRemovableNonValueSlotOfBuiltTypes(t *testing.T) {
 	field := func(name string, t soltype.Type) *soltype.ObjectType {
 		return &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: t}}}
 	}
+	// The stdlib tree loads `std:set` and `std:map` for every module, so their classes are
+	// registered here.
+	setName, mapName := c.loadedClassName("std:set", "Set"), c.loadedClassName("std:map", "Map")
+	require.NotEmpty(t, setName)
+	require.NotEmpty(t, mapName)
+	setOf := func(elem soltype.Type) *soltype.ClassType {
+		return &soltype.ClassType{Name: setName, TypeArgs: []soltype.Type{elem}}
+	}
+	mapOf := func(key, value soltype.Type) *soltype.ClassType {
+		return &soltype.ClassType{Name: mapName, TypeArgs: []soltype.Type{key, value}}
+	}
 
 	tests := map[string]struct {
 		t           soltype.Type
@@ -130,6 +141,26 @@ func TestHoldsRemovableNonValueSlotOfBuiltTypes(t *testing.T) {
 			want:        true,
 			wantAnySlot: true,
 		},
+		"SetOfStrings":        {t: setOf(str), want: false, wantAnySlot: true},
+		"SetOfObjects":        {t: setOf(flat), want: true, wantAnySlot: true},
+		"MapOfStringToNumber": {t: mapOf(str, num), want: false, wantAnySlot: true},
+		"MapOfStringToObject": {t: mapOf(str, flat), want: true, wantAnySlot: true},
+		// A key is stored like a value, so an object key can gain a second owner too.
+		"MapOfObjectToNumber": {t: mapOf(flat, num), want: true, wantAnySlot: true},
+		"MixedCollectionFields": {
+			t: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+				&soltype.PropertyElem{Name: "tags", Type: setOf(str)},
+				&soltype.PropertyElem{Name: "counts", Type: mapOf(str, num)},
+				&soltype.PropertyElem{Name: "entries", Type: mapOf(str, flat)},
+			}},
+			want:        true,
+			wantAnySlot: true,
+		},
+		"MapOfATypeParameter": {
+			t:           mapOf(str, &soltype.TypeVarType{ID: 2, Rigid: &soltype.RigidParam{Name: "V"}}),
+			want:        true,
+			wantAnySlot: true,
+		},
 		"Unknown":    {t: &soltype.UnknownType{}, want: true, wantAnySlot: true},
 		"FixedShape": {t: field("inner", flat), want: false, wantAnySlot: false},
 	}
@@ -137,6 +168,49 @@ func TestHoldsRemovableNonValueSlotOfBuiltTypes(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			require.Equal(t, tc.want, c.holdsRemovableNonValueSlot(tc.t))
 			require.Equal(t, tc.wantAnySlot, c.holdsRemovableSlot(tc.t))
+		})
+	}
+}
+
+// TestHoldsRemovableNonValueSlotWithoutTheCollectionPackage covers a `Set` or a `Map` whose
+// package the run has not loaded as a class whose internals are unknown. Each case gives the
+// test checker, which loads only the prelude, a different view of `std:set` and asserts what
+// holdsRemovableNonValueSlot answers for `Set<string>` and for `Array<number>`.
+func TestHoldsRemovableNonValueSlotWithoutTheCollectionPackage(t *testing.T) {
+	stdlib := InferModuleAgainstStdlib(parseModule(t, ""), benchTree, Options{}).checker
+	setName := stdlib.loadedClassName("std:set", "Set")
+	require.NotEmpty(t, setName)
+
+	str := &soltype.PrimType{Prim: soltype.StrPrim}
+	num := &soltype.PrimType{Prim: soltype.NumPrim}
+	tests := map[string]struct {
+		// publish is the namespace the case registers for `std:set`, or nil to leave the
+		// package unloaded.
+		publish *Namespace
+		// loading registers `std:set` as still loading.
+		loading bool
+	}{
+		"NotLoaded":    {},
+		"StillLoading": {loading: true},
+		"ExportsNoSet": {publish: &Namespace{Types: map[string]TypeBinding{}}},
+		"ExportsSetAsAnAlias": {publish: &Namespace{Types: map[string]TypeBinding{
+			"Set": {Type: &soltype.AliasType{Name: "Set"}},
+		}}},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			c := newTestChecker()
+			c.preludeScope()
+			if tc.loading {
+				c.ctx.packages.markLoading("std:set", "")
+			}
+			if tc.publish != nil {
+				c.ctx.packages.publish("std:set", tc.publish)
+			}
+			require.Empty(t, c.loadedClassName("std:set", "Set"))
+			setOfStrings := &soltype.ClassType{Name: setName, TypeArgs: []soltype.Type{str}}
+			require.True(t, c.holdsRemovableNonValueSlot(setOfStrings))
+			require.False(t, c.holdsRemovableNonValueSlot(c.ctx.arrayOf(num)))
 		})
 	}
 }

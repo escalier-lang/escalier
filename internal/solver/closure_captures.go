@@ -117,12 +117,8 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 // The body must have been inferred, since the walk reads the receiver each call declares, the
 // type of each callee, and the type of each value it takes.
 func (c *checker) removableMutPaths(closure ast.Func) map[ast.Node][][]placeSeg {
-	body := closure.FuncBody()
-	if body == nil {
-		return nil
-	}
 	v := &removableMutFinder{c: c, paths: map[ast.Node][][]placeSeg{}}
-	body.Accept(v)
+	closure.Accept(v)
 	return v.paths
 }
 

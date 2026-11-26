@@ -816,6 +816,50 @@ func TestClosureArgWritesMutableSlot(t *testing.T) {
 			`,
 			want: nil,
 		},
+		// The extra argument fills no parameter, so the walk of the callback stops at it and
+		// still records the `&mut arr` before it.
+		"CompareFnPassesAnExtraArgumentAfterAMutParam": {
+			src: `
+				type Flat = {x: number}
+				declare fn shrink(a: &mut Array<Flat>) -> undefined
+				export fn sortShrink(mut arr: Array<Flat>) -> undefined {
+					arr.sort(fn (a, b) {
+						shrink(&mut arr, 1)
+						return 0
+					})
+				}
+			`,
+			want: []string{
+				"6:7-6:26: Too many arguments: expected at most 1, but got 2",
+				"5:15-8:7: this call may run the 'compareFn' passed to 'sort', which writes 'arr' while the call borrows it as mutable for 'self'",
+			},
+		},
+		// The callee is a call result, which has no name.
+		"CallbackPassedToAnUnnamedCallee": {
+			src: `
+				type Flat = {x: number}
+				declare fn shrink(a: &mut Array<Flat>) -> undefined
+				declare fn getApply() -> fn (target: &mut Array<Flat>, f: fn () -> undefined) -> undefined
+				export fn go(mut arr: Array<Flat>) -> undefined {
+					getApply()(&mut arr, fn () { shrink(&mut arr) })
+				}
+			`,
+			want: []string{"6:27-6:53: this call may run the 'f' passed to the callee, which writes 'arr' while the call borrows it as mutable for 'target'"},
+		},
+		// r holds the mutable borrow of arr, but no slot of the call to run holds it.
+		"CallbackWritesAPlaceALocalBorrowsOk": {
+			src: `
+				type Flat = {x: number}
+				declare fn shrink(a: &mut Array<Flat>) -> undefined
+				declare fn run(f: fn () -> undefined) -> undefined
+				export fn go(mut arr: Array<Flat>) -> undefined {
+					val r = &mut arr
+					run(fn () { shrink(&mut arr) })
+					r.push({x: 1})
+				}
+			`,
+			want: nil,
+		},
 		"CallbackWithoutAMutSlotOk": {
 			src: `
 				type Flat = {x: number}
@@ -833,4 +877,19 @@ func TestClosureArgWritesMutableSlot(t *testing.T) {
 			require.Equal(t, tc.want, msgs)
 		})
 	}
+}
+
+// TestBlameClosureArgWrite asserts that ClosureArgWriteError blames the argument that holds
+// the closure and relates the borrow the call holds as mutable.
+func TestBlameClosureArgWrite(t *testing.T) {
+	src := `type Flat = {x: number}
+declare fn shrink(a: &mut Array<Flat>) -> undefined
+declare fn apply(target: &mut {items: Array<Flat>}, f: fn () -> undefined) -> undefined
+fn go(mut b: {items: Array<Flat>}) -> undefined {
+	apply(&mut b, fn () { shrink(&mut b.items) })
+}`
+	res := InferModuleAgainstStdlib(parseModule(t, src), benchTree, Options{})
+	requireBlame(t, src, res.Errors,
+		"5:16-5:46: this call may run the 'f' passed to 'apply', which writes 'b.items' while the call borrows 'b' as mutable for 'target'",
+		"fn () { shrink(&mut b.items) }", "&mut b")
 }

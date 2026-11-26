@@ -133,11 +133,13 @@ func (v *removableSlotVisitor) EnterType(t soltype.Type, pol soltype.Polarity) s
 	case *soltype.ClassType:
 		// This comes before the check of `classes`. A collection reached again can carry
 		// different type arguments, and those arguments need checking as values.
-		if elems, isCollection := v.c.collectionElems(t); isCollection && v.nonValueOnly {
-			if !slices.ContainsFunc(elems, func(elem soltype.Type) bool { return !v.c.isValueShaped(elem) }) {
-				return skip
+		if v.nonValueOnly {
+			if elems, isCollection := v.c.collectionElems(t); isCollection {
+				if !slices.ContainsFunc(elems, func(elem soltype.Type) bool { return !v.c.isValueShaped(elem) }) {
+					return skip
+				}
+				break
 			}
-			break
 		}
 		if v.classes.Contains(t.Name) {
 			return descend
@@ -230,9 +232,9 @@ func (c *checker) fieldClassBody(ct *soltype.ClassType) (*soltype.ObjectType, bo
 // type the collection stores. That is the element of an `Array` or a `Set`, and the key and
 // the value of a `Map`. It returns false for any other class.
 func (c *checker) collectionElems(ct *soltype.ClassType) ([]soltype.Type, bool) {
+	// Every registered class has a qualified name, so ct.Name is never "" and never matches
+	// the "" that a missing class answers.
 	switch ct.Name {
-	case "":
-		return nil, false
 	case c.ctx.arrayClass, c.loadedClassName("std:set", "Set"), c.loadedClassName("std:map", "Map"):
 		return ct.TypeArgs, true
 	}
@@ -240,18 +242,16 @@ func (c *checker) collectionElems(ct *soltype.ClassType) ([]soltype.Type, bool) 
 }
 
 // loadedClassName returns the qualified name of the class that the package `uri` exports as
-// `name`. It returns "" when the run has not loaded the package or the package exports no
-// class under that name. It never loads a package.
+// `name`. It returns "" when the run has not loaded the package, is still loading it, or the
+// package exports no class under that name. It never loads a package.
 func (c *checker) loadedClassName(uri, name string) string {
 	ns, loaded := c.ctx.packages.Lookup(uri)
 	if !loaded || ns == nil {
 		return ""
 	}
-	b, found := ns.Types[name]
-	if !found {
-		return ""
-	}
-	cls, isClass := b.Type.(*soltype.ClassType)
+	// A name the package does not export reads as a binding with no type, which is not a
+	// class either.
+	cls, isClass := ns.Types[name].Type.(*soltype.ClassType)
 	if !isClass {
 		return ""
 	}
