@@ -848,6 +848,45 @@ fn sortLen(mut arr: Array<number>) -> undefined {
 }
 ```
 
+A callee that takes `&mut p` may assume that nothing else writes `p` until it
+returns. E5 keeps that assumption true when the other writer is a closure the
+callee runs. A write that breaks the assumption can cause three kinds of fault:
+
+- Two owners. In `sortPop`, an object ends up in both `arr` and `stash`.
+- A borrow that points at a value with a new owner. A callee that holds
+  `&mut self.items[0]` while it runs a closure that removes that element then
+  writes an object that something else owns.
+- A lost update. A callee that reads `p` before it runs the closure and writes
+  `p` after it overwrites what the closure wrote.
+
+E5 reads only the callee's signature, never its body. A `&mut self` or `&mut`
+parameter is enough to reject the call, even when the callee's body uses `p` in
+none of these ways. In `go` below, `run` holds `&mut c` while it runs `f`, and
+`f` writes `c`, so the call is rejected. To make the callback's write legal, the
+callee can lend its own borrow to the callback, as `goLent` does.
+
+```esc
+class Counter {
+    n: number,
+    run(&mut self, f: fn () -> undefined) -> undefined {
+        val before = self.n
+        f()
+        self.n = before + 1    // would overwrite the reset f performs
+    },
+    lend(&mut self, f: fn (c: &mut Counter) -> undefined) -> undefined { f(self) },
+    reset(&mut self) -> undefined { self.n = 0 },
+}
+
+fn go(mut c: Counter) -> undefined {
+    // error: this call may run the 'f' passed to 'run', which writes 'c' while the call borrows it as mutable for 'self'
+    c.run(fn () { c.reset() })
+}
+
+fn goLent(mut c: Counter) -> undefined {
+    c.lend(fn (inner: &mut Counter) { inner.reset() })    // accepted, since f writes through the borrow lend passes it
+}
+```
+
 ## Derived behaviour
 
 The rules above produce each of the following. None of them is a separate rule.
