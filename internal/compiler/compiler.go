@@ -196,7 +196,8 @@ func CheckBinScript(ctx context.Context, lib LibScope, src *ast.Source, config P
 // Compile compiles source as a script with only the prelude in scope. Its output
 // holds one unit, `index`, whose JavaScript is named `./index.js`.
 func Compile(source *ast.Source) CompilerOutput {
-	return compileScript(newBackend(PackageConfig{}), nil, source, "index", "./index.js")
+	// Compile's output is not installed as a command, so it has no `#!` line.
+	return compileScript(newBackend(PackageConfig{}), nil, source, "index", "./index.js", false)
 }
 
 // CompilePackage compiles a package's lib/ and bin/ sources, checking them as config
@@ -298,7 +299,8 @@ func CompilePackage(sources []*ast.Source, config PackageConfig) CompilerOutput 
 		// compileScript names its own phases, so this step names the script only for
 		// a panic outside them.
 		step.enter(src.Path, "compiling")
-		scriptOutput := compileScript(selected, libScope, src, "bin/index", scriptJSFile(src))
+		// A bin/ script is the package's `bin` entry, which npm runs through its `#!` line.
+		scriptOutput := compileScript(selected, libScope, src, "bin/index", scriptJSFile(src), true)
 		output.ParseErrors = append(output.ParseErrors, scriptOutput.ParseErrors...)
 		output.TypeErrors = append(output.TypeErrors, scriptOutput.TypeErrors...)
 
@@ -356,7 +358,8 @@ func collectUsedLibSymbols(script *ast.Script, lib LibScope) []string {
 // TODO: Update this so that we inject an `import` statement at the start of
 // each script source to import the `lib` namespace.
 func CompileScript(lib LibScope, source *ast.Source) CompilerOutput {
-	return compileScript(newBackend(PackageConfig{}), lib, source, "bin/index", scriptJSFile(source))
+	// CompileScript compiles a bin/ script, which npm runs through its `#!` line.
+	return compileScript(newBackend(PackageConfig{}), lib, source, "bin/index", scriptJSFile(source), true)
 }
 
 // scriptJSFile returns the path, relative to the build directory, of the JavaScript
@@ -367,8 +370,9 @@ func scriptJSFile(source *ast.Source) string {
 
 // compileScript compiles source with lib in scope, using b to check it when lib is nil.
 // The output holds one unit named unitName, whose JavaScript is named jsFile, or no
-// unit when the script holds an enum spread.
-func compileScript(b backend, lib LibScope, source *ast.Source, unitName, jsFile string) CompilerOutput {
+// unit when the script holds an enum spread. When shebang is true, the JavaScript
+// starts with a `#!/usr/bin/env node` line.
+func compileScript(b backend, lib LibScope, source *ast.Source, unitName, jsFile string, shebang bool) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -424,7 +428,9 @@ func compileScript(b backend, lib LibScope, source *ast.Source, unitName, jsFile
 	// npm runs a package's `bin` entry through its `#!` line. POSIX shells
 	// read it directly, and on Windows npm's .cmd shim picks the interpreter
 	// from it, so a script without one fails as an installed command.
-	printer.PrintShebang("/usr/bin/env node")
+	if shebang {
+		printer.PrintShebang("/usr/bin/env node")
+	}
 	jsOutput := printer.PrintModule(jsMod)
 
 	step.enter(source.Path, "generating a source map for")
