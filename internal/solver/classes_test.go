@@ -873,4 +873,3 @@ func TestNominalSubtype(t *testing.T) {
 		})
 	}
 }
-

@@ -183,7 +183,7 @@ fn f(q: &mut (RA | RB)) { q.kind = "a" }`,
 		},
 		{
 			name: "JoinOfDeclaredMembers",
-			src: `fn f<T0: {kind: string}>(c: boolean, a: A, b: B) {
+			src: `fn f(c: boolean, a: A, b: B) {
     val mut x = if c { a } else { b }
     x.kind = "b"
 }`,

@@ -415,7 +415,7 @@ func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
 //   - val: keeps the initializer's inferred type;
 //   - function return: recovers to `unknown`, since a function with a written return
 //     binds from its signature alone;
-//   - param: recovers to `unknown`.
+//   - param: recovers to a fresh variable, so its uses report nothing further.
 func TestUnsupportedAnnotationRecovers(t *testing.T) {
 	tests := []struct {
 		name string

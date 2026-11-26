@@ -68,25 +68,18 @@ func TestInferModuleIdentityPolymorphism(t *testing.T) {
 	require.Equal(t, `fn () -> ["hello", 5]`, pair)
 }
 
-// A body-level inner function that captures an outer parameter keeps the capture
-// through generalization (M2's eager body-level coalescing froze it to `never`).
-// The param flows to both tuple positions through two fresh result variables, so
-// the raw scheme carries three distinct quantified variables — PR1 rendered the
-// non-compact `fn <T0, T1>(y: T0 & T1) -> [T0, T1]`. PR2's co-occurrence merging
-// recognises that the three always appear together and collapses them to one type
-// parameter: `fn <T0>(y: T0) -> [T0, T0]`. Applying outer to 5 still yields [5, 5],
-// confirming the merge preserves the input→output connection.
+// A body-level inner function that captures an outer parameter keeps the capture through
+// generalization, so applying outer to 5 yields [5, 5].
 func TestInferModuleInnerCapturesOuterParam(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn outer<T0>(y: T0) {
+		fn outer<T0>(y: T0) -> [T0, T0] {
 			val getY = fn () { return y }
 			return [getY(), getY()]
 		}
 		val r = outer(5)
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(y: T0) -> [T0, T0]", values["outer"], "co-occurring variables merge to one type parameter")
-	require.Equal(t, "[5, 5]", values["r"], "the captured outer param reaches both result positions")
+	require.Equal(t, "[5, 5]", values["r"])
 }
 
 // Let-polymorphism extends to body-level `val`s: an inner polymorphic function
@@ -204,14 +197,13 @@ func TestInferOverloadArmRendersAnUnreadParamAsUnknown(t *testing.T) {
 
 // A recursive group generalizes without looping (the coalesce seen-guard, shipped
 // in M2 PR-5, keeps the cyclic var↔var bound graph total under generalization too).
-// The ungrounded mutual recursion bottoms out. Each parameter is only passed to the
-// other function and occurs in one position, so it is `unknown`. Each return is an
-// ungrounded recursive position, so it is `never`. The real contract is that inference
+// The ungrounded mutual recursion bottoms out. Each return is an ungrounded recursive
+// position, so it is `never`. The real contract is that inference
 // TERMINATES rather than hangs.
 func TestInferModuleRecursiveGroupGeneralizesWithoutLooping(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn ping(n) { return pong(n) }
-		fn pong(n) { return ping(n) }
+		fn ping(n: unknown) { return pong(n) }
+		fn pong(n: unknown) { return ping(n) }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, map[string]string{

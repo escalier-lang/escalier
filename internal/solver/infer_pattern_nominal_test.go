@@ -1027,7 +1027,7 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 	}{
 		{
 			name: "a getter binds through a structural arm",
-			src:  `fn f<T0>(c: &Circle) { return match c { {area} => area, _ => 0 } }`,
+			src:  `fn f(c: &Circle) { return match c { {area} => area, _ => 0 } }`,
 			want: "fn (c: &Circle) -> number",
 		},
 		{
@@ -1056,8 +1056,8 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 		{
 			// A `match` arm reads the getter through the same rule.
 			name:     "a raising getter's raise reaches a match arm's function",
-			src:      `fn f<T0>(c: &Circle) { return match c { {risky} => risky } }`,
-			wantErrs: []string{"9:43-9:48: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
+			src:      `fn f(c: &Circle) { return match c { {risky} => risky } }`,
+			wantErrs: []string{"9:39-9:44: `f` can throw `string`, but it doesn't declare it; add `throws string` to `f`'s signature"},
 		},
 		{
 			// Each member of a union scrutinee raises what its getter can raise.
@@ -1103,7 +1103,7 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 		},
 		{
 			name: "structural arms narrow and cover a union of classes",
-			src: `fn f<T0>(o: &(Color | Event)) { return match o {
+			src: `fn f(o: &(Color | Event)) { return match o {
 				{r, g, b} => r + g + b,
 				{kind} => kind,
 			} }`,
@@ -1111,7 +1111,7 @@ func TestInferStructuralPatternOverClassInstance(t *testing.T) {
 		},
 		{
 			name: "a nominal arm and a structural arm cover a union of classes",
-			src: `fn f<T0>(o: &(Color | Event)) { return match o {
+			src: `fn f(o: &(Color | Event)) { return match o {
 				Color {r, g, b} => r + g + b,
 				{kind} => kind,
 			} }`,

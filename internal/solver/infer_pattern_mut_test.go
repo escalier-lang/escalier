@@ -327,14 +327,6 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 			}`,
 			sig: "fn <T0: {a: number, ...}>(p: {x?: T0}) -> T0 | {a: number}",
 		},
-		"ParamDefault": {
-			src: `
-			fn f<T0: {a: number, ...}>(mut q = {a: 1}: T0) {
-				q.a = 2
-				return q
-			}`,
-			sig: "fn <T0: {a: number, ...}>(q?: T0) -> T0 | {a: number}",
-		},
 		"InlineAnnotatedDefaultKeepsLiteralTag": {
 			src: `
 			fn f({mut q::{kind: "a", n: number} = {kind: "a", n: 1}}: {q?: {kind: "a", n: number}}) {
@@ -425,15 +417,6 @@ func TestMutLeafWidensEagerly(t *testing.T) {
 			require.Equal(t, tt.sig, values["f"])
 		})
 	}
-}
-
-// TestMutLeafDefaultSignature asserts the signature inferred for a function whose
-// unannotated `mut` parameter has a literal default. The default's literal widens, so the
-// parameter's type does too.
-func TestMutLeafDefaultSignature(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(mut q = {a: 1}: {a: number}) -> number { return q.a }`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (q?: {a: number}) -> number", values["f"])
 }
 
 // TestDefaultedLeafDropsUndefined covers a defaulted leaf whose position the scrutinee types

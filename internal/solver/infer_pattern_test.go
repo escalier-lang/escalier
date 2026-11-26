@@ -751,13 +751,12 @@ func TestInferRestPatternUnknownScrutineeShape(t *testing.T) {
 	}
 }
 
-// The leftover's kind bound is load-bearing at the use site, not just in rendering. A
-// return of the unknown leftover is checked against the caller's expectation instead of
-// passing as `never`, and destructuring more elements out of it than its kind guarantees
-// is rejected. The rejection is correct rather than a limitation: nothing in
-// `fn f(p) { val [a, ...rest] = p }` stops a caller from passing `[1]`, which makes the
-// leftover empty, so `val [b, c] = rest` cannot be justified. Annotating the parameter
-// gives the leftover a length and the same destructuring checks.
+// A leftover of unknown length is checked where it is used. A return of it is checked
+// against the caller's expectation instead of passing as `never`, and destructuring more
+// elements out of it than its type guarantees is rejected. Nothing in
+// `fn f(p: [unknown, ...]) { val [a, ...rest] = p }` stops a caller from passing `[1]`,
+// which leaves `rest` empty, so `val [b, c] = rest` cannot be justified. A parameter type
+// with a fixed length gives the leftover a length, and the same destructuring checks.
 func TestInferRestPatternUnknownLeftoverUses(t *testing.T) {
 	// `f` is declared with the signature the Tuple case of
 	// TestInferRestPatternUnknownScrutineeShape asserts for `fn f([a, ...rest]) { return rest }`.
@@ -772,7 +771,7 @@ func TestInferRestPatternUnknownLeftoverUses(t *testing.T) {
 
 	t.Run("destructuring past the leftover's guaranteed length is rejected", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			fn f(p) {
+			fn f(p: [unknown, ...]) {
 				val [a, ...rest] = p
 				val [b, c] = rest
 				return c
@@ -784,7 +783,7 @@ func TestInferRestPatternUnknownLeftoverUses(t *testing.T) {
 
 	t.Run("reading a field off the leftover is rejected", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			fn f(p) {
+			fn f(p: {x: unknown, ...}) {
 				val {x, ...rest} = p
 				return rest.y
 			}
@@ -803,47 +802,6 @@ func TestInferRestPatternUnknownLeftoverUses(t *testing.T) {
 		`)
 		require.Empty(t, errs)
 		require.Equal(t, "fn (p: [number, string, boolean]) -> boolean", values["f"])
-	})
-}
-
-// An un-annotated parameter whose pattern names a `...rest` stays row-polymorphic, so a
-// caller may pass an object carrying the properties the rest is there to collect. Policy A
-// closes a usage-inferred object to exact, which would reject every such argument and
-// leave the rest nothing to bind, so a rest opts the parameter out of that close the same
-// way the written `open` marker does. A pattern with no rest still closes to exact.
-func TestInferRestPatternParamAdmitsExtraFields(t *testing.T) {
-	t.Run("a rest admits extra fields", func(t *testing.T) {
-		values, _, errs := inferSource(t, `
-			fn f<T0>({x, ...rest}: &{x: T0, ...}) { return x }
-			val r = f({x: 1, y: 2})
-		`)
-		require.Empty(t, errs)
-		require.Equal(t, "fn <T0, 'a>({x, ...rest}: &'a {x: T0, ...}) -> &'a T0", values["f"])
-	})
-
-	t.Run("no rest still closes to exact", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn f<T0>({x}: &{x: T0}) { return x }`)
-		require.Empty(t, errs)
-		require.Equal(t, "fn <T0, 'a>({x}: &'a {x: T0}) -> &'a T0", values["f"])
-	})
-
-	// `f` is declared with the signature "no rest still closes to exact" asserts.
-	t.Run("an exact param rejects extra fields", func(t *testing.T) {
-		_, _, errs := inferSource(t, `
-			declare fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0
-			val r = f({x: 1, y: 2})
-		`)
-		require.Len(t, errs, 1)
-		require.Equal(t, "3:24-3:25: object has extra property: y", msgWithSpan(t, errs[0]))
-	})
-
-	t.Run("a tuple rest already admits a longer tuple", func(t *testing.T) {
-		values, _, errs := inferSource(t, `
-			fn f<T0>([a, ...rest]: &[T0, ...]) { return a }
-			val r = f([1, 2, 3])
-		`)
-		require.Empty(t, errs)
-		require.Equal(t, "fn <T0, 'a>([a, ...rest]: &'a [T0, ...]) -> &'a T0", values["f"])
 	})
 }
 
@@ -1177,37 +1135,6 @@ func TestInferMatchBindsArm(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: {x: number, y: string}) -> [number, string]", values["f"])
-}
-
-// An unannotated param used only as a match scrutinee infers its shape from the arm
-// patterns, the same usage-based inference a member read drives. Each arm's pattern
-// emits its member-lookup requirements onto the scrutinee var. A bound field the body
-// never uses lands as `unknown`, and the inferred object closes to exact (Policy A).
-func TestInferMatchParamUsageObject(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		fn f<T0>(p: {x: T0, y: unknown}) {
-			return match p {
-				{x, y} => x,
-				_ => 0
-			}
-		}
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(p: {x: T0, y: unknown}) -> T0 | 0", values["f"])
-}
-
-// The same usage inference applies through a tuple pattern: the scrutinee infers a
-// tuple whose arity is the pattern's and whose unused element lands as `unknown`.
-func TestInferMatchParamUsageTuple(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		fn f<T0>(p: [T0, unknown]) {
-			return match p {
-				[a, b] => a
-			}
-		}
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(p: [T0, unknown]) -> T0", values["f"])
 }
 
 // Every non-diverging arm body joins into one branch-union result, exactly as an

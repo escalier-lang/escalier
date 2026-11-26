@@ -698,10 +698,12 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// A parameter with no written or contextual type has no type the body can rely on.
 		if v, ok := pt.(*soltype.TypeVarType); ok && !written {
 			fe, isClosure := node.(*ast.FuncExpr)
+			_, isRestPat := p.Pattern.(*ast.RestPat)
 			switch {
-			case p.TypeAnn != nil:
-				// The annotation did not resolve, and resolveTypeAnn reported why.
-				pt = &soltype.UnknownType{}
+			case p.TypeAnn != nil || isRestPat:
+				// The annotation did not resolve, and resolveTypeAnn reported why, or a rest
+				// parameter has no type, which restParamSlot reported. The parameter keeps its
+				// variable, so its uses report nothing further.
 			case isClosure && memberName == "" && member == nil && recv == nil:
 				// A closure keeps the variable, through which a generic context such as
 				// `fn apply<F>(f: F)` still reaches it. checkParamTypes reports it when no

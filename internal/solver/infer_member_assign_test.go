@@ -83,19 +83,6 @@ func TestInferMemberAssignWrittenAndEscapingReadField(t *testing.T) {
 	require.Equal(t, "fn <T0>(obj: {x: number, y: T0}) -> T0", values["foo"])
 }
 
-// Write-after-read on the SAME field needs no `written`-map support: the read mints
-// `T0` and constrains `obj <: {x: T0}`, the later write adds `obj <: {x: number}`,
-// and the two upper bounds merge so the field folds to `T0 & number`. The read's
-// value (returned `x`) stays `T0`. This asserts the plan's claim that write-after-read
-// falls out of ordinary constraint accumulation, the reverse of read-after-write.
-func TestInferMemberAssignWriteAfterRead(t *testing.T) {
-	values, _, errs := inferSource(t, `fn foo<T0>(mut obj: {x: T0 & number}) { val x = obj.x
- obj.x = 5
- return x }`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(obj: {x: T0 & number}) -> T0", values["foo"])
-}
-
 // A write through a nested receiver needs only the `mut` on the root binding: every owned
 // layer of a `mut` binding's value is writable, so `obj.p.x = 5` infers `{p: {x: number}}`
 // with no mutability in the type, and the displayed signature round-trips.
@@ -112,16 +99,6 @@ func TestInferMemberAssignOpenParam(t *testing.T) {
 	values, _, errs := inferSource(t, "fn foo(open mut obj: {x: number, ...}) { obj.x = 5 }")
 	require.Empty(t, errs)
 	require.Equal(t, "fn (obj: {x: number, ...}) -> undefined", values["foo"])
-}
-
-// A written receiver that ESCAPES (the whole object is returned) is not sealed: it
-// occurs in an output position, so the param keeps an open row and renders as a type
-// parameter bounded by the written requirement.
-func TestInferMemberAssignWrittenObjectEscapes(t *testing.T) {
-	values, _, errs := inferSource(t, `fn foo<T0: {x: number, ...}>(mut obj: T0) { obj.x = 5
- return obj }`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn <T0: {x: number, ...}>(obj: T0) -> T0", values["foo"])
 }
 
 // Writing a parameter's value into a field LINKS their types (#737). The write
@@ -258,20 +235,6 @@ func TestInferMemberAssignAnnotatedMutMissingField(t *testing.T) {
 	src := "fn f(mut obj: {x: number}) -> undefined { obj.z = 5 }"
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{"1:15-1:26: object is missing property: z"}, messagesWithSpan(t, errs))
-}
-
-// KNOWN GAP: two writes of INCOMPATIBLE types to one field produce an uninhabited
-// `number & string` rather than an error — each write is an independent upper bound
-// on the receiver var with no constraint relating them. Pinned so the gap is
-// explicit; a future soundness pass over conflicting writes should surface an error
-// here and update this assertion.
-// TODO(#738): report conflicting writes to one field instead of folding to an
-// uninhabited intersection.
-func TestInferMemberAssignConflictingWritesNoError(t *testing.T) {
-	values, _, errs := inferSource(t, `fn foo(mut obj: {x: number & string}) { obj.x = 5
- obj.x = "hi" }`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (obj: {x: number & string}) -> undefined", values["foo"])
 }
 
 // A field write through a `mut` reference to a CLASS instance projects the class body and

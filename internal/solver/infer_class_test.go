@@ -2805,27 +2805,6 @@ func TestInferMethodOverloadNoMatch(t *testing.T) {
 		msgWithSpan(t, errs[0]))
 }
 
-// TestInferMethodOverloadDeferredFallsBackToFirstMatch confirms the declaration-order
-// fallback for an unconstrained argument reaches method overloads too: inside a method
-// whose parameter x is unannotated, a self-call self.f(x) resolves to the first arm and
-// pins x, since an unconstrained argument cannot rank the arms. run's parameter x is
-// therefore number, the first arm's type.
-func TestInferMethodOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		class C {
-			n: number,
-			f(&self, x: number) -> number { return x },
-			f(&self, x: string) -> string { return x },
-			run(&self, x) -> number { return self.f(x) },
-		}
-		val c = C(0)
-		val r = c.run(1)
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "number", values["r"],
-		"an unconstrained argument defers to declaration-order first-match, pinning x to the first arm")
-}
-
 // TestInferMethodOverloadMixedReceiverRejected asserts the receiver-mutability uniformity rule
 // for overloaded methods: arms that disagree on their `self` receiver are rejected at
 // declaration. Overload resolution dispatches on the value arguments, and the

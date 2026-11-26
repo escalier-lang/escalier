@@ -138,7 +138,7 @@ func TestInferAssignUnknownTarget(t *testing.T) {
 // still records `number` as an upper bound of `x`.
 func TestInferUntypedModuleClosureParamStaysUnknown(t *testing.T) {
 	values, errs := inferAgainstTreeWithSpans(t, `
-		var id = fn (x: unknown) { return x }
+		var id = fn (x) { return x }
 		fn f() -> undefined { id = fn (n: number) -> number { return n + 1 } }
 		val r = id("hello")
 	`)

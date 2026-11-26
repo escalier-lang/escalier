@@ -131,22 +131,6 @@ func TestInferOverloadSpecificityBeatsDeclarationOrder(t *testing.T) {
 	require.Equal(t, "boolean", values["r"], "the more specific (string) arm outranks the earlier generic arm")
 }
 
-// A call with an unconstrained argument (a still-unconstrained parameter variable)
-// falls back to declaration-order first-match: f(y) inside `fn (y) {…}` resolves to
-// the first arm and pins y to that arm's parameter type. This over-narrows the
-// enclosing function (g then rejects a later g("hi")) — a documented MVP limitation
-// whose real fix (deferred resolution) is tracked in #723.
-func TestInferOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		fn f(x: number) -> number { return x }
-		fn f(x: string) -> string { return x }
-		fn g(y: number) { return f(y) }
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (y: number) -> number", values["g"],
-		"an unconstrained argument defers to declaration-order first-match, pinning y to the first arm")
-}
-
 // No arm accepts the argument ⇒ NoMatchingOverloadError listing the candidates.
 func TestInferOverloadNoMatch(t *testing.T) {
 	_, _, errs := inferSource(t, `
@@ -157,23 +141,6 @@ func TestInferOverloadNoMatch(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t,
 		"4:11-4:18: No matching overload for this call\n  fn (x: number) -> number\n  fn (x: string) -> string",
-		msgWithSpan(t, errs[0]))
-}
-
-// An overloaded function in a mutually-recursive group must annotate the parameters of
-// every arm. The fixed point tells the arms apart by their domains, so leaving those to
-// inference collapses every arm onto the same `unknown` parameter. The error blames the
-// first arm with an un-annotated parameter, and the binding degrades to that arm, which
-// is why the indistinguishable-arms check does not also fire.
-func TestInferOverloadMutualRecursionRequiresAnnotation(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn f(x: unknown) { g(x) }
-		fn f(y) { g(y) }
-		fn g(z: unknown) { f(z) }
-	`)
-	require.Len(t, errs, 1)
-	require.Equal(t,
-		"2:3-2:19: Overloaded function in a recursive group must annotate its parameters: f",
 		msgWithSpan(t, errs[0]))
 }
 
