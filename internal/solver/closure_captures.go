@@ -41,6 +41,13 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 
 	// moved maps each captured name the closure's body moves to the expression that moves it.
 	moved := c.capturesMovedBy[closure]
+	// mutPaths maps the declaration of each local to the field path of each value under it
+	// that the closure's body takes as `&mut`, as removableMutPaths finds them. The walk that
+	// fills it runs at the first capture that records into the event table, so a closure with
+	// no such capture skips it.
+	var mutPaths map[ast.Node][][]placeSeg
+	mutPathsDone := false
+	var removableWrites []movePlace
 
 	for _, capture := range c.closureCaptures(closure) {
 		// Resolve the captured name to its binding in the scope the closure is written in. A
@@ -75,7 +82,93 @@ func (c *checker) recordClosureCaptures(scope *Scope, closure ast.Func) {
 		// owned local.
 		if t := c.eventTable(); t != nil {
 			t.captureTypes[root] = bindingType(b)
+			if !mutPathsDone {
+				mutPaths = c.removableMutPaths(closure)
+				mutPathsDone = true
+			}
+			for _, path := range mutPaths[bindingDecl(b)] {
+				removableWrites = append(removableWrites, movePlace{root: root, path: path})
+			}
 		}
+	}
+
+	// The walk can type the closure more than once. Each pass finds the same places, so the
+	// list replaces the one an earlier pass recorded.
+	if t := c.eventTable(); t != nil {
+		t.removableWrites[closure] = removableWrites
+	}
+}
+
+// removableMutPaths returns the values that the body of `closure` takes as `&mut` and whose
+// type holds a removable slot of a non-value element, as holdsRemovableNonValueSlot decides.
+// The body includes the bodies of the functions nested in it. A value is taken as `&mut` when
+// it is one of these:
+//
+//   - the operand of a `&mut` borrow, such as `arr` in `&mut arr`
+//   - the receiver of a `&mut self` method, such as `arr` in `arr.pop()`
+//   - an argument that fills a `&mut` parameter of a callee whose type resolveFunc reads one
+//     signature from
+//
+// Only a value written as a chain rooted at a local counts, such as `arr` in `arr.pop()` or
+// `o.list` in `o.list.push(x)`. The map is keyed by the declaration of that local, and holds
+// the field path of each such chain. A chain with a dynamic index or a getter ends its path at
+// the link before it.
+//
+// The body must have been inferred, since the walk reads the receiver each call declares, the
+// type of each callee, and the type of each value it takes.
+func (c *checker) removableMutPaths(closure ast.Func) map[ast.Node][][]placeSeg {
+	v := &removableMutFinder{c: c, paths: map[ast.Node][][]placeSeg{}}
+	closure.Accept(v)
+	return v.paths
+}
+
+// removableMutFinder walks a body for removableMutPaths.
+type removableMutFinder struct {
+	ast.DefaultVisitor
+	c     *checker
+	paths map[ast.Node][][]placeSeg
+}
+
+func (v *removableMutFinder) EnterExpr(e ast.Expr) bool {
+	switch e := e.(type) {
+	case *ast.BorrowExpr:
+		if e.Mut {
+			v.record(e.Arg)
+		}
+	case *ast.CallExpr:
+		if recv, self := v.c.calleeReceiver(e.Callee); recv != nil && selfParamMut(self) {
+			v.record(recv)
+		}
+		fn, ok := resolveFunc(v.c.info.TypeOf(e.Callee))
+		if !ok {
+			return true
+		}
+		for i, arg := range e.Args {
+			param, ok := paramForArg(fn, i)
+			if !ok {
+				break
+			}
+			// The walk reaches an argument written as a `&mut` borrow through the BorrowExpr
+			// case, so only a value passed without one is recorded here.
+			if _, borrowed := arg.(*ast.BorrowExpr); borrowed {
+				continue
+			}
+			if ref, isRef := param.Type.(*soltype.RefType); isRef && ref.Mut {
+				v.record(arg)
+			}
+		}
+	}
+	return true
+}
+
+// record adds the chain `e` to the paths when it is rooted at a local and its type holds a
+// removable slot of a non-value element.
+func (v *removableMutFinder) record(e ast.Expr) {
+	if !v.c.exprHoldsRemovableNonValueSlot(e) {
+		return
+	}
+	if cp, ok := v.c.capturedChain(e); ok && cp.decl != nil {
+		v.paths[cp.decl] = append(v.paths[cp.decl], cp.segs)
 	}
 }
 

@@ -89,6 +89,132 @@ func TestHoldsRemovableSlotOfBuiltTypes(t *testing.T) {
 	}
 }
 
+// TestHoldsRemovableNonValueSlotOfBuiltTypes covers the element-type condition that
+// holdsRemovableNonValueSlot adds to holdsRemovableSlot. Each case builds the type directly
+// and asserts what both predicates answer for it.
+func TestHoldsRemovableNonValueSlotOfBuiltTypes(t *testing.T) {
+	res := InferModuleAgainstStdlib(parseModule(t, ""), benchTree, Options{})
+	c := res.checker
+
+	num := &soltype.PrimType{Prim: soltype.NumPrim}
+	str := &soltype.PrimType{Prim: soltype.StrPrim}
+	flat := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "x", Type: num}}}
+	field := func(name string, t soltype.Type) *soltype.ObjectType {
+		return &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: t}}}
+	}
+	// The stdlib tree loads `std:set` and `std:map` for every module, so their classes are
+	// registered here.
+	setName, mapName := c.loadedClassName("std:set", "Set"), c.loadedClassName("std:map", "Map")
+	require.NotEmpty(t, setName)
+	require.NotEmpty(t, mapName)
+	setOf := func(elem soltype.Type) *soltype.ClassType {
+		return &soltype.ClassType{Name: setName, TypeArgs: []soltype.Type{elem}}
+	}
+	mapOf := func(key, value soltype.Type) *soltype.ClassType {
+		return &soltype.ClassType{Name: mapName, TypeArgs: []soltype.Type{key, value}}
+	}
+
+	tests := map[string]struct {
+		t           soltype.Type
+		want        bool
+		wantAnySlot bool
+	}{
+		"ArrayOfNumbers":       {t: c.ctx.arrayOf(num), want: false, wantAnySlot: true},
+		"ArrayOfStrings":       {t: c.ctx.arrayOf(str), want: false, wantAnySlot: true},
+		"ArrayOfObjects":       {t: c.ctx.arrayOf(flat), want: true, wantAnySlot: true},
+		"ArrayOfArrays":        {t: c.ctx.arrayOf(c.ctx.arrayOf(num)), want: true, wantAnySlot: true},
+		"FieldOfArrayOfNumber": {t: field("items", c.ctx.arrayOf(num)), want: false, wantAnySlot: true},
+		"FieldOfArrayOfObject": {t: field("items", c.ctx.arrayOf(flat)), want: true, wantAnySlot: true},
+		// A type parameter stands for any type, including an object.
+		"ArrayOfATypeParameter": {
+			t:           c.ctx.arrayOf(&soltype.TypeVarType{ID: 1, Rigid: &soltype.RigidParam{Name: "T"}}),
+			want:        true,
+			wantAnySlot: true,
+		},
+		// The second `Array` carries different type arguments from the first, so reaching
+		// the class again still checks its elements.
+		"FieldsOfBothArrayKinds": {
+			t: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+				&soltype.PropertyElem{Name: "a", Type: c.ctx.arrayOf(num)},
+				&soltype.PropertyElem{Name: "b", Type: c.ctx.arrayOf(flat)},
+			}},
+			want:        true,
+			wantAnySlot: true,
+		},
+		"SetOfStrings":        {t: setOf(str), want: false, wantAnySlot: true},
+		"SetOfObjects":        {t: setOf(flat), want: true, wantAnySlot: true},
+		"MapOfStringToNumber": {t: mapOf(str, num), want: false, wantAnySlot: true},
+		"MapOfStringToObject": {t: mapOf(str, flat), want: true, wantAnySlot: true},
+		// A key is stored like a value, so an object key can gain a second owner too.
+		"MapOfObjectToNumber": {t: mapOf(flat, num), want: true, wantAnySlot: true},
+		"MixedCollectionFields": {
+			t: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+				&soltype.PropertyElem{Name: "tags", Type: setOf(str)},
+				&soltype.PropertyElem{Name: "counts", Type: mapOf(str, num)},
+				&soltype.PropertyElem{Name: "entries", Type: mapOf(str, flat)},
+			}},
+			want:        true,
+			wantAnySlot: true,
+		},
+		"MapOfATypeParameter": {
+			t:           mapOf(str, &soltype.TypeVarType{ID: 2, Rigid: &soltype.RigidParam{Name: "V"}}),
+			want:        true,
+			wantAnySlot: true,
+		},
+		"Unknown":    {t: &soltype.UnknownType{}, want: true, wantAnySlot: true},
+		"FixedShape": {t: field("inner", flat), want: false, wantAnySlot: false},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.want, c.holdsRemovableNonValueSlot(tc.t))
+			require.Equal(t, tc.wantAnySlot, c.holdsRemovableSlot(tc.t))
+		})
+	}
+}
+
+// TestHoldsRemovableNonValueSlotWithoutTheCollectionPackage covers a `Set` or a `Map` whose
+// package the run has not loaded as a class whose internals are unknown. Each case gives the
+// test checker, which loads only the prelude, a different view of `std:set` and asserts what
+// holdsRemovableNonValueSlot answers for `Set<string>` and for `Array<number>`.
+func TestHoldsRemovableNonValueSlotWithoutTheCollectionPackage(t *testing.T) {
+	stdlib := InferModuleAgainstStdlib(parseModule(t, ""), benchTree, Options{}).checker
+	setName := stdlib.loadedClassName("std:set", "Set")
+	require.NotEmpty(t, setName)
+
+	str := &soltype.PrimType{Prim: soltype.StrPrim}
+	num := &soltype.PrimType{Prim: soltype.NumPrim}
+	tests := map[string]struct {
+		// publish is the namespace the case registers for `std:set`, or nil to leave the
+		// package unloaded.
+		publish *Namespace
+		// loading registers `std:set` as still loading.
+		loading bool
+	}{
+		"NotLoaded":    {},
+		"StillLoading": {loading: true},
+		"ExportsNoSet": {publish: &Namespace{Types: map[string]TypeBinding{}}},
+		"ExportsSetAsAnAlias": {publish: &Namespace{Types: map[string]TypeBinding{
+			"Set": {Type: &soltype.AliasType{Name: "Set"}},
+		}}},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			c := newTestChecker()
+			c.preludeScope()
+			if tc.loading {
+				c.ctx.packages.markLoading("std:set", "")
+			}
+			if tc.publish != nil {
+				c.ctx.packages.publish("std:set", tc.publish)
+			}
+			require.Empty(t, c.loadedClassName("std:set", "Set"))
+			setOfStrings := &soltype.ClassType{Name: setName, TypeArgs: []soltype.Type{str}}
+			require.True(t, c.holdsRemovableNonValueSlot(setOfStrings))
+			require.False(t, c.holdsRemovableNonValueSlot(c.ctx.arrayOf(num)))
+		})
+	}
+}
+
 // TestContentsBorrowedByContainerType covers which container types let a callee remove the
 // value a live borrow reaches. Each case fills one template. The template borrows from `c`,
 // passes `&mut c` to touchC while the borrow is live, then writes through the borrow.

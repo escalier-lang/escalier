@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -32,16 +33,48 @@ func (c *checker) exprHoldsRemovableSlot(e ast.Expr) bool {
 // cannot see answers true. That covers a declared class, an object with a method or getter,
 // an index signature, a type parameter, and a type operator left unreduced.
 func (c *checker) holdsRemovableSlot(t soltype.Type) bool {
-	v := &removableSlotVisitor{c: c, aliases: set.NewSet[string](), classes: set.NewSet[string]()}
+	return c.walkRemovableSlots(t, false)
+}
+
+// exprHoldsRemovableNonValueSlot reports whether the value of e has a type that
+// holdsRemovableNonValueSlot accepts. A nil e has no recorded type, and an e with no recorded
+// type answers true.
+func (c *checker) exprHoldsRemovableNonValueSlot(e ast.Expr) bool {
+	t := c.info.TypeOf(e)
+	return t == nil || c.holdsRemovableNonValueSlot(t)
+}
+
+// holdsRemovableNonValueSlot reports whether a callee given a mutable borrow of a value of
+// type t could take a value that is not a value type out of a slot inside it and hand that
+// value to a new owner. It answers as holdsRemovableSlot does, except for an `Array`, a `Set`
+// or a `Map` whose type arguments are all value types, as isValueShaped decides. Such a
+// collection holds no such slot, since removing an element copies it. So `Array<number>`,
+// `Set<string>` and `Map<string, number>` answer false, and `Array<Flat>` answers true.
+func (c *checker) holdsRemovableNonValueSlot(t soltype.Type) bool {
+	return c.walkRemovableSlots(t, true)
+}
+
+// walkRemovableSlots runs removableSlotVisitor over t and reports whether it found a removable
+// slot. `nonValueOnly` sets the visitor's field of the same name.
+func (c *checker) walkRemovableSlots(t soltype.Type, nonValueOnly bool) bool {
+	v := &removableSlotVisitor{
+		c:            c,
+		nonValueOnly: nonValueOnly,
+		aliases:      set.NewSet[string](),
+		classes:      set.NewSet[string](),
+	}
 	t.Accept(v, soltype.Positive)
 	return v.found
 }
 
-// removableSlotVisitor is the walk of holdsRemovableSlot. `found` is set once the walk
-// reaches a removable slot, and every node after that is skipped.
+// removableSlotVisitor is the walk of holdsRemovableSlot and holdsRemovableNonValueSlot.
+// `found` is set once the walk reaches a removable slot, and every node after that is skipped.
 type removableSlotVisitor struct {
 	c     *checker
 	found bool
+	// nonValueOnly is set when a collection whose type arguments are all value types counts
+	// as holding no removable slot. collectionElems lists the collections.
+	nonValueOnly bool
 	// `aliases` and `classes` hold the names the walk has expanded. A name reached again
 	// is not expanded again, but its type arguments are still walked. Those arguments are
 	// all that a second expansion could add, since the body around them was walked once.
@@ -98,6 +131,16 @@ func (v *removableSlotVisitor) EnterType(t soltype.Type, pol soltype.Polarity) s
 		body.Accept(v, pol)
 		return skip
 	case *soltype.ClassType:
+		// This comes before the check of `classes`. A collection reached again can carry
+		// different type arguments, and those arguments need checking as values.
+		if v.nonValueOnly {
+			if elems, isCollection := v.c.collectionElems(t); isCollection {
+				if !slices.ContainsFunc(elems, func(elem soltype.Type) bool { return !v.c.isValueShaped(elem) }) {
+					return skip
+				}
+				break
+			}
+		}
 		if v.classes.Contains(t.Name) {
 			return descend
 		}
@@ -182,6 +225,37 @@ func (c *checker) fieldClassBody(ct *soltype.ClassType) (*soltype.ObjectType, bo
 		return nil, false
 	}
 	return body, true
+}
+
+// collectionElems returns the type arguments of ct when ct is the prelude's `Array`, the
+// `Set` that `std:set` exports, or the `Map` that `std:map` exports. Each type argument is a
+// type the collection stores. That is the element of an `Array` or a `Set`, and the key and
+// the value of a `Map`. It returns false for any other class.
+func (c *checker) collectionElems(ct *soltype.ClassType) ([]soltype.Type, bool) {
+	// Every registered class has a qualified name, so ct.Name is never "" and never matches
+	// the "" that a missing class answers.
+	switch ct.Name {
+	case c.ctx.arrayClass, c.loadedClassName("std:set", "Set"), c.loadedClassName("std:map", "Map"):
+		return ct.TypeArgs, true
+	}
+	return nil, false
+}
+
+// loadedClassName returns the qualified name of the class that the package `uri` exports as
+// `name`. It returns "" when the run has not loaded the package, is still loading it, or the
+// package exports no class under that name. It never loads a package.
+func (c *checker) loadedClassName(uri, name string) string {
+	ns, loaded := c.ctx.packages.Lookup(uri)
+	if !loaded || ns == nil {
+		return ""
+	}
+	// A name the package does not export reads as a binding with no type, which is not a
+	// class either.
+	cls, isClass := ns.Types[name].Type.(*soltype.ClassType)
+	if !isClass {
+		return ""
+	}
+	return cls.Name
 }
 
 // isFixedSlot reports whether `link` reads a field of an object or class, or a slot of a

@@ -285,6 +285,9 @@ type passEvent struct {
 type callEvent struct {
 	eventBase
 	call *ast.CallExpr
+	// `params` holds the name of the parameter each argument of `call` fills, in argument
+	// order, as argParamNames returns them. A diagnostic names an argument by it.
+	params []string
 }
 
 func (*copyEvent) isOwnershipEvent()        {}
@@ -363,6 +366,11 @@ type ownershipEvents struct {
 	// uses its captures for the statement it is written in, since the expression it sits in
 	// may call it there.
 	boundClosures set.Set[ast.Func]
+	// removableWrites maps each closure written in the body to each place under a local it
+	// captures that its body takes as `&mut` and whose type holds a removable slot of a
+	// non-value element, as removableMutPaths finds them. A capture whose own loan is
+	// immutable can still hold such a place, since `arr.pop()` takes `arr` as `&mut`.
+	removableWrites map[ast.Func][]movePlace
 	// `retained` lists each store of a closure into a place that keeps it past its statement,
 	// in the order the walk meets them. retainedResults maps a call to the stores whose
 	// closure the call's result keeps, for noteRetainedHolder.
@@ -506,6 +514,7 @@ func newOwnershipEvents(names map[liveness.VarID]string) *ownershipEvents {
 		keptAccesses:    map[ast.Func]map[liveness.VarID][]keptAccess{},
 		callerOwned:     set.NewSet[liveness.VarID](),
 		boundClosures:   set.NewSet[ast.Func](),
+		removableWrites: map[ast.Func][]movePlace{},
 		retainedResults: map[ast.Expr][]*retainedStore{},
 		captureTypes:    map[liveness.VarID]soltype.Type{},
 		moduleRoots:     map[liveness.VarID]ValueBinding{},

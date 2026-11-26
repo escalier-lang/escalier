@@ -117,6 +117,48 @@ func (e *ContentsBorrowedError) Message() string {
 	return fmt.Sprintf("cannot borrow '%s' as mutable for this call while a borrow of its contents is live", e.Place)
 }
 
+// ClosureArgWriteError reports a closure that a call's argument holds and that can remove a
+// non-value element from a place the call also borrows as mutable, through its receiver or
+// another argument. The callee may run the closure while it holds that borrow. In
+//
+//	type Flat = {x: number}
+//	declare fn shrink(a: &mut Array<Flat>) -> undefined
+//	declare fn apply(target: &mut {items: Array<Flat>}, f: fn () -> undefined) -> undefined
+//	fn go(mut b: {items: Array<Flat>}) -> undefined {
+//		apply(&mut b, fn () { shrink(&mut b.items) })
+//	}
+//
+// the closure is the 'f' passed to 'apply'. It writes 'b.items', and the call borrows 'b' for
+// 'target'.
+type ClosureArgWriteError struct {
+	// Via names the closure, as in `the 'f' passed to 'apply'`. passedVia produces it.
+	Via string
+	// Place is the place the closure takes as `&mut`, and Borrowed the place the call borrows
+	// as mutable. They overlap.
+	Place    string
+	Borrowed string
+	// BorrowParam is the parameter that takes the mutable borrow, `self` for the receiver. It
+	// is empty when the parameter has no name.
+	BorrowParam string
+	node        ast.Node
+	borrow      ast.Span
+}
+
+func (*ClosureArgWriteError) isSolverError()        {}
+func (e *ClosureArgWriteError) Span() ast.Span      { return e.node.Span() }
+func (e *ClosureArgWriteError) Related() []ast.Span { return []ast.Span{e.borrow} }
+func (e *ClosureArgWriteError) Message() string {
+	held := "it"
+	if e.Place != e.Borrowed {
+		held = fmt.Sprintf("'%s'", e.Borrowed)
+	}
+	slot := ""
+	if e.BorrowParam != "" {
+		slot = fmt.Sprintf(" for '%s'", e.BorrowParam)
+	}
+	return fmt.Sprintf("this call may run %s, which writes '%s' while the call borrows %s as mutable%s", e.Via, e.Place, held, slot)
+}
+
 // MoveWhileBorrowedError reports a move of data a live borrow still reaches. After
 // `val y = b` the new owner y holds the data, and a borrow taken from b still points at it.
 type MoveWhileBorrowedError struct {

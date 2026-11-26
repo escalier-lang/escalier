@@ -517,3 +517,379 @@ func TestRetainedClosureWritesFollowCaptures(t *testing.T) {
 		})
 	}
 }
+
+// TestClosureArgWritesMutableSlot covers a closure that a call's argument holds, where the
+// call also borrows a place as mutable through a `&mut self` receiver or a `&mut` parameter.
+// A closure that can remove a non-value element from an overlapping place is rejected. It can
+// when it takes the place as `&mut` and the place's type holds a removable slot of a non-value
+// element, such as an `Array<Flat>`, a `Map<string, Flat>` or a declared class. That covers a
+// `&mut` borrow, a `&mut self` receiver, a `&mut` argument, and a call of another closure that
+// does one of these, including a closure nested in the callback's own body.
+//
+// The accepted cases cover a closure that assigns the place, one that removes a value-type
+// element, one that calls a `&mut` method of a class made of value-type fields, one that only
+// reads the place, one that writes a disjoint place, and a call with no `&mut` slot.
+func TestClosureArgWritesMutableSlot(t *testing.T) {
+	tests := map[string]struct {
+		// imports is written before src, on the line src leaves empty, so a case that imports
+		// a module keeps the line numbers it would have without the import.
+		imports string
+		src     string
+		want    []string
+	}{
+		"CompareFnPopsTheReceiver": {
+			src: `
+				type Flat = {x: number}
+				export fn sortPop(mut arr: Array<Flat>, mut stash: Array<Flat>) -> undefined {
+					arr.sort(fn (a, b) {
+						match arr.pop() {
+							p: Flat => { stash.push(p) },
+							_ => {},
+						}
+						return 0
+					})
+				}
+			`,
+			want: []string{"4:15-10:7: this call may run the 'compareFn' passed to 'sort', which writes 'arr' while the call borrows it as mutable for 'self'"},
+		},
+		"CompareFnCallsANestedClosureThatPopsAFlat": {
+			src: `
+				type Flat = {x: number}
+				export fn sortPop(mut arr: Array<Flat>) -> undefined {
+					arr.sort(fn (a, b) {
+						val pop = fn () { arr.pop() }
+						pop()
+						return 0
+					})
+				}
+			`,
+			want: []string{"4:15-8:7: this call may run the 'compareFn' passed to 'sort', which writes 'arr' while the call borrows it as mutable for 'self'"},
+		},
+		"CompareFnPassesAFlatReceiverToAMutParam": {
+			src: `
+				type Flat = {x: number}
+				declare fn clear(a: &mut Array<Flat>) -> undefined
+				export fn sortClear(arr: &mut Array<Flat>) -> undefined {
+					arr.sort(fn (a, b) {
+						clear(arr)
+						return 0
+					})
+				}
+			`,
+			want: []string{"5:15-8:7: this call may run the 'compareFn' passed to 'sort', which writes 'arr' while the call borrows it as mutable for 'self'"},
+		},
+		"CallbackPopsAFlatArrayFieldOfTheReceiver": {
+			src: `
+				type Flat = {x: number}
+				class Bag {
+					items: Array<Flat>,
+					run(&mut self, f: fn () -> undefined) -> undefined { f() },
+				}
+				export fn go(mut b: Bag) -> undefined {
+					b.run(fn () { b.items.pop() })
+				}
+			`,
+			want: []string{"8:12-8:35: this call may run the 'f' passed to 'run', which writes 'b.items' while the call borrows 'b' as mutable for 'self'"},
+		},
+		"CallbackBorrowsAFlatArrayFieldAsMutable": {
+			src: `
+				type Flat = {x: number}
+				declare fn shrink(a: &mut Array<Flat>) -> undefined
+				declare fn apply(target: &mut {items: Array<Flat>}, f: fn () -> undefined) -> undefined
+				export fn go(mut b: {items: Array<Flat>}) -> undefined {
+					apply(&mut b, fn () { shrink(&mut b.items) })
+				}
+			`,
+			want: []string{"6:20-6:50: this call may run the 'f' passed to 'apply', which writes 'b.items' while the call borrows 'b' as mutable for 'target'"},
+		},
+		"CallbackDeletesFromAFlatMap": {
+			imports: `import "std:map"`,
+			src: `
+				type Flat = {x: number}
+				class Index {
+					entries: map.Map<string, Flat>,
+					run(&mut self, f: fn () -> undefined) -> undefined { f() },
+				}
+				export fn go(mut idx: Index) -> undefined {
+					idx.run(fn () { idx.entries.delete("a") })
+				}
+			`,
+			want: []string{"8:14-8:47: this call may run the 'f' passed to 'run', which writes 'idx.entries' while the call borrows 'idx' as mutable for 'self'"},
+		},
+		// Queue's internals are unknown, so take may remove a value it holds.
+		"CallbackCallsAMutMethodOfADeclaredClass": {
+			src: `
+				declare class Queue {
+					take(&mut self) -> number,
+					run(&mut self, f: fn () -> undefined) -> undefined,
+				}
+				export fn go(mut q: Queue) -> undefined {
+					q.run(fn () { q.take() })
+				}
+			`,
+			want: []string{"7:12-7:30: this call may run the 'f' passed to 'run', which writes 'q' while the call borrows it as mutable for 'self'"},
+		},
+		"CompareFnReadsTheReceiverOk": {
+			src: `
+				export fn sortLen(mut arr: Array<number>) -> undefined {
+					arr.sort(fn (a, b) { return arr.length })
+				}
+			`,
+			want: nil,
+		},
+		"CompareFnPopsAnotherArrayOk": {
+			src: `
+				type Flat = {x: number}
+				export fn sortPop(mut arr: Array<Flat>, mut other: Array<Flat>) -> undefined {
+					arr.sort(fn (a, b) {
+						other.pop()
+						return 0
+					})
+				}
+			`,
+			want: nil,
+		},
+		// Popping a number copies it, so the number cannot end up with two owners.
+		"CompareFnPopsABorrowedNumberReceiverOk": {
+			src: `
+				export fn sortPop(arr: &mut Array<number>) -> undefined {
+					arr.sort(fn (a, b) {
+						arr.pop()
+						return 0
+					})
+				}
+			`,
+			want: nil,
+		},
+		"CompareFnCallsAClosureThatPopsANumberOk": {
+			src: `
+				export fn sortPop(mut arr: Array<number>) -> undefined {
+					val pop = fn () { arr.pop() }
+					arr.sort(fn (a, b) {
+						pop()
+						return 0
+					})
+				}
+			`,
+			want: nil,
+		},
+		"CompareFnCallsANestedClosureThatPopsANumberOk": {
+			src: `
+				export fn sortPop(mut arr: Array<number>) -> undefined {
+					arr.sort(fn (a, b) {
+						val pop = fn () { arr.pop() }
+						pop()
+						return 0
+					})
+				}
+			`,
+			want: nil,
+		},
+		"CompareFnPassesANumberReceiverToAMutParamOk": {
+			src: `
+				declare fn clear(a: &mut Array<number>) -> undefined
+				export fn sortClear(arr: &mut Array<number>) -> undefined {
+					arr.sort(fn (a, b) {
+						clear(arr)
+						return 0
+					})
+				}
+			`,
+			want: nil,
+		},
+		"CallbackDeletesFromANumberMapOk": {
+			imports: `import "std:map"`,
+			src: `
+				class Counts {
+					entries: map.Map<string, number>,
+					run(&mut self, f: fn () -> undefined) -> undefined { f() },
+				}
+				export fn go(mut counts: Counts) -> undefined {
+					counts.run(fn () { counts.entries.delete("a") })
+				}
+			`,
+			want: nil,
+		},
+		"CallbackClearsAStringSetOk": {
+			imports: `import "std:set"`,
+			src: `
+				class Tags {
+					names: set.Set<string>,
+					run(&mut self, f: fn () -> undefined) -> undefined { f() },
+				}
+				export fn go(mut t: Tags) -> undefined {
+					t.run(fn () { t.names.clear() })
+				}
+			`,
+			want: nil,
+		},
+		// bump writes a number field, and Box holds no removable slot.
+		"CallbackCallsAMutMethodThatWritesANumberOk": {
+			src: `
+				class Box {
+					x: number,
+					run(&mut self, f: fn () -> undefined) -> undefined { f() },
+					bump(&mut self) -> undefined { self.x = self.x + 1 },
+				}
+				export fn go(mut b: Box) -> undefined {
+					b.run(fn () { b.bump() })
+				}
+			`,
+			want: nil,
+		},
+		"CallbackPassesAClassOfValueFieldsToAMutParamOk": {
+			src: `
+				class Counter {
+					n: number,
+					label: string,
+					run(&mut self, f: fn () -> undefined) -> undefined { f() },
+				}
+				declare fn reset(c: &mut Counter) -> undefined
+				export fn go(mut c: Counter) -> undefined {
+					c.run(fn () { reset(&mut c) })
+				}
+			`,
+			want: nil,
+		},
+		// An assignment drops the old value of 'p.x', so no value ends up with two owners.
+		"CallbackAssignsAMutParamOk": {
+			src: `
+				declare fn apply(target: &mut {x: number}, f: fn () -> undefined) -> undefined
+				export fn go() -> undefined {
+					val mut p = {x: 1}
+					apply(&mut p, fn () { p.x = 2 })
+				}
+			`,
+			want: nil,
+		},
+		"NamedCallbackAssignsAMutParamOk": {
+			src: `
+				declare fn apply(target: &mut {x: number}, f: fn () -> undefined) -> undefined
+				export fn go() -> undefined {
+					val mut p = {x: 1}
+					val assign = fn () { p.x = 2 }
+					apply(&mut p, assign)
+				}
+			`,
+			want: nil,
+		},
+		"CallbackAssignsAFieldOfAMutParamOk": {
+			src: `
+				declare fn apply(target: &mut {a: {x: number}}, f: fn () -> undefined) -> undefined
+				export fn go() -> undefined {
+					val mut p = {a: {x: 1}}
+					apply(&mut p, fn () { p.a.x = 2 })
+				}
+			`,
+			want: nil,
+		},
+		"CallbackAssignsADisjointFieldOk": {
+			src: `
+				declare fn apply(target: &mut {x: number}, f: fn () -> undefined) -> undefined
+				export fn go() -> undefined {
+					val mut p = {a: {x: 1}, b: {x: 1}}
+					apply(&mut p.a, fn () { p.b.x = 2 })
+				}
+			`,
+			want: nil,
+		},
+		"CallbackPopsADisjointFieldOk": {
+			src: `
+				type Flat = {x: number}
+				declare fn apply(target: &mut Array<Flat>, f: fn () -> undefined) -> undefined
+				export fn go(mut b: {a: Array<Flat>, b: Array<Flat>}) -> undefined {
+					apply(&mut b.a, fn () { b.b.pop() })
+				}
+			`,
+			want: nil,
+		},
+		"CallbackReadsTheBorrowedFieldAndWritesAnotherOk": {
+			src: `
+				declare fn apply(target: &mut {x: number}, f: fn () -> undefined) -> undefined
+				export fn go() -> undefined {
+					val mut p = {a: {x: 1}, b: {x: 1}}
+					apply(&mut p.a, fn () {
+						val y = p.a.x
+						p.b.x = y
+					})
+				}
+			`,
+			want: nil,
+		},
+		// The extra argument fills no parameter, so the walk of the callback stops at it and
+		// still records the `&mut arr` before it.
+		"CompareFnPassesAnExtraArgumentAfterAMutParam": {
+			src: `
+				type Flat = {x: number}
+				declare fn shrink(a: &mut Array<Flat>) -> undefined
+				export fn sortShrink(mut arr: Array<Flat>) -> undefined {
+					arr.sort(fn (a, b) {
+						shrink(&mut arr, 1)
+						return 0
+					})
+				}
+			`,
+			want: []string{
+				"6:7-6:26: Too many arguments: expected at most 1, but got 2",
+				"5:15-8:7: this call may run the 'compareFn' passed to 'sort', which writes 'arr' while the call borrows it as mutable for 'self'",
+			},
+		},
+		// The callee is a call result, which has no name.
+		"CallbackPassedToAnUnnamedCallee": {
+			src: `
+				type Flat = {x: number}
+				declare fn shrink(a: &mut Array<Flat>) -> undefined
+				declare fn getApply() -> fn (target: &mut Array<Flat>, f: fn () -> undefined) -> undefined
+				export fn go(mut arr: Array<Flat>) -> undefined {
+					getApply()(&mut arr, fn () { shrink(&mut arr) })
+				}
+			`,
+			want: []string{"6:27-6:53: this call may run the 'f' passed to the callee, which writes 'arr' while the call borrows it as mutable for 'target'"},
+		},
+		// r holds the mutable borrow of arr, but no slot of the call to run holds it.
+		"CallbackWritesAPlaceALocalBorrowsOk": {
+			src: `
+				type Flat = {x: number}
+				declare fn shrink(a: &mut Array<Flat>) -> undefined
+				declare fn run(f: fn () -> undefined) -> undefined
+				export fn go(mut arr: Array<Flat>) -> undefined {
+					val r = &mut arr
+					run(fn () { shrink(&mut arr) })
+					r.push({x: 1})
+				}
+			`,
+			want: nil,
+		},
+		"CallbackWithoutAMutSlotOk": {
+			src: `
+				type Flat = {x: number}
+				declare fn run(f: fn () -> undefined) -> undefined
+				export fn go(mut arr: Array<Flat>) -> undefined {
+					run(fn () { arr.pop() })
+				}
+			`,
+			want: nil,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, msgs := inferAgainstTreeWithSpans(t, tc.imports+tc.src)
+			require.Equal(t, tc.want, msgs)
+		})
+	}
+}
+
+// TestBlameClosureArgWrite asserts that ClosureArgWriteError blames the argument that holds
+// the closure and relates the borrow the call holds as mutable.
+func TestBlameClosureArgWrite(t *testing.T) {
+	src := `type Flat = {x: number}
+declare fn shrink(a: &mut Array<Flat>) -> undefined
+declare fn apply(target: &mut {items: Array<Flat>}, f: fn () -> undefined) -> undefined
+fn go(mut b: {items: Array<Flat>}) -> undefined {
+	apply(&mut b, fn () { shrink(&mut b.items) })
+}`
+	res := InferModuleAgainstStdlib(parseModule(t, src), benchTree, Options{})
+	requireBlame(t, src, res.Errors,
+		"5:16-5:46: this call may run the 'f' passed to 'apply', which writes 'b.items' while the call borrows 'b' as mutable for 'target'",
+		"fn () { shrink(&mut b.items) }", "&mut b")
+}

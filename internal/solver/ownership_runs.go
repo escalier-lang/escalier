@@ -512,6 +512,20 @@ func retainedVia(param, callee string) string {
 	return fmt.Sprintf("%s that '%s' retains", held, callee)
 }
 
+// passedVia returns the phrase a message names a closure by when it is passed to the callee
+// `callee` for its parameter `param`, as in `the 'compareFn' passed to 'sort'`. An empty
+// `callee` or `param` leaves that name out.
+func passedVia(param, callee string) string {
+	held := "the function"
+	if param != "" {
+		held = fmt.Sprintf("the '%s'", param)
+	}
+	if callee == "" {
+		return held + " passed to the callee"
+	}
+	return fmt.Sprintf("%s passed to '%s'", held, callee)
+}
+
 // noteStoreWrites adds to the `writes` of `store` each owned local that a closure the stored
 // value reaches in s writes, and sets writesGrew when one is new. s is the state before the
 // statement that makes the store. The value reaches these closures:

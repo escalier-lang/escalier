@@ -1351,6 +1351,26 @@ func (c *checker) emitArgFlows(e *ast.CallExpr, fn *soltype.FuncType, ref livene
 	}
 }
 
+// argParamNames returns the name of the parameter of fn that each argument of e fills, in
+// argument order. A parameter written as a pattern other than a name, an argument past the
+// last parameter, and every argument of a call without a signature get the empty name.
+func argParamNames(e *ast.CallExpr, fn *soltype.FuncType) []string {
+	names := make([]string, len(e.Args))
+	if fn == nil {
+		return names
+	}
+	for i := range e.Args {
+		param, ok := paramForArg(fn, i)
+		if !ok {
+			break
+		}
+		if ip, isIdent := param.Pattern.(*soltype.IdentPat); isIdent {
+			names[i] = ip.Name
+		}
+	}
+	return names
+}
+
 // emitCallEnd emits the events of the call e returning, attached to `ref`, after every event
 // of its receiver and arguments. fn is the signature the arguments were applied to, or nil
 // when the call could not see one. It emits a passEvent for each lifetime fn shares between
@@ -1445,7 +1465,7 @@ func (c *checker) emitCallEnd(e *ast.CallExpr, fn *soltype.FuncType, ref livenes
 
 	// The callEvent comes after every passEvent, so each pass reads the slots before the
 	// callEvent releases them.
-	c.emitEvent(&callEvent{eventBase: eventBase{node: e}, call: e}, ref)
+	c.emitEvent(&callEvent{eventBase: eventBase{node: e}, call: e, params: argParamNames(e, fn)}, ref)
 }
 
 // argsOfParam returns the positions of the arguments of the call e that the parameter at
