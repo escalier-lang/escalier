@@ -1431,8 +1431,8 @@ func (d *bodyDataflow) pass(ev *passEvent, s *dataflowState) {
 //     the statement or after it. So `val r = &v; v.push(r.len())` checks clean, since r is
 //     dead once the arguments are evaluated. The later of the two paths is blamed, so
 //     `p.writeRead(&p)` reports `&p`.
-//  2. A closure argument that writes a place another slot of the call borrows as mutable is
-//     rejected, as checkClosureArgWrites describes.
+//  2. A closure argument that can remove a non-value element from a place another slot of
+//     the call borrows as mutable is rejected, as checkClosureArgWrites describes.
 //  3. Each loan a slot of the call holds is released, and a loan nothing else holds ends.
 //
 // Between steps 1 and 2, checkContentsBorrowed checks the call's mutable slots against live
@@ -1723,13 +1723,31 @@ func (d *bodyDataflow) placeUsedLaterAt(p movePlace, ev ownershipEvent, at liven
 }
 
 // checkClosureArgWrites reports each closure that an argument of the call `ev` holds and that
-// writes a place overlapping a place another slot of the call borrows as mutable. The other slot
-// is the receiver of a `&mut self` method or an argument that fills a `&mut` parameter. The callee
-// may run the closure while it holds that borrow. A closure writes a place it assigns, borrows
-// as `&mut`, or passes as a `&mut self` receiver or a `&mut` argument. A closure that only
-// reads the place is accepted. An argument holds each closure it names or contains, and each
-// closure such a closure captures, so a closure that calls another closure that writes the
-// place is rejected too.
+// can remove a non-value element from a place another slot of the call borrows as mutable. A
+// non-value element is one whose type is not a value type, such as an object. The other slot
+// is the receiver of a `&mut self` method or an argument that fills a `&mut` parameter. The
+// callee may run the closure while it holds that borrow, and may hold the element the closure
+// removes. The removed element can then end up with two owners. In
+//
+//	arr.sort(fn (a, b) {
+//		match arr.pop() {
+//			p: Flat => { stash.push(p) },
+//			_ => {},
+//		}
+//		return 0
+//	})
+//
+// with `arr` and `stash` of type `Array<Flat>`, `sort` writes its copy of the elements back
+// into `arr` after the closure pops one into `stash`. So `arr` and `stash` both hold that
+// element.
+//
+// A closure can remove such an element when it takes a place as `&mut` and the place's type
+// holds a removable slot of a non-value element, as closureRemovableWrites lists them. The
+// place must overlap the call's borrow. A closure that assigns the place is accepted, since an
+// assignment drops the old value. A closure that removes a value-type element is accepted too,
+// since the removal copies the element. An argument holds each closure it names or contains,
+// and each closure such a closure captures, so a closure that calls another closure that pops
+// is rejected too.
 //
 // The error blames the argument that holds the closure, once per argument.
 func (d *bodyDataflow) checkClosureArgWrites(ev *callEvent, s *dataflowState) {
@@ -1770,7 +1788,7 @@ func (d *bodyDataflow) closureArgWrite(ev *callEvent, index int, via string, clo
 		if !w.slots.Contains(slot) {
 			continue
 		}
-		for _, place := range d.closureWrites(w) {
+		for _, place := range d.closureRemovableWrites(w) {
 			for _, b := range borrows {
 				if !placesOverlap(place, b.ev.place) {
 					continue
@@ -1790,30 +1808,14 @@ func (d *bodyDataflow) closureArgWrite(ev *callEvent, index int, via string, clo
 	return nil
 }
 
-// closureWrites returns the places under the captured local of `w` that the closure holding the
-// capture `w` may write:
-//
-//   - For a mutable capture, each place under it that the closure assigns or borrows as
-//     `&mut`, as keptAccesses records them. With no record, it is the captured place itself.
-//   - For any capture, each place under its local that the closure passes as a `&mut self`
-//     receiver or a `&mut` argument, as callWrites records them.
-func (d *bodyDataflow) closureWrites(w *liveLoan) []movePlace {
+// closureRemovableWrites returns each place under the captured local of `w` that the closure
+// holding the capture `w` takes as `&mut` and whose type holds a removable slot of a non-value
+// element, as removableWrites records them.
+func (d *bodyDataflow) closureRemovableWrites(w *liveLoan) []movePlace {
 	closure, _ := w.ev.node.(ast.Func)
 	root := w.ev.place.root
 	var out []movePlace
-	if w.ev.borrow == mutableBorrow {
-		accesses, found := d.table.keptAccesses[closure][root]
-		if !found {
-			out = append(out, w.ev.place)
-		}
-		for _, a := range accesses {
-			p := movePlace{root: root, path: a.path}
-			if a.mut && placesOverlap(p, w.ev.place) {
-				out = append(out, p)
-			}
-		}
-	}
-	for _, p := range d.table.callWrites[closure] {
+	for _, p := range d.table.removableWrites[closure] {
 		if p.root == root {
 			out = append(out, p)
 		}

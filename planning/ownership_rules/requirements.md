@@ -810,24 +810,38 @@ fn moved() -> number {
 }
 ```
 
-**E5. A call rejects a closure argument that writes a place the call borrows as
-mutable.** A call that takes `&mut p`, as its receiver or as any `&mut`
-parameter, rejects an argument that holds a closure that writes a place
-overlapping `p`. A closure writes a place when it assigns the place, borrows it
-as `&mut`, or passes it to a call as a `&mut self` receiver or a `&mut`
-argument. An argument holds each
-closure it names or contains, and each closure such a closure captures. So a
-closure that calls another closure that writes `p` is rejected too. A closure
-that only reads `p` is accepted, since a read cannot give a value a second
-owner.
+**E5. A call rejects a closure argument that can give an element of a place
+the call borrows as mutable a second owner.** A call that takes `&mut p`, as its
+receiver or as any `&mut` parameter, rejects an argument that holds a closure
+that can remove a non-value element from a place overlapping `p`. A non-value
+element is one whose type is not a value type, such as an object or an array.
+The closure can remove one when it takes the place as `&mut` and the place's type
+holds a removable slot of a non-value element. The closure takes a place as
+`&mut` when it does one of these:
 
-E2 alone does not reject such a call, since it lets the closure's mutable path
-be live beside the call's `&mut`. E4 counts the closure's captures only at each
-call, but the callee may call the closure in the middle of its own access to
-`p`. `sort` takes `&mut self`. It reads every element into a list, sorts the
-list while it calls the compare function, and then writes the list back into the
+- borrows the place as `&mut`
+- calls a `&mut self` method on it
+- passes it, or a part of it, to a `&mut` parameter
+
+A removable slot is an element of an `Array`, a `Set` or a `Map`. A field of an
+object or class and a slot of a tuple are fixed, so `{items: Array<Flat>}` holds
+a removable slot through its `items` field and `{inner: Flat}` holds none. A type
+whose slots the checker cannot see counts as holding one. That covers a type
+parameter, a declared class, an object type with a method, and an index
+signature.
+
+An argument holds each closure it names or contains, and each closure such a
+closure captures. So a closure that calls another closure that pops `p` is
+rejected too. A closure that writes a place disjoint from `p` is accepted.
+
+E2 alone does not reject such a call, since it lets the closure's path be live
+beside the call's `&mut`. E4 counts the closure's captures only at each call,
+but the callee may call the closure in the middle of its own access to `p`.
+`sort` takes `&mut self`. It reads every element into a list, sorts the list
+while it calls the compare function, and then writes the list back into the
 array. In `sortPop` below, the elements the compare function pops are written
-back into `arr` while `stash` also holds them, so each has two owners.
+back into `arr` while `stash` also holds them, so each has two owners. A write
+through `stash` then changes what `arr` holds, with no borrow linking the two.
 
 ```esc
 type Flat = {x: number}
@@ -842,50 +856,47 @@ fn sortPop(mut arr: Array<Flat>, mut stash: Array<Flat>) -> undefined {
         return 0
     })
 }
-
-fn sortLen(mut arr: Array<number>) -> undefined {
-    arr.sort(fn (a, b) { return arr.length })    // accepted, since the closure only reads arr
-}
 ```
 
-A callee that takes `&mut p` may assume that nothing else writes `p` until it
-returns. E5 keeps that assumption true when the other writer is a closure the
-callee runs. A write that breaks the assumption can cause three kinds of fault:
+E5 prevents only this two-owner fault. The output is garbage-collected
+JavaScript, so a write the callee later overwrites loses an update but leaves
+every value with one owner. A closure that writes `p` in any of these ways is
+accepted:
 
-- Two owners. In `sortPop`, an object ends up in both `arr` and `stash`.
-- A borrow that points at a value with a new owner. A callee that holds
-  `&mut self.items[0]` while it runs a closure that removes that element then
-  writes an object that something else owns.
-- A lost update. A callee that reads `p` before it runs the closure and writes
-  `p` after it overwrites what the closure wrote.
-
-E5 reads only the callee's signature, never its body. A `&mut self` or `&mut`
-parameter is enough to reject the call, even when the callee's body uses `p` in
-none of these ways. In `go` below, `run` holds `&mut c` while it runs `f`, and
-`f` writes `c`, so the call is rejected. To make the callback's write legal, the
-callee can lend its own borrow to the callback, as `goLent` does.
+- It assigns `p` or a place under it, as in `p.x = 2` or `p = q`. The
+  assignment drops the old value, so nothing gains a second owner.
+- It removes a value-type element, as `arr.pop()` does for `arr:
+  Array<number>`. Removing the element copies it.
+- It calls a `&mut self` method on a class whose fields hold no removable slot,
+  such as `reset` below. The method can only overwrite those fields.
+- It only reads `p`.
 
 ```esc
 class Counter {
     n: number,
-    run(&mut self, f: fn () -> undefined) -> undefined {
-        val before = self.n
-        f()
-        self.n = before + 1    // would overwrite the reset f performs
-    },
-    lend(&mut self, f: fn (c: &mut Counter) -> undefined) -> undefined { f(self) },
+    run(&mut self, f: fn () -> undefined) -> undefined { f() },
     reset(&mut self) -> undefined { self.n = 0 },
 }
 
 fn go(mut c: Counter) -> undefined {
-    // error: this call may run the 'f' passed to 'run', which writes 'c' while the call borrows it as mutable for 'self'
-    c.run(fn () { c.reset() })
+    c.run(fn () { c.reset() })    // accepted, since Counter holds no removable slot
 }
 
-fn goLent(mut c: Counter) -> undefined {
-    c.lend(fn (inner: &mut Counter) { inner.reset() })    // accepted, since f writes through the borrow lend passes it
+fn sortNumbers(mut arr: Array<number>) -> undefined {
+    arr.sort(fn (a, b) {
+        arr.pop()    // accepted, since popping a number copies it
+        return 0
+    })
 }
 ```
+
+E5 reads only the callee's signature, never its body. A `&mut self` or `&mut`
+parameter is enough to reject the call, even when the callee never holds an
+element while it runs the closure. To make the closure's removal legal, the
+callee can lend its own borrow to the closure. A signature such as
+`lend(&mut self, f: fn (items: &mut Array<Flat>) -> undefined)` called as
+`b.lend(fn (items: &mut Array<Flat>) { items.pop() })` checks clean, since the
+closure removes the element through the borrow `lend` passes it.
 
 ## Derived behaviour
 
@@ -963,7 +974,7 @@ Rust has no matching feature.
 | E2 no immutable and mutable path live together | Aliasing XOR mutability over non-lexical lifetimes: one `&mut`, or any number of `&` | Differs | Escalier allows several live mutable paths at once. The target is single-threaded and garbage collected, so the only hazard left is an immutable path observing a write |
 | E3 no move while borrowed | Rejected with E0505 | Same | |
 | E4 closure calls use its borrows | A closure holds its captured borrows from creation to its last use | Differs | Escalier counts the borrows only at each call, so a write to a captured value between two calls is accepted. Rust rejects it |
-| E5 no closure argument writes a place the call borrows as mutable | A closure that captures `v` cannot be passed while `v` is mutably borrowed, rejected with E0500, E0501, or E0502 | Differs | Escalier accepts a closure that only reads the place. Rust rejects it with E0502 |
+| E5 no closure argument gives an element of a place the call borrows as mutable a second owner | A closure that captures `v` cannot be passed while `v` is mutably borrowed, rejected with E0500, E0501, or E0502 | Differs | Escalier rejects only a closure that takes the place as `&mut` when its type holds a removable non-value element. It accepts a closure that reads the place, assigns it, or removes a value-type element from it. Rust rejects each of these |
 | D1 no move out of module-level state | Moving out of a `static` is rejected with E0507 | Same | |
 | D2 a moving closure is called once | `FnOnce` | Same | |
 | T8 branches agree on ownership | `if` branches must have one type, so `T` and `&T` do not join | Same | |

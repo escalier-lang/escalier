@@ -117,23 +117,24 @@ func (e *ContentsBorrowedError) Message() string {
 	return fmt.Sprintf("cannot borrow '%s' as mutable for this call while a borrow of its contents is live", e.Place)
 }
 
-// ClosureArgWriteError reports a closure that a call's argument holds and that writes a place
-// the call also borrows as mutable, through its receiver or another argument. The callee may
-// run the closure while it holds that borrow. In
+// ClosureArgWriteError reports a closure that a call's argument holds and that can remove a
+// non-value element from a place the call also borrows as mutable, through its receiver or
+// another argument. The callee may run the closure while it holds that borrow. In
 //
-//	declare fn apply(target: &mut {x: number}, f: fn () -> undefined) -> undefined
-//	fn go() -> undefined {
-//		val mut p = {x: 1}
-//		apply(&mut p, fn () { p.x = 2 })
+//	type Flat = {x: number}
+//	declare fn shrink(a: &mut Array<Flat>) -> undefined
+//	declare fn apply(target: &mut {items: Array<Flat>}, f: fn () -> undefined) -> undefined
+//	fn go(mut b: {items: Array<Flat>}) -> undefined {
+//		apply(&mut b, fn () { shrink(&mut b.items) })
 //	}
 //
-// the closure is the 'f' passed to 'apply'. It writes 'p.x', and the call borrows 'p' for
+// the closure is the 'f' passed to 'apply'. It writes 'b.items', and the call borrows 'b' for
 // 'target'.
 type ClosureArgWriteError struct {
 	// Via names the closure, as in `the 'f' passed to 'apply'`. passedVia produces it.
 	Via string
-	// Place is the place the closure writes, and Borrowed the place the call borrows as
-	// mutable. They overlap.
+	// Place is the place the closure takes as `&mut`, and Borrowed the place the call borrows
+	// as mutable. They overlap.
 	Place    string
 	Borrowed string
 	// BorrowParam is the parameter that takes the mutable borrow, `self` for the receiver. It

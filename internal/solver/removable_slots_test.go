@@ -89,6 +89,58 @@ func TestHoldsRemovableSlotOfBuiltTypes(t *testing.T) {
 	}
 }
 
+// TestHoldsRemovableNonValueSlotOfBuiltTypes covers the element-type condition that
+// holdsRemovableNonValueSlot adds to holdsRemovableSlot. Each case builds the type directly
+// and asserts what both predicates answer for it.
+func TestHoldsRemovableNonValueSlotOfBuiltTypes(t *testing.T) {
+	res := InferModuleAgainstStdlib(parseModule(t, ""), benchTree, Options{})
+	c := res.checker
+
+	num := &soltype.PrimType{Prim: soltype.NumPrim}
+	str := &soltype.PrimType{Prim: soltype.StrPrim}
+	flat := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: "x", Type: num}}}
+	field := func(name string, t soltype.Type) *soltype.ObjectType {
+		return &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{Name: name, Type: t}}}
+	}
+
+	tests := map[string]struct {
+		t           soltype.Type
+		want        bool
+		wantAnySlot bool
+	}{
+		"ArrayOfNumbers":       {t: c.ctx.arrayOf(num), want: false, wantAnySlot: true},
+		"ArrayOfStrings":       {t: c.ctx.arrayOf(str), want: false, wantAnySlot: true},
+		"ArrayOfObjects":       {t: c.ctx.arrayOf(flat), want: true, wantAnySlot: true},
+		"ArrayOfArrays":        {t: c.ctx.arrayOf(c.ctx.arrayOf(num)), want: true, wantAnySlot: true},
+		"FieldOfArrayOfNumber": {t: field("items", c.ctx.arrayOf(num)), want: false, wantAnySlot: true},
+		"FieldOfArrayOfObject": {t: field("items", c.ctx.arrayOf(flat)), want: true, wantAnySlot: true},
+		// A type parameter stands for any type, including an object.
+		"ArrayOfATypeParameter": {
+			t:           c.ctx.arrayOf(&soltype.TypeVarType{ID: 1, Rigid: &soltype.RigidParam{Name: "T"}}),
+			want:        true,
+			wantAnySlot: true,
+		},
+		// The second `Array` carries different type arguments from the first, so reaching
+		// the class again still checks its elements.
+		"FieldsOfBothArrayKinds": {
+			t: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+				&soltype.PropertyElem{Name: "a", Type: c.ctx.arrayOf(num)},
+				&soltype.PropertyElem{Name: "b", Type: c.ctx.arrayOf(flat)},
+			}},
+			want:        true,
+			wantAnySlot: true,
+		},
+		"Unknown":    {t: &soltype.UnknownType{}, want: true, wantAnySlot: true},
+		"FixedShape": {t: field("inner", flat), want: false, wantAnySlot: false},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.want, c.holdsRemovableNonValueSlot(tc.t))
+			require.Equal(t, tc.wantAnySlot, c.holdsRemovableSlot(tc.t))
+		})
+	}
+}
+
 // TestContentsBorrowedByContainerType covers which container types let a callee remove the
 // value a live borrow reaches. Each case fills one template. The template borrows from `c`,
 // passes `&mut c` to touchC while the borrow is live, then writes through the borrow.
