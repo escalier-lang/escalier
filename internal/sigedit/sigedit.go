@@ -194,23 +194,36 @@ func (target Target) Edits(contents string) ([]Edit, bool) {
 	replaceSpan := func(span ast.Span, text string) { replace(span.Start.Offset, span.End.Offset, text) }
 
 	// The binder list is rewritten when the inferred signature binds a lifetime the source
-	// does not declare, and every part that names one of the added lifetimes is rewritten
+	// does not declare, or a type parameter the source does not write while it leaves its
+	// return type out, and every part that names one of the added lifetimes is rewritten
 	// with it.
 	declared := set.NewSet[string]()
 	for _, lp := range sig.LifetimeParams {
 		declared.Add("'" + lp.Name)
 	}
+	writtenTypeParams := set.NewSet[string]()
+	for _, tp := range sig.TypeParams {
+		writtenTypeParams.Add(tp.Name)
+	}
 	renderedNames := set.NewSet[string]()
 	var added []*regexp.Regexp
+	addsTypeParam := false
 	for _, b := range rendered.Binders {
 		name, _, _ := strings.Cut(b, ":")
 		name = strings.TrimSpace(name)
 		renderedNames.Add(name)
-		if strings.HasPrefix(name, "'") && !declared.Contains(name) {
-			added = append(added, regexp.MustCompile(regexp.QuoteMeta(name)+`\b`))
+		switch {
+		case strings.HasPrefix(name, "'"):
+			if !declared.Contains(name) {
+				added = append(added, regexp.MustCompile(regexp.QuoteMeta(name)+`\b`))
+			}
+		// A type parameter the source does not write can appear only in the return type the
+		// source leaves out, as `T0` does in `fn f() { return mk() }` for a generic `mk`.
+		case sig.Return == nil && !writtenTypeParams.Contains(name):
+			addsTypeParam = true
 		}
 	}
-	if len(added) > 0 {
+	if len(added) > 0 || addsTypeParam {
 		// A rewritten list would repeat a `where` clause's bounds, and would drop a lifetime
 		// the source declares that elision assigns, which the parts kept as written still
 		// name.

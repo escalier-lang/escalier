@@ -6,8 +6,8 @@ import (
 )
 
 // This file decides the event kind of each flow. It classifies a flow's source and
-// destination, holds the flows F3 has not settled yet, and settles them once the
-// unannotated parameter, closure capture, or callee they wait on is known.
+// destination, holds the flows whose destination is not settled yet, and settles them once
+// the closure capture or callee they wait on is known.
 
 // sourceKind classifies the value a flow takes from its source, the row of F2's table.
 type sourceKind uint8
@@ -130,8 +130,8 @@ func (c *checker) settleDest(table *ownershipEvents, dest flowDest, holder event
 }
 
 // paramDestOf returns the destination an argument passed to fp has. A borrow parameter
-// borrows. A parameter paramTakesOwnership accepts takes ownership. Any other parameter is
-// one F3 settled as a borrow, since its body neither moves it nor lets it escape.
+// borrows. A parameter paramTakesOwnership accepts takes ownership. Any other parameter,
+// such as one typed `unknown`, borrows immutably.
 func (c *checker) paramDestOf(fp *soltype.FuncParam, reborrows bool) flowDest {
 	if b, ok := c.borrowOfType(fp.Type); ok {
 		return &borrowDest{borrow: borrowKindOf(b.mut), lt: b.lt, reborrows: reborrows, writable: b.anyMut}

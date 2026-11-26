@@ -666,7 +666,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		if !written && !rest && hint != nil && i < len(hint.Params) && !hint.Params[i].Rest {
 			pt, written, contextual = hint.Params[i].Type, true, true
 			// An immutable borrow of a type the call has not solved yet is read through, so a
-			// field read off it keeps the borrow, as it does for a borrow F3 infers.
+			// field read off it keeps the borrow.
 			if ref, isRef := pt.(*soltype.RefType); isRef && !ref.Mut {
 				if v, isVar := ref.Inner.(*soltype.TypeVarType); isVar {
 					c.addReadThroughVar(v)
@@ -686,10 +686,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// Rule 2 of PR 3. A bare annotation is owned and only an `&` annotation
 		// borrows. An `&` annotation already mints its lifetime in
 		// resolveLifetimeAnn, so a parameter has nothing to attach here.
-		// An `open` un-annotated param keeps its usage-inferred object inexact at
-		// display time (B2). The marker only makes sense for an inferred var; an
-		// annotated param's exactness is fixed by its annotation, and paramType
-		// returns the resolved annotation (not a var) in that case.
+		// An `open` closure parameter with no type keeps the object its uses infer inexact
+		// at display time (B2). The marker only makes sense for a variable. An annotated
+		// param's exactness is fixed by its annotation, and writtenParamType returns the
+		// resolved annotation, not a variable, in that case.
 		if p.Open {
 			if v, ok := pt.(*soltype.TypeVarType); ok {
 				v.Open = true
@@ -710,11 +710,13 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				// context does.
 				c.queueParamTypeCheck(fe, p, pat, v)
 			default:
-				// A declaration or class member is typed by its own signature. The missing
-				// signature check reports the parameter when signatures are required. The
-				// error type accepts every use, so the body reports nothing further.
+				// A declaration or class member is typed by its own signature. The error type
+				// accepts every use, so the body reports nothing further.
 				pt = &soltype.ErrorType{}
-				if !c.requireSignatures {
+				// When signatures are required, the missing signature check already reports the
+				// parameter of a function or member it checks.
+				if !c.requireSignatures || !signatureCheckCovers(node) {
+					// The name drops a default, since the annotation goes before it.
 					c.report(&MissingParamTypeError{Param: p, Name: writtenParamName(pat), Declared: true})
 				}
 			}
@@ -742,8 +744,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				defaults = append(defaults, paramDefaultSite{def: def, param: pt, scope: snapshotScope(declScope, fnScope), widens: widens})
 			}
 			// A `mut p: T` parameter may mutate the `T` it owns. The caller moves its
-			// argument into `p` either way, so the signature keeps the plain `T`. An
-			// unannotated `mut p` is mutable too, and its type is inferred from its uses.
+			// argument into `p` either way, so the signature keeps the plain `T`. An untyped
+			// closure parameter `mut p` is mutable too.
 			//
 			// A call moves its argument into a written type only when the type is a
 			// concrete owned shape. An annotation naming a union, an intersection, or a type
@@ -1765,7 +1767,7 @@ func (c *checker) notMovedInto(t soltype.Type) bool {
 
 // writtenParamType is paramType, and also reports whether the type is the one p's annotation
 // names. It is false for an unannotated parameter and for one whose annotation failed to
-// resolve, whose type is then inferred from its uses.
+// resolve, and the type is then a fresh variable.
 func (c *checker) writtenParamType(scope *Scope, p *ast.Param, lvl int) (soltype.Type, bool) {
 	if p.TypeAnn != nil {
 		// A parameter's annotation sits one position deeper in the input, which flips the

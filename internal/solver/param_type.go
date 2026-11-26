@@ -119,8 +119,7 @@ func (e *MissingParamTypeError) Message() string {
 	return msg + "; write `" + e.Suggestion + "`"
 }
 
-// writtenParamName returns pat as the source writes it, without a default, so it reads as
-// the name an annotation follows.
+// writtenParamName returns pat as the source writes it, without its default.
 func writtenParamName(pat ast.Pat) string {
 	if ip, ok := pat.(*ast.IdentPat); ok && ip.Default != nil {
 		bare := *ip
@@ -129,4 +128,17 @@ func writtenParamName(pat ast.Pat) string {
 	}
 	name, _ := printer.Print(pat, printer.DefaultOptions())
 	return name
+}
+
+// signatureCheckCovers reports whether the missing signature check examines node's
+// signature, which it does for a function declaration and for a class method, getter or
+// setter, each with a body.
+func signatureCheckCovers(node ast.Node) bool {
+	switch n := node.(type) {
+	case *ast.FuncDecl:
+		return n.Body != nil
+	case *ast.FuncExpr:
+		return n.Body != nil
+	}
+	return false
 }
