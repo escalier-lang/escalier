@@ -156,6 +156,9 @@ func (c *checker) inferScriptIn(scope *Scope, script *ast.Script) (*Scope, *Info
 	// Every function expression the script wrote has been typed, so each one's return type is
 	// final. Report each function whose return type no finite value inhabits.
 	c.checkCanReturn()
+	// Every call and annotated binding in the component has constrained the closures that
+	// flow into it, so a closure parameter has every bound a context gives it.
+	c.checkParamTypes()
 	c.checkRigidLifetimes()
 	c.checkCallOnlyParams()
 	c.settleTentativeFuncEscapes()

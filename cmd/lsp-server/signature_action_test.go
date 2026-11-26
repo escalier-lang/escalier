@@ -42,11 +42,14 @@ func TestSignatureAction(t *testing.T) {
 		},
 		{
 			// A function expression's binder list goes after its `fn` keyword.
-			name:        "ClosureGetsBinderList",
-			src:         "val g = fn (x) { return x }",
-			cursor:      "val",
-			expected:    "val g = fn <T0>(x: T0) -> T0 { return x }",
-			diagnostics: []string{"0:4-0:5 'g' is a closure at a script's top level, so parameter 'x' needs a type and 'g' needs a return type; write them on the closure, or annotate 'g'"},
+			name:     "ClosureGetsBinderList",
+			src:      "val g = fn (x) { return x }",
+			cursor:   "val",
+			expected: "val g = fn <T0>(x: T0) -> T0 { return x }",
+			diagnostics: []string{
+				"0:12-0:13 parameter 'x' has no type, and nothing the closure flows into supplies one; write its type",
+				"0:4-0:5 'g' is a closure at a script's top level, so it needs a return type",
+			},
 		},
 		{
 			name:        "UnannotatedParam",

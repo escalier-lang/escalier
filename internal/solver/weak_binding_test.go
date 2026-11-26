@@ -255,12 +255,12 @@ val seen: map.Map<string, number> = map.Map()
 		{
 			name: "AFunctionExpressionStaysPolymorphic",
 			src: `
-val f = fn (x) { return x }
+val f = fn <T>(x: T) { return x }
 val a = f(1)
 val b = f("s")
 `,
 			values: map[string]string{
-				"f": "fn <T0>(x: T0) -> T0",
+				"f": "fn <T>(x: T) -> T",
 				"a": "1",
 				"b": `"s"`,
 			},
@@ -383,7 +383,7 @@ export val inc2 = twice(fn (x: number) -> number { return x + 1 })
 			// `val mut o`, which makes the element `number`.
 			name: "APatternTestLeavesASharedElementAlone",
 			src: `
-val mk = fn (v) { return [v] }
+val mk = fn <T>(v: T) { return [v] }
 val o = mk(5)
 fn f() -> "six" | "other" { return match o[0] { 6 => "six", _ => "other" } }
 `,

@@ -73,7 +73,7 @@ func TestMissingSignature(t *testing.T) {
 			name: "ClosureInsideBody",
 			src: `
 				fn twice(x: number) -> number {
-					val double = fn (y) { return y * 2 }
+					val double = fn (y: number) { return y * 2 }
 					return double(double(x))
 				}
 			`,
@@ -133,8 +133,9 @@ func TestMissingSignature(t *testing.T) {
 			name: "ClosureMissingParamType",
 			src:  `val double = fn (x) { return x * 2 }`,
 			expected: []string{
-				"error 1:5-1:11: 'double' is a module-level closure, so parameter 'x' needs a type and 'double' " +
-					"needs a return type; write them on the closure, or annotate 'double'",
+				"error 1:18-1:19: parameter 'x' has no type, and nothing the closure flows into supplies one; " +
+					"write `x: number`",
+				"error 1:5-1:11: 'double' is a module-level closure, so it needs a return type",
 			},
 		},
 		{

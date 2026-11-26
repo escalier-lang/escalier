@@ -69,14 +69,14 @@ func TestASuperLifetimeBinderIsHeldRigid(t *testing.T) {
 			// `g` generalizes over its own lifetime, and the reference instantiates it afresh.
 			name: "a bound identity closure accepts every lifetime",
 			src: cb + `fn mk() -> Cb {
-				val g = fn (q) { return q }
+				val g = fn (q: &{x: number}) { return q }
 				return g
 			}`,
 		},
 		{
 			name: "a bound closure returning a captured borrow is rejected",
 			src: cbIn + `fn mk<'s>(seed: &'s {x: number}) -> CbIn<'s> {
-				val g = fn (q) { return seed }
+				val g = fn (q: &{x: number}) { return seed }
 				return g
 			}`,
 			want: []string{"4:12-4:13: the caller of this signature chooses 'a, but the value requires 'a to be outlived by a lifetime the signature does not quantify"},

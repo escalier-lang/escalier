@@ -140,7 +140,7 @@ func TestInferOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x: number) -> number { return x }
 		fn f(x: string) -> string { return x }
-		val g = fn (y) { return f(y) }
+		fn g(y) { return f(y) }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (y: number) -> number", values["g"],
