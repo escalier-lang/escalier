@@ -3826,6 +3826,39 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			`,
 		},
 		{
+			// `y` holds what the call binds `T` to. A borrow cannot outlive the call, so the stored closure may not capture it.
+			name: "a stored closure capturing a local a type parameter binds to a borrow",
+			src: `
+				declare fn log(v: unknown) -> undefined
+				var sink: fn () -> undefined = fn () {}
+				declare fn each<T>(v: T, cb: fn (x: T) -> undefined) -> undefined
+				fn f(c: &{n: number}) -> undefined {
+					each(c, fn (x) {
+						val y = x
+						sink = fn () { log(y) }
+						return undefined
+					})
+				}
+			`,
+			want: []string{"this closure borrows `y`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `y` at module level"},
+		},
+		{
+			// A number copies into the closure, so the closure borrows nothing.
+			name: "a stored closure capturing a local a type parameter binds to a number",
+			src: `
+				declare fn log(v: unknown) -> undefined
+				var sink: fn () -> undefined = fn () {}
+				declare fn each<T>(v: T, cb: fn (x: T) -> undefined) -> undefined
+				fn f(c: number) -> undefined {
+					each(c, fn (x) {
+						val y = x
+						sink = fn () { log(y) }
+						return undefined
+					})
+				}
+			`,
+		},
+		{
 			// The missing property is reported once, by the shape `T` is checked against.
 			name: "a callback reads a missing field through a borrowed variable",
 			src: `

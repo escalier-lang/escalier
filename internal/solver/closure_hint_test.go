@@ -150,6 +150,12 @@ func TestClosureParamWithoutAContext(t *testing.T) {
 			},
 		},
 		{
+			// A generic `F` gives the closure no parameter types, so a `mut` parameter takes its
+			// type from its default, widened since the body may write it.
+			name: "MutParamWithADefaultInAGenericContext",
+			src:  "declare fn run<F>(f: F) -> undefined\nval r = run(fn (mut q = {a: 1}) { q.a = 2\n return q })",
+		},
+		{
 			name: "UnknownTarget",
 			src:  "fn g() -> undefined {\n\tnope = fn (x) { return x }\n}",
 			expected: []string{
