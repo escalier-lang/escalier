@@ -705,6 +705,57 @@ func TestContentsBorrowedByMutableCall(t *testing.T) {
 			`,
 			want: nil,
 		},
+		// h holds a copy of f's borrow of the field, which reset cannot remove either.
+		"CopiedFieldBorrowCannotBeRemovedOk": {
+			src: `
+				type Box = {inner: Flat, n: number}
+				declare fn reset(b: &mut Box) -> undefined
+
+				fn g(mut b: Box) -> undefined {
+					val f = &mut b.inner
+					val h = f
+					reset(&mut b)
+					h.x = 1
+				}
+			`,
+			want: nil,
+		},
+		// A method read through a string index takes its receiver the way `arr.pop()` does,
+		// and the error blames that receiver.
+		"PopCalledThroughAnIndex": {
+			src: `
+				fn g(mut arr: Array<Flat>) -> undefined {
+					val f = first(&mut arr)
+					val popped = arr["pop"]()
+					f.x = 1
+				}
+			`,
+			want: []string{"9:19-9:22: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+		},
+		// h holds a copy of f's borrow of an element, which the pop can remove.
+		"CopiedElementBorrow": {
+			src: `
+				fn g(mut arr: Array<Flat>) -> undefined {
+					val f = &mut arr[0]
+					val h = f
+					val popped = arr.pop()
+					h.x = 1
+				}
+			`,
+			want: []string{"10:19-10:22: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+		},
+		// The outer call's first slot holds what first handed back, which can be the element
+		// the pop removes, and that slot is live until keep returns.
+		"CallResultInAPendingArgument": {
+			src: `
+				declare fn keep(f: &mut Flat, popped: Flat | undefined) -> undefined
+
+				fn g(mut arr: Array<Flat>) -> undefined {
+					keep(first(&mut arr), arr.pop())
+				}
+			`,
+			want: []string{"10:28-10:31: cannot borrow 'arr' as mutable for this call while a borrow of its contents is live"},
+		},
 		// clear takes `&mut self`, and a Set's internals are unknown, so it may remove the
 		// element f borrows.
 		"SetClearWhileAnElementBorrowIsLive": {

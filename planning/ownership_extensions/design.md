@@ -940,8 +940,9 @@ The form also decides what the body may do with the source:
   checker cannot see which slot the result reaches. It rejects the call when
   the type of the argument the borrow was taken from reaches a removable slot
   through fields, tuple slots and mutable borrows. A declared class, a type
-  parameter, and an object with a `&mut self` method count as removable, since
-  their slots are not visible.
+  parameter, and an object type with a method or getter count as removable,
+  since their slots are not visible. An object type does not record whether a
+  method takes `&self` or `&mut self`, so even `peek(&self)` counts.
 
 ```esc
 fn inside(arr: Array<Flat>) -> undefined {

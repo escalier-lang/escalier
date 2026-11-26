@@ -1658,20 +1658,18 @@ func (d *bodyDataflow) contentsHold(m, r *liveLoan, depth int, ev *callEvent, at
 // removedOnPath reports whether a callee holding a borrow `depth` links below the root of m's
 // place could remove the value m borrows, or a value that holds it. That holds when a link
 // of m's operand at or past `depth` reads something other than a fixed slot, as isFixedSlot
-// decides. It also holds when the links of m's operand do not name m's place, which is the
-// case for a loan a copy derives, since the path is then unknown.
+// decides. It also holds when m has no operand, or when the links of its operand do not name
+// m's place, since the path is then unknown.
+//
+// The caller passes a `depth` below borrowDepth(m). Once the operand names m's place,
+// borrowDepth(m) is the number of links in the operand's chain, so the slice below is in
+// range.
 func (d *bodyDataflow) removedOnPath(m *liveLoan, depth int) bool {
 	operand := loanOperand(m)
-	if operand == nil {
-		return true
-	}
 	if p, ok := d.exprPlace(operand); !ok || placeKey(p) != placeKey(m.ev.place) {
 		return true
 	}
 	chain := chainOf(operand, d.indexSegment)
-	if depth > len(chain.links) {
-		return true
-	}
 	for _, link := range chain.links[depth:] {
 		if !d.fixedSlot(link) {
 			return true
@@ -1684,10 +1682,7 @@ func (d *bodyDataflow) removedOnPath(m *liveLoan, depth int) bool {
 // `arr` in `&mut arr`, or the receiver or argument a call borrows without one. It returns
 // nil when the event that took l names no expression.
 func loanOperand(l *liveLoan) ast.Expr {
-	operand, ok := l.ev.node.(ast.Expr)
-	if !ok {
-		return nil
-	}
+	operand, _ := l.ev.node.(ast.Expr)
 	if be, isBorrow := operand.(*ast.BorrowExpr); isBorrow {
 		return be.Arg
 	}

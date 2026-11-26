@@ -15,11 +15,9 @@ import (
 // cannot fill an owned slot, so the callee can only overwrite the field.
 
 // exprHoldsRemovableSlot reports whether the value of e has a type that
-// holdsRemovableSlot accepts. A nil e, or one with no recorded type, answers true.
+// holdsRemovableSlot accepts. A nil e has no recorded type, and an e with no recorded type
+// answers true.
 func (c *checker) exprHoldsRemovableSlot(e ast.Expr) bool {
-	if e == nil {
-		return true
-	}
 	t := c.info.TypeOf(e)
 	return t == nil || c.holdsRemovableSlot(t)
 }
@@ -31,8 +29,8 @@ func (c *checker) exprHoldsRemovableSlot(e ast.Expr) bool {
 //
 // The walk goes through fields, tuple slots, union members and mutable borrows. It stops at
 // an immutable borrow, since nothing can be removed through one. A type whose slots the walk
-// cannot see answers true. That covers a declared class, an object with a method that takes
-// `&mut self`, an index signature, a type parameter, and a type operator left unreduced.
+// cannot see answers true. That covers a declared class, an object with a method or getter,
+// an index signature, a type parameter, and a type operator left unreduced.
 func (c *checker) holdsRemovableSlot(t soltype.Type) bool {
 	v := &removableSlotVisitor{c: c, aliases: set.NewSet[string](), classes: set.NewSet[string]()}
 	t.Accept(v, soltype.Positive)
@@ -118,8 +116,13 @@ func (v *removableSlotVisitor) EnterType(t soltype.Type, pol soltype.Polarity) s
 		if v.c.isValueShaped(t) {
 			return skip
 		}
-		// A variable with no lower bound coalesces to itself, as a type parameter does, and
-		// the walk cannot see what it holds.
+		// A type parameter's variable stands for every type a caller can pass, and the walk
+		// cannot see what that holds. Coalescing it would read its empty lower bounds as
+		// `never`.
+		if t.Rigid != nil {
+			break
+		}
+		// An inference variable reads as what its lower bounds hold.
 		coalesced := coalesce(t, soltype.Positive)
 		if _, still := coalesced.(*soltype.TypeVarType); still {
 			break
@@ -134,41 +137,20 @@ func (v *removableSlotVisitor) EnterType(t soltype.Type, pol soltype.Polarity) s
 func (v *removableSlotVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // onlyFixedMembers reports whether every member in elems leaves the object's slots in
-// place. A property and a static member do. A method or getter whose every signature takes
-// `&self` does too, since nothing can be removed through an immutable receiver. A method
-// that takes `&mut self` can hand a value it holds to a new owner, as `Array.pop` does. A
-// setter, an index signature and a spread are rejected.
+// place. A property does, and so do a call signature and a `new` signature, which act on
+// no instance. Every other member is rejected, including each method and getter. One that
+// takes `&mut self` can hand a value it holds to a new owner, as `Array.pop` does, and an
+// object type annotation does not record a member's receiver. So `peek(&self)` cannot be
+// told apart from a method that takes `&mut self`.
 func onlyFixedMembers(elems []soltype.ObjTypeElem) bool {
 	for _, elem := range elems {
-		switch elem := elem.(type) {
+		switch elem.(type) {
 		case *soltype.PropertyElem, *soltype.ConstructorElem, *soltype.CallableElem:
-		case *soltype.MethodElem:
-			if elem.Static {
-				continue
-			}
-			for _, sig := range elem.Signatures {
-				if !immutableReceiver(sig.SelfParam) {
-					return false
-				}
-			}
-		case *soltype.GetterElem:
-			if elem.SelfParam != nil && !immutableReceiver(elem.SelfParam) {
-				return false
-			}
 		default:
 			return false
 		}
 	}
 	return true
-}
-
-// immutableReceiver reports whether the receiver p is an immutable borrow `&self`.
-func immutableReceiver(p *soltype.FuncParam) bool {
-	if p == nil {
-		return false
-	}
-	ref, ok := p.Type.(*soltype.RefType)
-	return ok && !ref.Mut
 }
 
 // fieldClassBody returns the projected instance body of ct when ct is a class declared in
@@ -219,9 +201,6 @@ func (c *checker) isFixedSlot(link placeLink) bool {
 	found := false
 	for _, member := range c.unionMembers(c.ctx.expandedCarrier(groundedOrSkolem(t))) {
 		switch member := c.ctx.expandedCarrier(member).(type) {
-		case *soltype.NullType, *soltype.UndefinedType:
-			// An optional chain such as `b?.inner` reads the field of the other members.
-			continue
 		case *soltype.ObjectType:
 			if !onlyFixedMembers(member.Elems) || !hasProperty(member.Elems, link.seg.name) {
 				return false
