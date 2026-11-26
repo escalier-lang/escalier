@@ -120,7 +120,7 @@ const (
 	// bmOwned marks an owned scrutinee. Each leaf is moved out and takes its declared
 	// mutability. A plain leaf is owned-immutable. A `mut` leaf is owned-mutable.
 	bmOwned borrowMode = iota
-	// bmImm marks an immutable `&` borrow scrutinee. Each leaf is a shared borrow
+	// bmImm marks an immutable `&` borrow scrutinee. Each leaf is an immutable borrow
 	// bounded by the scrutinee's lifetime. A `mut` leaf is an error. Mutable access
 	// cannot be obtained through an immutable borrow.
 	bmImm
@@ -326,11 +326,15 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				// A default makes the field optional. `{x = 0}` binds even when x is
 				// absent, so the requirement must not demand it.
 				beta := c.readPatternField(e, lvl, scrutinee, e.Key.Name, e.Default != nil, purpose)
+				// The field's concrete type decides whether the leaf borrows. Over a union
+				// scrutinee it is the union of what each member holds there, so a leaf still
+				// borrows when narrowing left the scrutinee as several members.
+				field := c.fieldConcrete(concrete, e.Key.Name)
 				var t soltype.Type = beta
 				if purpose == forBinding {
-					t = c.applyLeafExtras(scope, lvl, e, beta, c.fieldConcrete(concrete, e.Key.Name), e.TypeAnn, e.Default)
+					t = c.applyLeafExtras(scope, lvl, e, beta, field, e.TypeAnn, e.Default)
 				}
-				t = c.applyBindMode(lvl, e, leafMut(e.Mutable, purpose), t, c.concreteLeaf(c.fieldConcrete(concrete, e.Key.Name), e.TypeAnn), scrutineeMode)
+				t = c.applyBindMode(lvl, e, leafMut(e.Mutable, purpose), t, c.concreteLeaf(field, e.TypeAnn), scrutineeMode)
 				c.bindLeaf(scope, e.Key.Name, t, e, leafTypes, emit, purpose)
 				named.Add(e.Key.Name)
 				fields = append(fields, &soltype.ObjectPatField{
@@ -688,7 +692,7 @@ func (c *checker) restTupleShape(scrutinee soltype.Type, scrutTup, concreteTup *
 
 // concreteTupleShape resolves the statically known tuple a destructured leaf reads its
 // element out of, and nil for a type that fixes no element. It is the tuple twin of
-// fieldConcrete's union arm: a tuple grounds through groundedTuple, and a union of tuples
+// fieldConcrete. A tuple grounds through groundedTuple, and a union of tuples
 // grounds to the elementwise union of theirs. So `[a, b]` over
 // `&[{p: number}, string] | &[{q: number}, string]` reads its first element as
 // `{p: number} | {q: number}` and borrows it rather than moving it out.
@@ -1477,8 +1481,8 @@ func (c *checker) definedMembers(t soltype.Type) (soltype.Type, bool) {
 //     what it owns, so its literals widen to their primitives, as rule T9 in
 //     planning/ownership_rules/requirements.md states for a writable slot. An annotated leaf
 //     and a plain leaf keep the leaf's type.
-//   - `&` scrutinee: the leaf is a shared borrow bounded by the scrutinee's lifetime.
-//     A `mut` leaf is rejected and recovers as the shared borrow. Mutable access cannot
+//   - `&` scrutinee: the leaf is an immutable borrow bounded by the scrutinee's lifetime.
+//     A `mut` leaf is rejected and recovers as the immutable borrow. Mutable access cannot
 //     be projected out of an immutable borrow.
 //   - `&mut` scrutinee: the leaf is a mutable borrow bounded by the scrutinee's
 //     lifetime. The `mut` marker is redundant.
@@ -1545,9 +1549,9 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 }
 
 // borrowableLeaf reports whether a leaf whose element is concrete binds through a borrowed
-// scrutinee as a borrow. concrete must be a borrowable type that is not a value type. So
-// `{x: number}` borrows, while `number`, a function, and the union of literals
-// `"light" | "dark"` are copied out. A nil concrete reports false.
+// scrutinee as a borrow. It reports true when concrete is a borrowable type that is not a
+// value type. So `{x: number}` borrows, while `number`, a function, and the union of
+// literals `"light" | "dark"` are copied out. A nil concrete reports false.
 func (c *checker) borrowableLeaf(concrete soltype.Type) bool {
 	return soltype.BorrowableType(concrete) && !c.holdsValueType(concrete)
 }
@@ -1613,9 +1617,8 @@ func (c *checker) concreteLeaf(concrete soltype.Type, typeAnn ast.TypeAnn) solty
 //
 // t is grounded through groundObjectMembers, so an alias such as `Box` in
 // `type Box = {inner: Flat}` and a class instance read the fields their bodies declare,
-// the same as the inline `{inner: Flat}`. A union reads the field off every member and
-// returns the union of what they hold there, so a leaf still decides whether to borrow
-// when narrowing left the scrutinee as several members.
+// the same as the inline `{inner: Flat}`. For a union, the result is the union of the
+// field's type in every member, and nil when any member lacks the field.
 func (c *checker) fieldConcrete(t soltype.Type, name string) soltype.Type {
 	if t == nil {
 		return nil
