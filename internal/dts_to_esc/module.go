@@ -261,7 +261,11 @@ func ConvertModule(dtsModule *dts_parser.Module) (*ast.Module, error) {
 // A reference to a name in libReadonlyTwins comes out as its mutable
 // counterpart, so `readonly T[]` and `ReadonlyArray<T>` both convert to
 // `Array<T>`.
-func ConvertModuleWithOverrides(dtsModule *dts_parser.Module, store OverrideLookup, modulePath string) (*ast.Module, error) {
+//
+// It returns an error naming the construct when the declarations hold a node
+// variant the conversion does not handle.
+func ConvertModuleWithOverrides(dtsModule *dts_parser.Module, store OverrideLookup, modulePath string) (_ *ast.Module, err error) {
+	defer recoverUnhandledNode(&err)
 	cctx := &convertCtx{store: store, modulePath: modulePath}
 	var namespaces btree.Map[string, *ast.Namespace]
 

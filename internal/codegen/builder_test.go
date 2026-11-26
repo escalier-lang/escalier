@@ -1598,7 +1598,10 @@ func TestBuildDivergingBranchAssignsNoTemp(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			output, outModule, sources := buildSourceModule(t, test.src)
 			require.Equal(t, test.expected, output)
-			require.NotPanics(t, func() { GenerateSourceMap(sources, outModule, "main.js") })
+			require.NotPanics(t, func() {
+				_, err := GenerateSourceMap(sources, outModule, "main.js")
+				require.NoError(t, err)
+			})
 		})
 	}
 }

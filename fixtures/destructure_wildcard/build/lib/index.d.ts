@@ -1,0 +1,12 @@
+export declare function afterNull([arg0, b]: [null | undefined, number]): number;
+export declare function afterOne([arg0, b]: [number, number]): number;
+declare const other: 2;
+export declare const fromLiteral: 2;
+declare const second: 2;
+export declare const fromWildcard: 2;
+export declare function othersOf({x: arg0, ...others}: {x: number, y: number}): {y: number};
+export declare function secondOf([arg0, b]: [number, number]): number;
+export declare const secondOfClosure: ([arg0, b]: [number, number]) => number;
+export declare function sumSeconds(pairs: Array<[number, number]>): number;
+export declare function yOf({x: arg0, y}: {x: number, y: number}): number;
+export declare function yWhenXIsOne({x: arg0, y}: {x: number, y: number}): number;

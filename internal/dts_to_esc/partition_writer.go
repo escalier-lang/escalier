@@ -569,7 +569,8 @@ func convertFusedBucket(
 	classNames set.Set[string],
 	facts *ReceiverFacts,
 	webIDL map[string]webidl.Definition,
-) (*StandaloneModule, error) {
+) (_ *StandaloneModule, err error) {
+	defer recoverUnhandledNode(&err)
 	mod, err := convertStandaloneModule(&dts_parser.Module{Statements: stmts}, facts, consumedCtor, classNames, webIDL)
 	if err != nil {
 		return nil, err

@@ -1,0 +1,7 @@
+fn identity(x: number) -> number {
+    return x
+}
+
+export fn fail() -> number throws string {
+    return identity(throw "failed")
+}

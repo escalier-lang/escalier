@@ -193,54 +193,11 @@ func CheckBinScript(ctx context.Context, lib LibScope, src *ast.Source, config P
 	}
 }
 
+// Compile compiles source as a script with only the prelude in scope. Its output
+// holds one unit, `index`, whose JavaScript is named `./index.js`.
 func Compile(source *ast.Source) CompilerOutput {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	p := parser.NewParser(ctx, source)
-	inMod, parseErrors := p.ParseScript()
-
-	result := newBackend(PackageConfig{}).checkScript(ctx, inMod)
-	typeErrors := result.diagnostics
-
-	// namespace := scope.Namespace
-
-	builder := codegen.NewBuilder(result.jsTypes)
-	jsMod := builder.BuildScript(inMod)
-	// var decls []ast.Decl
-	// for _, d := range inMod.Stmts {
-	// 	if ds, ok := d.(*ast.DeclStmt); ok {
-	// 		decls = append(decls, ds.Decl)
-	// 	}
-	// }
-
-	// TODO: Create a separate version of BuildDefinitions that works with just
-	// the decls slice instead of the dep_graph.
-	// dtsMod := builder.BuildDefinitions(decls, namespace)
-
-	printer := codegen.NewPrinter()
-	jsOutput := printer.PrintModule(jsMod)
-
-	jsFile := "./index.js"
-	sourceMap := codegen.GenerateSourceMap([]*ast.Source{source}, jsMod, jsFile)
-
-	outmap := "./index.js.map"
-	jsOutput += "//# sourceMappingURL=" + outmap + "\n"
-
-	// printer = codegen.NewPrinter()
-	// dtsOutput := printer.PrintModule(dtsMod)
-	dtsOutput := ""
-
-	return CompilerOutput{
-		ParseErrors: parseErrors,
-		TypeErrors:  typeErrors,
-		CompUnits: map[string]CompUnitOutput{
-			"index": {
-				JS:        jsOutput,
-				SourceMap: sourceMap,
-				DTS:       dtsOutput,
-			},
-		},
-	}
+	// Compile's output is not installed as a command, so it has no `#!` line.
+	return compileScript(newBackend(PackageConfig{}), nil, source, "index", "./index.js", false)
 }
 
 // CompilePackage compiles a package's lib/ and bin/ sources, checking them as config
@@ -267,9 +224,16 @@ func CompilePackage(sources []*ast.Source, config PackageConfig) CompilerOutput 
 
 	var libScope LibScope
 
+	var step compileStep
+	defer step.wrapPanic()
+
 	if len(libSources) > 0 {
+		libName := libUnitName(libSources)
+
+		step.enter(libName, "parsing")
 		inMod, parseErrors := parser.ParseLibFiles(ctx, libSources)
 
+		step.enter(libName, "checking")
 		lib := selected.checkLib(ctx, inMod)
 		libScope = lib.lib
 
@@ -278,28 +242,36 @@ func CompilePackage(sources []*ast.Source, config PackageConfig) CompilerOutput 
 
 		// A parse error leaves an error node in the tree where a declaration or type
 		// annotation belongs, and codegen has no lowering for one. `buildTypeAnn`
-		// panics with `unknown type: <error>` on reaching it. Inference above
-		// tolerates those nodes, so only the emit half is skipped and the diagnostics
-		// still reach the caller. A type error needs no such skip. The tree is well
-		// formed, so codegen runs and the caller decides whether to keep its output.
-		if len(parseErrors) == 0 {
+		// panics with `unknown type: <error>` on reaching it. Codegen has no lowering
+		// for an enum spread either, which the checker reports as unsupported.
+		// Inference above tolerates both, so only the emit half is skipped and the
+		// diagnostics still reach the caller. Any other type error needs no such skip.
+		// The tree is well formed, so codegen runs and the caller decides whether to
+		// keep its output.
+		if len(parseErrors) == 0 && !reportsEnumSpread(lib.diagnostics) {
 			// The graph comes from the run rather than a second call to
 			// dep_graph.BuildDepGraph, so the emitter walks the declarations in the
 			// order inference typed them.
+			step.enter(libName, "generating JavaScript for")
 			builder := codegen.NewBuilder(lib.jsTypes)
 			jsMod := builder.BuildTopLevelDecls(lib.depGraph)
 
 			printer := codegen.NewPrinter()
 			jsOutput := printer.PrintModule(jsMod)
 
+			step.enter(libName, "generating a source map for")
 			jsFile := "./index.js"
-			sourceMap := codegen.GenerateSourceMap(sources, jsMod, jsFile)
+			sourceMap, err := codegen.GenerateSourceMap(sources, jsMod, jsFile)
+			if err != nil {
+				output.TypeErrors = append(output.TypeErrors, &emitError{span: moduleSpan(inMod), err: err})
+			}
 
 			outmap := "./index.js.map"
 			jsOutput += "//# sourceMappingURL=" + outmap + "\n"
 
 			// A .d.ts is rendered from the library's type surface, so the run that
 			// produced it carries the renderer.
+			step.enter(libName, "generating type definitions for")
 			dtsOutput := ""
 			if lib.dts != nil {
 				dtsMod := lib.dts.buildDefinitions(builder, lib.depGraph)
@@ -324,13 +296,20 @@ func CompilePackage(sources []*ast.Source, config PackageConfig) CompilerOutput 
 	}
 
 	for _, src := range binSources {
-		scriptOutput := compileScript(selected, libScope, src)
+		// compileScript names its own phases, so this step names the script only for
+		// a panic outside them.
+		step.enter(src.Path, "compiling")
+		// A bin/ script is the package's `bin` entry, which npm runs through its `#!` line.
+		scriptOutput := compileScript(selected, libScope, src, "bin/index", scriptJSFile(src), true)
 		output.ParseErrors = append(output.ParseErrors, scriptOutput.ParseErrors...)
 		output.TypeErrors = append(output.TypeErrors, scriptOutput.TypeErrors...)
 
-		ext := filepath.Ext(src.Path)
-		name := src.Path[:len(src.Path)-len(ext)]
-		output.CompUnits[name] = scriptOutput.CompUnits["bin/index"]
+		// compileScript emits no unit for a script it skipped codegen for.
+		if unit, emitted := scriptOutput.CompUnits["bin/index"]; emitted {
+			ext := filepath.Ext(src.Path)
+			name := src.Path[:len(src.Path)-len(ext)]
+			output.CompUnits[name] = unit
+		}
 	}
 
 	return output
@@ -379,19 +358,45 @@ func collectUsedLibSymbols(script *ast.Script, lib LibScope) []string {
 // TODO: Update this so that we inject an `import` statement at the start of
 // each script source to import the `lib` namespace.
 func CompileScript(lib LibScope, source *ast.Source) CompilerOutput {
-	return compileScript(newBackend(PackageConfig{}), lib, source)
+	// CompileScript compiles a bin/ script, which npm runs through its `#!` line.
+	return compileScript(newBackend(PackageConfig{}), lib, source, "bin/index", scriptJSFile(source), true)
 }
 
-// compileScript is CompileScript with the backend that checks a script when lib is nil.
-func compileScript(b backend, lib LibScope, source *ast.Source) CompilerOutput {
+// scriptJSFile returns the path, relative to the build directory, of the JavaScript
+// emitted for the script source, so `bin/main.esc` emits `./main.js`.
+func scriptJSFile(source *ast.Source) string {
+	return "./" + strings.TrimSuffix(filepath.Base(source.Path), filepath.Ext(source.Path)) + ".js"
+}
+
+// compileScript compiles source with lib in scope, using b to check it when lib is nil.
+// The output holds one unit named unitName, whose JavaScript is named jsFile, or no
+// unit when the script holds an enum spread. When shebang is true, the JavaScript
+// starts with a `#!/usr/bin/env node` line.
+func compileScript(b backend, lib LibScope, source *ast.Source, unitName, jsFile string, shebang bool) CompilerOutput {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	var step compileStep
+	defer step.wrapPanic()
+
+	step.enter(source.Path, "parsing")
 	p := parser.NewParser(ctx, source)
 	inMod, parseErrors := p.ParseScript()
 
+	step.enter(source.Path, "checking")
 	result := checkScriptIn(ctx, b, lib, inMod)
 	typeErrors := result.diagnostics
 
+	// Codegen has no lowering for an enum spread, so a script holding one emits no unit.
+	if reportsEnumSpread(typeErrors) {
+		return CompilerOutput{
+			ParseErrors: parseErrors,
+			TypeErrors:  typeErrors,
+			CompUnits:   map[string]CompUnitOutput{},
+		}
+	}
+
+	step.enter(source.Path, "generating JavaScript for")
 	builder := codegen.NewBuilder(result.jsTypes)
 	jsMod := builder.BuildScript(inMod)
 
@@ -423,12 +428,16 @@ func compileScript(b backend, lib LibScope, source *ast.Source) CompilerOutput {
 	// npm runs a package's `bin` entry through its `#!` line. POSIX shells
 	// read it directly, and on Windows npm's .cmd shim picks the interpreter
 	// from it, so a script without one fails as an installed command.
-	printer.PrintShebang("/usr/bin/env node")
+	if shebang {
+		printer.PrintShebang("/usr/bin/env node")
+	}
 	jsOutput := printer.PrintModule(jsMod)
 
-	baseName := strings.TrimSuffix(filepath.Base(source.Path), filepath.Ext(source.Path)) + ".js"
-	jsFile := "./" + baseName
-	sourceMap := codegen.GenerateSourceMap([]*ast.Source{source}, jsMod, jsFile)
+	step.enter(source.Path, "generating a source map for")
+	sourceMap, err := codegen.GenerateSourceMap([]*ast.Source{source}, jsMod, jsFile)
+	if err != nil {
+		typeErrors = append(typeErrors, &emitError{span: scriptSpan(inMod), err: err})
+	}
 
 	outmap := jsFile + ".map"
 	jsOutput += "//# sourceMappingURL=" + outmap + "\n"
@@ -441,7 +450,7 @@ func compileScript(b backend, lib LibScope, source *ast.Source) CompilerOutput {
 		ParseErrors: parseErrors,
 		TypeErrors:  typeErrors,
 		CompUnits: map[string]CompUnitOutput{
-			"bin/index": {
+			unitName: {
 				JS:        jsOutput,
 				SourceMap: sourceMap,
 				DTS:       dtsOutput,

@@ -1,0 +1,3 @@
+enum C { X(n: number) }
+enum D { ...C, Y(s: string) }
+val d = D.Y("s")

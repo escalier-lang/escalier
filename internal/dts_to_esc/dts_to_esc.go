@@ -109,7 +109,8 @@ func convertStandaloneModule(
 	treeConsumedCtor map[string]string,
 	treeClassNames set.Set[string],
 	webIDL map[string]webidl.Definition,
-) (*StandaloneModule, error) {
+) (_ *StandaloneModule, err error) {
+	defer recoverUnhandledNode(&err)
 	// TypeScript merges same-named declarations, and every rule below reads one
 	// declaration per name. detectTrios resolves `FooConstructor` through a single
 	// entry, and the walk emits a fused class per matching statement. Merging here

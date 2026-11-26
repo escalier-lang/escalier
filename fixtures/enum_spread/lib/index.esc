@@ -1,0 +1,3 @@
+enum A { X(n: number) }
+enum B { ...A, Y(s: string) }
+export val b = B.Y("s")

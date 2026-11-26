@@ -24,6 +24,21 @@ func IsWarning(d Diagnostic) bool {
 	return ok && w.IsWarning()
 }
 
+// reportsEnumSpread reports whether diags hold the UnsupportedFeatureError the checker
+// reports for an enum spread, as in `enum B { ...A, Y(s: string) }`.
+func reportsEnumSpread(diags []Diagnostic) bool {
+	for _, d := range diags {
+		unsupported, ok := d.(*solver.UnsupportedFeatureError)
+		if !ok {
+			continue
+		}
+		if _, spread := unsupported.Node.(*ast.EnumSpread); spread {
+			return true
+		}
+	}
+	return false
+}
+
 // newBackend returns the checker every entry point runs, configured by config.
 func newBackend(config PackageConfig) backend {
 	return solverBackend{options: solver.Options{

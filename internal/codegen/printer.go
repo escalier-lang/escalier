@@ -429,8 +429,11 @@ func (p *Printer) PrintExpr(expr Expr) {
 					p.PrintExpr(elem.Value)
 				}
 			case *RestSpreadExpr:
+				// The source map reads the spread's span.
+				start := p.location
 				p.print("...")
 				p.PrintExpr(elem.Arg)
+				elem.SetSpan(&Span{Start: start, End: p.location})
 			default:
 				panic(fmt.Sprintf("PrintExpr: unknown object expression element type: %T", elem))
 			}
@@ -768,6 +771,9 @@ func (p *Printer) printPattern(pat Pat) {
 	case *RestPat:
 		p.print("...")
 		p.printPattern(pat.Pattern)
+	case *WildcardPat:
+		// A hole in an array pattern prints nothing, so `[, b]` skips the first
+		// element.
 	}
 	end := p.location
 	pat.SetSpan(&Span{Start: start, End: end})

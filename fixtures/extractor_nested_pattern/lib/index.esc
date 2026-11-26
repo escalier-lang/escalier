@@ -1,0 +1,12 @@
+enum Pair { Of(items: [number, number]) }
+enum Boxed { Of(value: {x: number}) }
+
+val Pair.Of([first, _]) = Pair.Of([1, 2])
+export val fromTuple = first
+
+val Boxed.Of({x}) = Boxed.Of({x: 3})
+export val fromObject = x
+
+export fn firstOf(Pair.Of([a, _]): Pair) -> number {
+    return a
+}

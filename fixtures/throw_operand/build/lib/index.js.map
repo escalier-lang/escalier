@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["fn identity(x: number) -\u003e number {\n    return x\n}\n\nexport fn fail() -\u003e number throws string {\n    return identity(throw \"failed\")\n}\n"],"names":[],"mappings":"AAAA,yBAAY;QAAA,AAAA;EACR,OAAO;;AAGX;EACoB,MAAM;EAAtB,OAAO,AAAA,SAAS"}

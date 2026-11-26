@@ -1,0 +1,1 @@
+{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["export fn withY(point: {x: number}) -\u003e {x: number, y: number} {\n    return {...point, y: 2}\n}\n"],"names":[],"mappings":"AAAA,sBAAgB;QAAA,AAAA;EACZ,OAAO,CAAC,GAAG,OAAO,GAAG"}

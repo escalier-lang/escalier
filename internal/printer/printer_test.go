@@ -2,6 +2,8 @@ package printer
 
 import (
 	"context"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -2540,4 +2542,77 @@ func TestPrintRoundTripsConverterOutput(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, input, result)
 	})
+}
+
+// failingWriter accepts limit bytes and then fails every write.
+type failingWriter struct {
+	limit   int
+	written int
+}
+
+func (w *failingWriter) Write(b []byte) (int, error) {
+	if w.written+len(b) > w.limit {
+		return 0, errors.New("disk full")
+	}
+	w.written += len(b)
+	return len(b), nil
+}
+
+// TestPrintReturnsTheWriterError asserts that each entry point taking a writer returns
+// the writer's first error rather than panicking, whether the write fails at once or
+// partway through.
+func TestPrintReturnsTheWriterError(t *testing.T) {
+	script := parseScript(t, "val x = 1\nval y = 2")
+	decl := parseDecl(t, "val [a, b] = pair")
+	module, parseErrs := parser.ParseLibFiles(context.Background(), []*ast.Source{
+		{ID: 0, Path: "lib/index.esc", Contents: "val x = 1"},
+	})
+	require.Empty(t, parseErrs)
+
+	tests := map[string]struct {
+		limit int
+		print func(w io.Writer) error
+	}{
+		"script, first write": {
+			limit: 0,
+			print: func(w io.Writer) error { return PrintScriptToWriter(script, w, DefaultOptions()) },
+		},
+		"script, later write": {
+			limit: 5,
+			print: func(w io.Writer) error { return PrintScriptToWriter(script, w, DefaultOptions()) },
+		},
+		"statement": {
+			limit: 0,
+			print: func(w io.Writer) error { return PrintToWriter(script.Stmts[0], w, DefaultOptions()) },
+		},
+		"module": {
+			limit: 0,
+			print: func(w io.Writer) error { return PrintModuleToWriter(module, w, DefaultOptions()) },
+		},
+		"expression": {
+			limit: 0,
+			print: func(w io.Writer) error { return PrintToWriter(parseExpr(t, "a + b"), w, DefaultOptions()) },
+		},
+		"declaration": {
+			limit: 0,
+			print: func(w io.Writer) error { return PrintToWriter(decl, w, DefaultOptions()) },
+		},
+		"pattern": {
+			limit: 0,
+			print: func(w io.Writer) error {
+				return PrintToWriter(decl.(*ast.VarDecl).Pattern, w, DefaultOptions())
+			},
+		},
+		"type annotation": {
+			limit: 0,
+			print: func(w io.Writer) error { return PrintToWriter(parseTypeAnn(t, "number"), w, DefaultOptions()) },
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := test.print(&failingWriter{limit: test.limit})
+			require.EqualError(t, err, "writing the printed source: disk full")
+		})
+	}
 }

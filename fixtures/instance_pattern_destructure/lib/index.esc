@@ -1,0 +1,9 @@
+class Point {
+    x: number,
+    constructor(&mut self, x: number) {
+        self.x = x
+    },
+}
+val Point {x} = Point(1)
+export val px = x
+export fn getX(Point {x}: Point) -> number { return x }

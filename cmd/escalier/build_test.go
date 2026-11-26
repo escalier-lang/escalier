@@ -489,3 +489,59 @@ func TestBuildEndsTheStatusLineBeforeDiagnostics(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildReportsACompilerPanic asserts that a panic while compiling a package is
+// reported as one internal-error diagnostic naming the file and phase, that the
+// package writes no output, and that the build fails.
+func TestBuildReportsACompilerPanic(t *testing.T) {
+	tests := map[string]struct {
+		panicValue any
+		wantStderr string
+	}{
+		"a panic inside a compiler phase": {
+			panicValue: &compiler.InternalError{
+				File:  "lib/index.esc",
+				Phase: "generating JavaScript for",
+				Value: "TODO - buildExpr - default case",
+			},
+			wantStderr: "the Escalier compiler crashed while generating JavaScript for lib/index.esc: " +
+				"TODO - buildExpr - default case. This is a bug in the compiler; please report it.\n",
+		},
+		"a panic outside every compiler phase": {
+			panicValue: "boom",
+			wantStderr: "the Escalier compiler crashed while building .: boom. " +
+				"This is a bug in the compiler; please report it.\n",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			require.NoError(t, os.Mkdir(filepath.Join(tmpDir, "lib"), 0755))
+			require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "lib", "index.esc"), []byte("export val x = 1\n"), 0644))
+
+			oldCwd, err := os.Getwd()
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = os.Chdir(oldCwd) })
+			require.NoError(t, os.Chdir(tmpDir))
+
+			// No known program makes the compiler panic, so the test replaces the
+			// compile with one that does.
+			original := compilePackage
+			t.Cleanup(func() { compilePackage = original })
+			compilePackage = func([]*ast.Source, compiler.PackageConfig) compiler.CompilerOutput {
+				panic(test.panicValue)
+			}
+
+			stdout := &bytes.Buffer{}
+			stderr := &bytes.Buffer{}
+			ok := build(stdout, stderr, []string{"."})
+
+			require.False(t, ok)
+			require.Equal(t, test.wantStderr, stderr.String())
+			require.Equal(t, "building: . - failed (1 error)\n", stdout.String())
+			_, statErr := os.Stat(filepath.Join(tmpDir, "build"))
+			require.True(t, os.IsNotExist(statErr), "a crashed package writes no output")
+		})
+	}
+}

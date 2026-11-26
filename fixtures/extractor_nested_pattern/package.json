@@ -1,0 +1,7 @@
+{
+    "name": "extractor_nested_pattern",
+    "private": true,
+    "version": "0.0.1",
+    "type": "module",
+    "main": "build/lib/index.js"
+}

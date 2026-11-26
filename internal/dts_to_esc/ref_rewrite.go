@@ -8,6 +8,38 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
+// unhandledNodeError is the value refRewriter panics with on a node variant its
+// switches don't list. A switch panics rather than skipping the node, so a newly
+// added variant cannot bypass the rewrite unnoticed. ConvertModuleWithOverrides,
+// convertStandaloneModule and convertFusedBucket return it as an error.
+type unhandledNodeError struct {
+	// construct names the kind of node, such as `type annotation`.
+	construct string
+	// switchName names the refRewriter method whose switch has no case for node.
+	switchName string
+	node       any
+}
+
+func (e unhandledNodeError) Error() string {
+	return fmt.Sprintf("unsupported %s %s (%s has no case for it)",
+		e.construct, strings.TrimPrefix(fmt.Sprintf("%T", e.node), "*ast."), e.switchName)
+}
+
+// recoverUnhandledNode stores an unhandledNodeError panic in *err. Any other panic
+// is re-raised. A caller must defer it directly, because recover stops a panic only
+// when the deferred function itself calls it.
+func recoverUnhandledNode(err *error) {
+	value := recover()
+	if value == nil {
+		return
+	}
+	unhandled, ok := value.(unhandledNodeError)
+	if !ok {
+		panic(value)
+	}
+	*err = unhandled
+}
+
 // rewriteReadonlyTwinRefs walks every TypeAnn slot reachable from the
 // module's top-level decls and renames each reference to a twin's
 // readonly name, such as `ReadonlyFoo<…>`, to its mutable name `Foo<…>`.
@@ -315,9 +347,10 @@ func (r *refRewriter) popTypeParams(tps []*ast.TypeParam) {
 	}
 }
 
-// rewriteDecl dispatches over every Decl variant. The default panics
-// so a newly-added Decl type cannot silently bypass the rewrite — see
-// the same canary rationale on `classElemName` in partition_writer.go.
+// rewriteDecl dispatches over every Decl variant. The default panics with an
+// unhandledNodeError so a newly-added Decl type cannot silently bypass the
+// rewrite. See the same canary rationale on `classElemName` in
+// partition_writer.go.
 func (r *refRewriter) rewriteDecl(decl ast.Decl) {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
@@ -380,7 +413,7 @@ func (r *refRewriter) rewriteDecl(decl ast.Decl) {
 			r.rewriteDecl(inner)
 		}
 	default:
-		panic(fmt.Sprintf("refRewriter.rewriteDecl: unhandled decl type %T — extend this switch so the readonly-twin rewrite does not silently skip a new Decl variant", decl))
+		panic(unhandledNodeError{construct: "declaration", switchName: "refRewriter.rewriteDecl", node: decl})
 	}
 }
 
@@ -455,7 +488,7 @@ func (r *refRewriter) rewriteClassElem(elem ast.ClassElem) {
 			r.rewriteFuncSig(&e.Fn.FuncSig)
 		}
 	default:
-		panic(fmt.Sprintf("refRewriter.rewriteClassElem: unhandled class-elem type %T — extend this switch so the readonly-twin rewrite does not silently skip a new ClassElem variant", elem))
+		panic(unhandledNodeError{construct: "class member", switchName: "refRewriter.rewriteClassElem", node: elem})
 	}
 }
 
@@ -704,7 +737,7 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		*ast.ErrorTypeAnn:
 		return tt
 	default:
-		panic(fmt.Sprintf("refRewriter.rewrite: unhandled type-ann %T — extend this switch so the readonly-twin rewrite does not silently skip a new TypeAnn variant", t))
+		panic(unhandledNodeError{construct: "type annotation", switchName: "refRewriter.rewrite", node: t})
 	}
 }
 
@@ -754,7 +787,7 @@ func (r *refRewriter) rewriteObject(obj *ast.ObjectTypeAnn) {
 		case *ast.RestSpreadTypeAnn:
 			e.Value = r.rewrite(e.Value)
 		default:
-			panic(fmt.Sprintf("refRewriter.rewriteObject: unhandled object-type-ann elem %T — extend this switch so the readonly-twin rewrite does not silently skip a new ObjTypeAnnElem variant", elem))
+			panic(unhandledNodeError{construct: "object type member", switchName: "refRewriter.rewriteObject", node: elem})
 		}
 	}
 }
