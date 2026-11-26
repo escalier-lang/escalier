@@ -3731,6 +3731,86 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			want: []string{"cannot constrain null <: object"},
 		},
 		{
+			// `x` takes `T`, which the call binds to `c`'s borrow, so `x.inner` reads as a borrow of the field.
+			name: "an object field read through a type parameter bound to a borrow",
+			src: `
+				declare fn each<T>(v: T, cb: fn (x: T) -> undefined) -> undefined
+				fn f(c: &{inner: {n: number}}) -> undefined {
+					each(c, fn (x) {
+						val i = x.inner
+						return undefined
+					})
+				}
+			`,
+		},
+		{
+			// An immutable borrow never lends a write, so `x.m` reborrows the field immutably.
+			name: "a mutable borrow field read through a type parameter bound to an immutable borrow",
+			src: `
+				declare fn each<T>(v: T, cb: fn (x: T) -> undefined) -> undefined
+				fn f(c: &{m: &mut {n: number}}) -> undefined {
+					each(c, fn (x) {
+						val m = x.m
+						return undefined
+					})
+				}
+			`,
+		},
+		{
+			// The union field reads member by member, so only its object member reads as a borrow.
+			name: "a union field read through a type parameter bound to a borrow",
+			src: `
+				declare fn each<T>(v: T, cb: fn (x: T) -> undefined) -> undefined
+				fn f(c: &{u: {n: number} | number}) -> undefined {
+					each(c, fn (x) {
+						val u = x.u
+						return undefined
+					})
+				}
+			`,
+		},
+		{
+			// The write waits until the call binds `T`, and a `&mut` borrow takes it.
+			name: "a write through a type parameter bound to a mutable borrow",
+			src: `
+				declare fn each<T>(v: T, cb: fn (x: T) -> undefined) -> undefined
+				fn f(c: &mut {n: number}) -> undefined {
+					each(c, fn (x) {
+						x.n = 1
+						return undefined
+					})
+				}
+			`,
+		},
+		{
+			// An immutable borrow rejects the write once the call binds `T`.
+			name: "a write through a type parameter bound to an immutable borrow",
+			src: `
+				declare fn each<T>(v: T, cb: fn (x: T) -> undefined) -> undefined
+				fn f(c: &{n: number}) -> undefined {
+					each(c, fn (x) {
+						x.n = 1
+						return undefined
+					})
+				}
+			`,
+			want: []string{"cannot constrain immutable object <: mutable object"},
+		},
+		{
+			// An owned value is a layer of the immutable binding `x`, so the write reports the binding.
+			name: "a write through a type parameter bound to an owned value",
+			src: `
+				declare fn each<T>(v: T, cb: fn (x: T) -> undefined) -> undefined
+				fn f(c: {n: number}) -> undefined {
+					each(c, fn (x) {
+						x.n = 1
+						return undefined
+					})
+				}
+			`,
+			want: []string{"cannot mutate 'x' because its binding is immutable; declare it as `mut x`"},
+		},
+		{
 			// The missing property is reported once, by the shape `T` is checked against.
 			name: "a callback reads a missing field through a borrowed variable",
 			src: `
