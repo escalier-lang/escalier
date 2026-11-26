@@ -24,9 +24,9 @@ func TestInferMutParamMatchesPlainParam(t *testing.T) {
 			want:  "fn (p: {x: number}) -> number",
 		},
 		{
-			name:  "Unannotated",
-			src:   `fn f(mut p) { return p.x }`,
-			plain: `fn f(p) { return p.x }`,
+			name:  "GenericBorrow",
+			src:   `fn f<T0>(mut p: &{x: T0}) { return p.x }`,
+			plain: `fn f<T0>(p: &{x: T0}) { return p.x }`,
 			want:  "fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0",
 		},
 		{

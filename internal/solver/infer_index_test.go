@@ -108,27 +108,26 @@ func TestInferIndexRead(t *testing.T) {
 			wantErrs: []string{"2:26-2:30: object {a: number} has no index signature to read a key of type string"},
 		},
 		{
-			// A receiver inferred from its uses has no lower bound to read an element
-			// type off.
-			name:     "ReceiverInferredFromUse",
-			src:      "fn f(o) { return o[0] }",
-			wantErrs: []string{"1:18-1:22: Unsupported: IndexExpr"},
+			// An `unknown` receiver has no element type to read.
+			name:     "UnknownReceiver",
+			src:      "fn f(o: unknown) { return o[0] }",
+			wantErrs: []string{"1:27-1:31: Unsupported: IndexExpr"},
 		},
 		{
 			// A caller may pass any key, so the default does not decide which property the
 			// read names.
 			name:     "KeyIsAParameterWithADefault",
-			src:      "val o = {a: 5, b: \"x\"}\nfn f(k = \"a\") { return o[k] }",
-			wantErrs: []string{"2:24-2:28: Unsupported: IndexExpr"},
+			src:      "val o = {a: 5, b: \"x\"}\nfn f(k: string = \"a\") { return o[k] }",
+			wantErrs: []string{"2:32-2:36: object {a: 5, b: \"x\"} has no index signature to read a key of type string"},
 		},
 		{
 			name:     "KeyIsADestructuredParameterWithADefault",
-			src:      "val o = {a: 5, b: \"x\"}\nfn f({k = \"a\"}) { return o[k] }",
-			wantErrs: []string{"2:26-2:30: Unsupported: IndexExpr"},
+			src:      "val o = {a: 5, b: \"x\"}\nfn f({k = \"a\"}: {k?: string}) { return o[k] }",
+			wantErrs: []string{"2:40-2:44: Unsupported: IndexExpr"},
 		},
 		{
 			name:     "KeyIsADestructuredLocalWithADefault",
-			src:      "val o = {a: 5, b: \"x\"}\nfn f(p) { val {k = \"a\"} = p\n return o[k] }",
+			src:      "val o = {a: 5, b: \"x\"}\nfn f(p: {k?: string}) { val {k = \"a\"} = p\n return o[k] }",
 			wantErrs: []string{"3:9-3:13: Unsupported: IndexExpr"},
 		},
 		{
@@ -217,9 +216,9 @@ func TestInferComputedKey(t *testing.T) {
 		{
 			// A parameter's default is one value it may hold, not the only one, so the key
 			// names no single property.
-			name:     "UnannotatedParameterWithADefault",
-			src:      "fn f(k = \"a\") { return {[k]: 1} }",
-			wantErrs: []string{"1:26-1:27: Unsupported: ComputedKey"},
+			name: "ParameterWithADefault",
+			src:  "fn f(k: string = \"a\") { return {[k]: 1} }",
+			want: map[string]string{"f": "fn (k?: string) -> {[K: string]?: 1}"},
 		},
 	})
 }
@@ -503,9 +502,9 @@ func TestInferAssignToMemberOrIndex(t *testing.T) {
 			wantErrs: []string{"1:58-1:64: cannot assign to 'x' because it is a readonly property"},
 		},
 		{
-			name:     "ReceiverInferredFromUse",
-			src:      "fn f(o) { o[0] = 1 }",
-			wantErrs: []string{"1:11-1:15: Unsupported: assignment to a member or index"},
+			name:     "UnknownReceiver",
+			src:      "fn f(o: unknown) { o[0] = 1 }",
+			wantErrs: []string{"1:20-1:24: Unsupported: assignment to a member or index"},
 		},
 	})
 }
@@ -518,12 +517,6 @@ func TestInferParamDefault(t *testing.T) {
 			name: "AnnotatedParameter",
 			src:  "val g = fn (v: number = 4) -> number { return v }\nval r = g()",
 			want: map[string]string{"g": "fn (v?: number) -> number", "r": "number"},
-		},
-		{
-			// The caller may pass any value, and the body sees either that value or the default.
-			name: "UnannotatedParameter",
-			src:  "fn g(v = 4) { return v }",
-			want: map[string]string{"g": "fn <T0>(v?: T0) -> T0 | 4"},
 		},
 		{
 			name:     "DefaultOfTheWrongType",

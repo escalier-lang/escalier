@@ -216,7 +216,7 @@ func TestInferVarWideningBodyLevel(t *testing.T) {
 	// A `var` binding's whole value is a writable slot, so a join of literals widens as a
 	// single literal does. `a = 3` checks against `number`, and `a = x` gives x `number`.
 	t.Run("join of literals widens and reassigns", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn f(c: boolean, x) {
+		values, _, errs := inferSource(t, `fn f(c: boolean, x: number) {
   var a = if c { 1 } else { 2 }
   a = 3
   a = x

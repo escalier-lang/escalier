@@ -43,19 +43,20 @@ func TestSignatureAction(t *testing.T) {
 		{
 			// A function expression's binder list goes after its `fn` keyword.
 			name:     "ClosureGetsBinderList",
-			src:      "val g = fn (x) { return x }",
+			src:      "type Flat = {x: number}\nval g = fn (a: &Flat, b: &Flat) { return a }",
 			cursor:   "val",
-			expected: "val g = fn <T0>(x: T0) -> T0 { return x }",
+			expected: "type Flat = {x: number}\nval g = fn <'a>(a: &'a Flat, b: &Flat) -> &'a Flat { return a }",
 			diagnostics: []string{
-				"0:12-0:13 parameter 'x' has no type, and nothing the closure flows into supplies one; write its type",
-				"0:4-0:5 'g' is a closure at a script's top level, so it needs a return type",
+				"1:4-1:5 'g' is a closure at a script's top level, so it needs a return type; write `fn <'a>(a: &'a Flat, b: &Flat) -> &'a Flat` on the closure, or annotate 'g'",
 			},
 		},
 		{
+			// The checker infers no type for an untyped parameter, so there is no signature to
+			// write.
 			name:        "UnannotatedParam",
 			src:         "fn read(p) { return p.x }",
 			cursor:      "read",
-			expected:    "fn read<T0>(p: &{x: T0}) -> &T0 { return p.x }",
+			expected:    "",
 			diagnostics: []string{"0:3-0:7 'read' is declared at a script's top level, so parameter 'p' needs a type and 'read' needs a return type"},
 		},
 		{
@@ -136,14 +137,6 @@ func TestSignatureAction(t *testing.T) {
 			diagnostics: []string{"0:3-0:6 'one' is declared at a script's top level, so it needs a return type; write `-> 1`"},
 		},
 		{
-			// Writing the binder list would repeat the `where` clause's bound on `T`.
-			name:        "WhereClauseWithAddedBinder",
-			src:         "fn f<T>(x: T, y) where T: number { return [x, y] }",
-			cursor:      "f<",
-			expected:    "",
-			diagnostics: []string{"0:3-0:4 'f' is declared at a script's top level, so parameter 'y' needs a type and 'f' needs a return type"},
-		},
-		{
 			name:        "AddsLifetimeToWrittenBinders",
 			src:         "type Flat = {x: number}\nfn pick<T, U>(t: T, u: U, a: &Flat, b: &Flat) -> &Flat { return a }",
 			cursor:      "pick",
@@ -190,10 +183,36 @@ func TestSignatureAction(t *testing.T) {
 			expected: "",
 		},
 		{
+			// The returned call leaves mk's type parameter unsolved, so f's return type names a
+			// type parameter the binder list gains.
+			name:        "ReturnAddsTypeParam",
+			src:         "declare fn mk<T>() -> fn (x: T) -> T\nfn f(a: number) { return mk() }",
+			cursor:      "f(",
+			expected:    "declare fn mk<T>() -> fn (x: T) -> T\nfn f<T0>(a: number) -> fn (x: T0) -> T0 { return mk() }",
+			diagnostics: []string{"1:3-1:4 'f' is declared at a script's top level, so it needs a return type; write `-> fn (x: T0) -> T0`"},
+		},
+		{
+			// Writing the binder list would repeat the `where` clause's bound on `U`.
+			name:        "WhereClauseWithAddedBinder",
+			src:         "declare fn mk<T>() -> fn (x: T) -> T\nfn f<U>(u: U) where U: number { return mk() }",
+			cursor:      "f<",
+			expected:    "",
+			diagnostics: []string{"1:3-1:4 'f' is declared at a script's top level, so it needs a return type; write `-> fn (x: T0) -> T0`"},
+		},
+		{
+			// The inferred signature adds the binder `T0` and elides the source's 'q, so a
+			// rewritten binder list would drop 'q while `q: &'q Flat` still names it.
+			name:        "AddedTypeParamWouldDropWrittenLifetime",
+			src:         "type Flat = {x: number}\ndeclare fn mk<T>() -> fn (x: T) -> T\nfn f<'q>(q: &'q Flat) { return mk() }",
+			cursor:      "f<",
+			expected:    "",
+			diagnostics: []string{"2:3-2:4 'f' is declared at a script's top level, so it needs a return type; write `-> fn (x: T0) -> T0`"},
+		},
+		{
 			name:        "OptionalParamWithoutType",
 			src:         "fn f(x?) { return x }",
 			cursor:      "f(",
-			expected:    "fn f<T0>(x?: T0) -> T0 { return x }",
+			expected:    "",
 			diagnostics: []string{"0:3-0:4 'f' is declared at a script's top level, so parameter 'x' needs a type and 'f' needs a return type"},
 		},
 		{
@@ -230,15 +249,6 @@ func TestSignatureAction(t *testing.T) {
 			cursor:      "f(",
 			expected:    "type Flat = {x: number}\nfn f(a: &Flat, c: boolean) -> never throws &Flat { throw a }",
 			diagnostics: []string{"1:3-1:4 'f' is declared at a script's top level, so it needs a return type; write `-> never`"},
-		},
-		{
-			// The inferred signature adds the binder `T0` and elides the source's 'q, so a
-			// rewritten binder list would drop 'q while `q: &'q Flat` still names it.
-			name:        "AddedTypeParamWouldDropWrittenLifetime",
-			src:         "type Flat = {x: number}\nfn f<T, 'q>(t: T, q: &'q Flat, y) { return [t, y] }",
-			cursor:      "f<",
-			expected:    "",
-			diagnostics: []string{"1:3-1:4 'f' is declared at a script's top level, so parameter 'y' needs a type and 'f' needs a return type"},
 		},
 		{
 			name:        "AfterDeclaredFn",

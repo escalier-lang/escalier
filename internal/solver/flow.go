@@ -78,18 +78,15 @@ func (*paramDest) isFlowDest()          {}
 func (*calleeDest) isFlowDest()         {}
 func (*captureDest) isFlowDest()        {}
 
-// provisionalFlow is a flow F3 has not settled yet, because its source or destination is not
-// known where the flow is written. Three cases wait, and flowWait names what each waits on:
+// provisionalFlow is a flow that is not settled yet, because its destination is not known
+// where the flow is written. Two cases wait, and flowWait names what each waits on:
 //
-//   - A flow out of an unannotated parameter waits until the body is walked. Whether
-//     `val q = p` moves or copies p depends on whether p settles as owned or as a borrow.
 //   - A closure's capture waits for the closure's flow site. A closure that is returned or
 //     stored takes its captures with it, and one called where it is written only uses them.
 //   - An argument whose callee's signature the call could not see waits until the module or
 //     script is inferred.
 //
-// movedParams also reads the flows that wait on a parameter, to find the parameters the
-// body moves. table holds the placeholder event at index. source is the source expression, read for its type once the flow settles. A
+// table holds the placeholder event at index. source is the source expression, read for its type once the flow settles. A
 // closure capture and a destructured part have no source expression of their own, so
 // source is nil and sourceT holds the type of the value that flows.
 type provisionalFlow struct {
@@ -100,13 +97,11 @@ type provisionalFlow struct {
 	dest    flowDest
 }
 
-// flowWait names what a provisional flow waits on. param is an unannotated parameter whose
-// body is still being walked. capture marks a closure capture that waits for the closure's
+// flowWait names what a provisional flow waits on. capture marks a closure capture that waits for the closure's
 // flow site, and table is the table of the body the closure is written in. callee marks an
 // argument whose callee's signature the call could not see, which waits for the module or
 // script to be inferred.
 type flowWait struct {
-	param   *soltype.FuncParam
 	capture bool
 	table   *ownershipEvents
 	callee  bool

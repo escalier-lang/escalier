@@ -252,13 +252,12 @@ fn f(c: boolean) {
 	}
 }
 
-// TestUnionFieldWriteSignature asserts the signature inferred for a function that writes an
-// unannotated parameter into a field every member of a union receiver declares. The write
-// bounds the parameter by each member's field type.
+// TestUnionFieldWriteSignature asserts the signature inferred for a function that writes a
+// parameter into a field every member of a union receiver declares.
 func TestUnionFieldWriteSignature(t *testing.T) {
 	values, _, errs := inferSource(t, `type A = {kind: "a", a: number}
 type C = {kind: "c", a: number}
-fn f(q: &mut (A | C), v) { q.a = v }`)
+fn f(q: &mut (A | C), v: number) { q.a = v }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (q: &mut (A | C), v: number) -> undefined", values["f"])
 }

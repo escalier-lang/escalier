@@ -294,7 +294,7 @@ func TestReturnValueBorrows(t *testing.T) {
 		// pointer, so the signature lists both. The immutable form renders the same way.
 		"IfElseReturnOfALocalAlsoStoredIntoAParam": {
 			src: `
-				fn f(cond: boolean, p: &mut {node: {peer: &mut {value: number}}}) {
+				fn f<'a>(cond: boolean, p: &mut {node: {peer: &'a mut {value: number}}}) {
 					val mut b = {value: 0}
 					p.node = {peer: &mut b}
 					return if cond { &mut b } else { &mut b }

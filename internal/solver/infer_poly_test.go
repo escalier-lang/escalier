@@ -29,14 +29,14 @@ func TestInferModuleTopLevelLetPolymorphism(t *testing.T) {
 	t.Run("render", func(t *testing.T) {
 		// Identity's param and return are the same variable, so its render is
 		// compact even before PR2 — this asserts the <T0> quantifier prefix.
-		values, _, errs := inferSource(t, `fn id(x) { return x }`)
+		values, _, errs := inferSource(t, `fn id<T0>(x: T0) { return x }`)
 		require.Empty(t, errs)
 		require.Equal(t, map[string]string{"id": "fn <T0>(x: T0) -> T0"}, values)
 	})
 
 	t.Run("two types of use", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			fn id(x) { return x }
+			fn id<T0>(x: T0) { return x }
 			val a = id(5)
 			val b = id("hi")
 		`)
@@ -55,7 +55,7 @@ func TestInferModuleTopLevelLetPolymorphism(t *testing.T) {
 // every remaining variable coalesces to a concrete literal.
 func TestInferModuleIdentityPolymorphism(t *testing.T) {
 	src := `
-		fn identity(x) { return x }
+		fn identity<T0>(x: T0) { return x }
 		fn main() -> undefined {
 			val pair = fn () { return [identity("hello"), identity(5)] }
 		}
@@ -68,25 +68,18 @@ func TestInferModuleIdentityPolymorphism(t *testing.T) {
 	require.Equal(t, `fn () -> ["hello", 5]`, pair)
 }
 
-// A body-level inner function that captures an outer parameter keeps the capture
-// through generalization (M2's eager body-level coalescing froze it to `never`).
-// The param flows to both tuple positions through two fresh result variables, so
-// the raw scheme carries three distinct quantified variables — PR1 rendered the
-// non-compact `fn <T0, T1>(y: T0 & T1) -> [T0, T1]`. PR2's co-occurrence merging
-// recognises that the three always appear together and collapses them to one type
-// parameter: `fn <T0>(y: T0) -> [T0, T0]`. Applying outer to 5 still yields [5, 5],
-// confirming the merge preserves the input→output connection.
+// A body-level inner function that captures an outer parameter keeps the capture through
+// generalization, so applying outer to 5 yields [5, 5].
 func TestInferModuleInnerCapturesOuterParam(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn outer(y) {
+		fn outer<T0>(y: T0) -> [T0, T0] {
 			val getY = fn () { return y }
 			return [getY(), getY()]
 		}
 		val r = outer(5)
 	`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T0>(y: T0) -> [T0, T0]", values["outer"], "co-occurring variables merge to one type parameter")
-	require.Equal(t, "[5, 5]", values["r"], "the captured outer param reaches both result positions")
+	require.Equal(t, "[5, 5]", values["r"])
 }
 
 // Let-polymorphism extends to body-level `val`s: an inner polymorphic function
@@ -110,7 +103,7 @@ func TestInferModuleBodyLevelLetPolymorphism(t *testing.T) {
 // co-occurrence merging leaves them as distinct type parameters — the counterpart
 // to InnerCapturesOuterParam, where the variables always appeared together.
 func TestInferModuleDistinctParamsStayDistinct(t *testing.T) {
-	values, _, errs := inferSource(t, `fn pair(a, b) { return [a, b] }`)
+	values, _, errs := inferSource(t, `fn pair<T0, T1>(a: T0, b: T1) { return [a, b] }`)
 	require.Empty(t, errs)
 	require.Equal(t, map[string]string{"pair": "fn <T0, T1>(a: T0, b: T1) -> [T0, T1]"}, values)
 }
@@ -120,7 +113,7 @@ func TestInferModuleDistinctParamsStayDistinct(t *testing.T) {
 // `unknown`. Per-call instantiation keeps k(1, "z") and k("s", true) at distinct types.
 func TestInferModulePolymorphicWithParameterOnlyVar(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn k(x, y) { return x }
+		fn k<T0>(x: T0, y: unknown) { return x }
 		val a = k(1, "z")
 		val b = k("s", true)
 	`)
@@ -144,32 +137,32 @@ func TestInferParamGeneralization(t *testing.T) {
 	}{
 		{
 			name: "a parameter the body never reads",
-			src:  "fn f(a, b) { return b }",
+			src:  "fn f<T0>(a: unknown, b: T0) { return b }",
 			want: "fn <T0>(a: unknown, b: T0) -> T0",
 		},
 		{
 			name: "a parameter passed to a bounded type parameter",
-			src:  fstNum + "fn f(b) { return fstNum(1, b) }",
+			src:  fstNum + "fn f(b: number) { return fstNum(1, b) }",
 			want: "fn (b: number) -> 1",
 		},
 		{
 			name: "a bound reaches a parameter the return also holds",
-			src:  fstNum + "fn f(a, b) { return fstNum(a, b) }",
+			src:  fstNum + "fn f<T0: number>(a: T0, b: number) { return fstNum(a, b) }",
 			want: "fn <T0: number>(a: T0, b: number) -> T0",
 		},
 		{
 			name: "a concrete bound on a parameter the return holds renders on its binder",
-			src:  "declare fn g(n: number) -> number\nfn f(x) {\n\tg(x)\n\treturn x\n}",
+			src:  "declare fn g(n: number) -> number\nfn f<T0: number>(x: T0) -> T0 {\n\tg(x)\n\treturn x\n}",
 			want: "fn <T0: number>(x: T0) -> T0",
 		},
 		{
 			name: "a concrete bound inlines into the parameter",
-			src:  "fn f(a) { return a + 1 }",
+			src:  "fn f(a: number) { return a + 1 }",
 			want: "fn (a: number) -> number",
 		},
 		{
 			name: "a bounded type parameter's bound reaches a field",
-			src:  fstNum + "fn f(o) { return fstNum(1, o.x) }",
+			src:  fstNum + "fn f(o: {x: number}) { return fstNum(1, o.x) }",
 			want: "fn (o: {x: number}) -> 1",
 		},
 	}
@@ -188,7 +181,7 @@ func TestInferParamGeneralization(t *testing.T) {
 func TestInferOverloadArmRendersAnUnreadParamAsUnknown(t *testing.T) {
 	module := parseModuleFiles(t, map[string]string{"input.esc": `
 		fn f(x: number) -> number { return x }
-		fn f(x: string, y) -> string { return x }
+		fn f(x: string, y: unknown) -> string { return x }
 	`})
 	c := newTestChecker()
 	scope := c.preludeScope().Child()
@@ -204,14 +197,13 @@ func TestInferOverloadArmRendersAnUnreadParamAsUnknown(t *testing.T) {
 
 // A recursive group generalizes without looping (the coalesce seen-guard, shipped
 // in M2 PR-5, keeps the cyclic var↔var bound graph total under generalization too).
-// The ungrounded mutual recursion bottoms out. Each parameter is only passed to the
-// other function and occurs in one position, so it is `unknown`. Each return is an
-// ungrounded recursive position, so it is `never`. The real contract is that inference
+// The ungrounded mutual recursion bottoms out. Each return is an ungrounded recursive
+// position, so it is `never`. The real contract is that inference
 // TERMINATES rather than hangs.
 func TestInferModuleRecursiveGroupGeneralizesWithoutLooping(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn ping(n) { return pong(n) }
-		fn pong(n) { return ping(n) }
+		fn ping(n: unknown) { return pong(n) }
+		fn pong(n: unknown) { return ping(n) }
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, map[string]string{

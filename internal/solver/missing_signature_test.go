@@ -17,6 +17,20 @@ func TestMissingSignature(t *testing.T) {
 		expected []string
 	}{
 		{
+			// The message names the parameter without its default.
+			name:     "UnannotatedParamWithADefault",
+			src:      `fn f(x = 5) -> number { return x }`,
+			expected: []string{"error 1:4-1:5: 'f' is declared at module level, so parameter 'x' needs a type"},
+		},
+		{
+			// The suggestion writes a parameter's default after its type.
+			name: "SuggestionKeepsADefault",
+			src:  "type Flat = {x: number}\nfn pick(a: &Flat, b: &Flat, n: number = 1) { return a }",
+			expected: []string{
+				"error 2:4-2:8: 'pick' is declared at module level, so it needs a return type; write `fn pick<'a>(a: &'a Flat, b: &Flat, n: number = 1) -> &'a Flat`",
+			},
+		},
+		{
 			name: "UnannotatedParam",
 			src:  `fn read(p) { return p.x }`,
 			expected: []string{
@@ -222,6 +236,34 @@ func TestMissingSignature(t *testing.T) {
 // TestMissingSignatureOff asserts that a run without Options.RequireSignatures reports no
 // MissingSignatureError.
 func TestMissingSignatureOff(t *testing.T) {
-	res := InferModuleAgainstStdlib(parseModule(t, `fn read(p) { return p.x }`), committedTree, Options{})
+	res := InferModuleAgainstStdlib(parseModule(t, `fn read(p: {x: number}) { return p.x }`), committedTree, Options{})
 	require.Empty(t, res.Errors)
+}
+
+// TestMissingParamTypeOutsideTheSignatureCheck covers an untyped parameter of a function the
+// missing signature check does not examine, under Options.RequireSignatures. Each reports
+// MissingParamTypeError.
+func TestMissingParamTypeOutsideTheSignatureCheck(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		expected []string
+	}{
+		{
+			name:     "Constructor",
+			src:      "class P {\n\tx: number,\n\tconstructor(&mut self, x) { self.x = x },\n}",
+			expected: []string{"3:25-3:26: parameter 'x' has no type; write its type"},
+		},
+		{
+			name:     "DeclaredClassMethod",
+			src:      "declare class C {\n\tm(&self, x) -> number,\n}",
+			expected: []string{"2:11-2:12: parameter 'x' has no type; write its type"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := InferModuleAgainstStdlib(parseModule(t, tt.src), committedTree, Options{RequireSignatures: true})
+			require.Equal(t, tt.expected, messagesWithSpan(t, res.Errors))
+		})
+	}
 }

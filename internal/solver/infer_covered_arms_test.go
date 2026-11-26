@@ -186,11 +186,9 @@ val r = match p {
 			wantErrs: []string{"5:2-5:8: " + coveredArmMsg},
 		},
 		{
-			// The parameter's type is still being inferred, so a caller may pass a value
-			// no arm above names. TestInferMatchOverUnannotatedParam asserts that `x` infers
-			// as `unknown`, which admits such a value.
-			name: "a catch-all over an unannotated parameter",
-			src:  matchOverUnannotatedParam,
+			// `x` is `unknown`, so a caller may pass a value no arm above names.
+			name: "a catch-all over an `unknown` parameter",
+			src:  matchOverUnknownParam,
 		},
 		{
 			// The `{x}` arm names an optional key, so the three arms together are not shown
@@ -234,9 +232,9 @@ val r = try {
 	}
 }
 
-// matchOverUnannotatedParam matches an unannotated parameter against a `string` arm, a
-// `number` arm and a catch-all.
-const matchOverUnannotatedParam = `fn f(x) {
+// matchOverUnknownParam matches an `unknown` parameter against a `string` arm, a `number`
+// arm and a catch-all.
+const matchOverUnknownParam = `fn f(x: unknown) {
 	return match x {
 		a: string => 1,
 		b: number => 2,
@@ -244,11 +242,11 @@ const matchOverUnannotatedParam = `fn f(x) {
 	}
 }`
 
-// TestInferMatchOverUnannotatedParam asserts the signature a `match` over an unannotated
+// TestInferMatchOverUnknownParam asserts the return type a `match` over an `unknown`
 // parameter infers, and covers a call to a callee declared with that signature.
-func TestInferMatchOverUnannotatedParam(t *testing.T) {
-	t.Run("the parameter infers as unknown", func(t *testing.T) {
-		values, _, errs := inferSource(t, matchOverUnannotatedParam)
+func TestInferMatchOverUnknownParam(t *testing.T) {
+	t.Run("the return joins every arm", func(t *testing.T) {
+		values, _, errs := inferSource(t, matchOverUnknownParam)
 		require.Empty(t, errs)
 		require.Equal(t, "fn (x: unknown) -> 1 | 2 | 3", values["f"])
 	})

@@ -2805,27 +2805,6 @@ func TestInferMethodOverloadNoMatch(t *testing.T) {
 		msgWithSpan(t, errs[0]))
 }
 
-// TestInferMethodOverloadDeferredFallsBackToFirstMatch confirms the declaration-order
-// fallback for an unconstrained argument reaches method overloads too: inside a method
-// whose parameter x is unannotated, a self-call self.f(x) resolves to the first arm and
-// pins x, since an unconstrained argument cannot rank the arms. run's parameter x is
-// therefore number, the first arm's type.
-func TestInferMethodOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		class C {
-			n: number,
-			f(&self, x: number) -> number { return x },
-			f(&self, x: string) -> string { return x },
-			run(&self, x) -> number { return self.f(x) },
-		}
-		val c = C(0)
-		val r = c.run(1)
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "number", values["r"],
-		"an unconstrained argument defers to declaration-order first-match, pinning x to the first arm")
-}
-
 // TestInferMethodOverloadMixedReceiverRejected asserts the receiver-mutability uniformity rule
 // for overloaded methods: arms that disagree on their `self` receiver are rejected at
 // declaration. Overload resolution dispatches on the value arguments, and the
@@ -3830,6 +3809,54 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 				}
 			`,
 			want: []string{"cannot mutate 'x' because its binding is immutable; declare it as `mut x`"},
+		},
+		{
+			// `id(x)` belongs to no binding, so the nested write asks its result for a mutable
+			// borrow holding the field.
+			name: "a nested write through a call result a type parameter types",
+			src: `
+				declare fn id<U>(u: U) -> U
+				declare fn each<T>(v: T, cb: fn (x: T) -> undefined) -> undefined
+				fn f(c: &mut {a: {b: number, ...}, ...}) -> undefined {
+					each(c, fn (x) {
+						id(x).a.b = 1
+						return undefined
+					})
+				}
+			`,
+		},
+		{
+			// `y` holds what the call binds `T` to. A borrow cannot outlive the call, so the stored closure may not capture it.
+			name: "a stored closure capturing a local a type parameter binds to a borrow",
+			src: `
+				declare fn log(v: unknown) -> undefined
+				var sink: fn () -> undefined = fn () {}
+				declare fn each<T>(v: T, cb: fn (x: T) -> undefined) -> undefined
+				fn f(c: &{n: number}) -> undefined {
+					each(c, fn (x) {
+						val y = x
+						sink = fn () { log(y) }
+						return undefined
+					})
+				}
+			`,
+			want: []string{"this closure borrows `y`, but `sink` keeps it for 'static; pass a function that borrows nothing, or declare `y` at module level"},
+		},
+		{
+			// A number copies into the closure, so the closure borrows nothing.
+			name: "a stored closure capturing a local a type parameter binds to a number",
+			src: `
+				declare fn log(v: unknown) -> undefined
+				var sink: fn () -> undefined = fn () {}
+				declare fn each<T>(v: T, cb: fn (x: T) -> undefined) -> undefined
+				fn f(c: number) -> undefined {
+					each(c, fn (x) {
+						val y = x
+						sink = fn () { log(y) }
+						return undefined
+					})
+				}
+			`,
 		},
 		{
 			// The missing property is reported once, by the shape `T` is checked against.

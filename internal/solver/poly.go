@@ -516,7 +516,7 @@ func (f *freshener) freshenBounds(bounds []soltype.Type) []soltype.Type {
 // compact. See simplify.go.
 //
 // sealUsageObjects runs first, the one body rewrite generalize performs: it is the
-// finalize point where a non-escaping usage-inferred object closes to exact in the
+// finalize point where a non-escaping object inferred from its uses closes to exact in the
 // OPERATIVE body, so callers cannot pass extra fields (Policy A / B2). See its doc.
 func (c *checker) generalize(t soltype.Type, lvl int) TypeScheme {
 	c.sealUsageObjects(t, lvl)

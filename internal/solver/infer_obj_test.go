@@ -342,12 +342,11 @@ func TestInferObjectSpread(t *testing.T) {
 	}
 }
 
-// A computed key whose type nothing has determined yet, such as an unannotated parameter
-// read only as a key, names no property and no index signature, so it stays unsupported.
-func TestInferObjectComputedKeyOfUnknownTypeUnsupported(t *testing.T) {
-	src := "fn f(k) { return {[k]: 1} }"
+// A computed key of type `unknown` names no property and no index signature.
+func TestInferObjectComputedKeyOfUnknownType(t *testing.T) {
+	src := "fn f(k: unknown) { return {[k]: 1} }"
 	_, _, errs := inferSource(t, src)
-	requireBlame(t, src, errs, "1:20-1:21: Unsupported: ComputedKey", "k")
+	requireBlame(t, src, errs, "1:29-1:30: Invalid object key: unknown", "k")
 }
 
 // --- MemberExpr ---
@@ -409,12 +408,12 @@ func TestInferModuleMemberReadSealsParam(t *testing.T) {
 	}{
 		{
 			name: "a closed param seals to exact",
-			src:  "fn f(p) { return p.a }",
+			src:  "fn f<T0>(p: &{a: T0}) { return p.a }",
 			want: "fn <T0, 'a>(p: &'a {a: T0}) -> &'a T0",
 		},
 		{
 			name: "an open param stays inexact",
-			src:  "fn f(open p) { return p.a }",
+			src:  "fn f<T0>(open p: &{a: T0, ...}) { return p.a }",
 			want: "fn <T0, 'a>(p: &'a {a: T0, ...}) -> &'a T0",
 		},
 	}

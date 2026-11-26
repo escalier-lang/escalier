@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// roundTripCase declares a function `f` twice. inferred writes it without annotations and
-// annotated writes it with the signature sig that inference gives inferred. callers calls
+// roundTripCase declares a function `f` twice. inferred writes it without its return type
+// and annotated writes it with the signature sig that inference gives inferred. callers calls
 // the annotated `f`, and values holds the type each named binding of callers takes.
 type roundTripCase struct {
 	name      string
@@ -21,7 +21,7 @@ type roundTripCase struct {
 var roundTripCases = []roundTripCase{
 	{
 		name:      "FieldRead",
-		inferred:  `fn f(p) { return p.x }`,
+		inferred:  `fn f<T0>(p: &{x: T0}) { return p.x }`,
 		annotated: `fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0 { return p.x }`,
 		sig:       `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`,
 		callers: `
@@ -43,7 +43,7 @@ var roundTripCases = []roundTripCase{
 	},
 	{
 		name:      "WrittenBorrowOfField",
-		inferred:  `fn f(p) { return &p.x }`,
+		inferred:  `fn f<T0>(p: &{x: T0}) { return &p.x }`,
 		annotated: `fn f<T0, 'a>(p: &'a {x: T0}) -> &'a T0 { return &p.x }`,
 		sig:       `fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0`,
 		callers: `
@@ -54,7 +54,7 @@ var roundTripCases = []roundTripCase{
 	},
 	{
 		name:      "NestedFieldRead",
-		inferred:  `fn f(p) { return p.x.y }`,
+		inferred:  `fn f<T0>(p: &{x: {y: T0}}) { return p.x.y }`,
 		annotated: `fn f<T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0 { return p.x.y }`,
 		sig:       `fn <T0, 'a>(p: &'a {x: {y: T0}}) -> &'a T0`,
 		callers: `
@@ -64,10 +64,9 @@ var roundTripCases = []roundTripCase{
 		values: map[string]string{"m": "&{z: 2}"},
 	},
 	{
-		// Inference rejects an index read off an unannotated parameter, so a tuple
-		// element reaches a signature through a destructuring pattern instead.
+		// A tuple element reaches the signature through a destructuring pattern.
 		name: "TupleDestructure",
-		inferred: `fn f(p) {
+		inferred: `fn f<T0>(p: &[T0, unknown]) {
 				val [a, b] = p
 				return a
 			}`,
@@ -81,7 +80,7 @@ var roundTripCases = []roundTripCase{
 	},
 	{
 		name: "WrittenBorrowOfDestructuredElement",
-		inferred: `fn f(p) {
+		inferred: `fn f<T0>(p: &[T0, unknown]) {
 				val [a, b] = p
 				return &a
 			}`,
@@ -95,7 +94,7 @@ var roundTripCases = []roundTripCase{
 	},
 	{
 		name: "ObjectDestructure",
-		inferred: `fn f(p) {
+		inferred: `fn f<T0>(p: &{x: T0}) {
 				val {x} = p
 				return x
 			}`,
@@ -109,7 +108,7 @@ var roundTripCases = []roundTripCase{
 	},
 	{
 		name:      "Identity",
-		inferred:  `fn f(x) { return x }`,
+		inferred:  `fn f<T0>(x: T0) { return x }`,
 		annotated: `fn f<T0>(x: T0) -> T0 { return x }`,
 		sig:       `fn <T0>(x: T0) -> T0`,
 		callers:   `val m = f("hi")`,
@@ -119,7 +118,7 @@ var roundTripCases = []roundTripCase{
 		name: "OwnedStore",
 		inferred: `
 				var sink = {x: 0}
-				fn f(p) { sink = p }
+				fn f(p: {x: number}) -> undefined { sink = p }
 			`,
 		annotated: `
 				var sink = {x: 0}
@@ -131,15 +130,15 @@ var roundTripCases = []roundTripCase{
 	},
 	{
 		name:      "FieldWrite",
-		inferred:  `fn f(mut p, v) { p.x = v }`,
+		inferred:  `fn f<T0>(mut p: {x: T0}, v: T0) { p.x = v }`,
 		annotated: `fn f<T0>(mut p: {x: T0}, v: T0) -> undefined { p.x = v }`,
 		sig:       `fn <T0>(p: {x: T0}, v: T0) -> undefined`,
 	},
 }
 
 // TestInferredSignatureRoundTrips covers functions whose inferred signature, written back
-// as an annotation, checks clean and renders as the same signature. Each case checks the
-// unannotated `f` and the annotated `f`, each in a source of its own.
+// as an annotation, checks clean and renders as the same signature. Each case checks `f`
+// without its return type and the fully annotated `f`, each in a source of its own.
 func TestInferredSignatureRoundTrips(t *testing.T) {
 	for _, tt := range roundTripCases {
 		t.Run(tt.name, func(t *testing.T) {

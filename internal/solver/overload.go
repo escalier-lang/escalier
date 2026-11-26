@@ -511,24 +511,6 @@ func overloadDisplayType(b ValueBinding) soltype.Type {
 	return &soltype.IntersectionType{Types: arms}
 }
 
-// allParamsAnnotated reports whether EVERY parameter of a signature carries a type
-// annotation. One un-annotated parameter is enough to make it false. The return type is
-// not consulted: it is an output the body determines, and the fixed point infers it.
-//
-// A signature it accepts has a ground domain, meaning the set of arguments the function
-// takes is fixed by what was written rather than left to inference.
-// checkOverloadAnnotations requires that of every arm of an overloaded function in a
-// mutually-recursive group. Domains are what tell one arm of a fused overload set from
-// another, so an un-annotated one leaves the set indistinguishable to itself.
-func allParamsAnnotated(sig ast.FuncSig) bool {
-	for _, p := range sig.Params {
-		if p.TypeAnn == nil {
-			return false
-		}
-	}
-	return true
-}
-
 // isFullyAnnotated reports whether a function signature is ground from its annotations
 // alone, with every parameter typed and a return type present. annotatedOverloadArms
 // requires this of every arm of an overload set it pre-binds from signatures, since an

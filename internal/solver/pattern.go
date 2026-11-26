@@ -359,18 +359,6 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 			}
 		}
 		var restPat soltype.Pat
-		// A rest binds the properties the fields do not, so a parameter it destructures has to
-		// admit an argument that carries them. Policy A would otherwise close the
-		// usage-inferred object to exact and reject every such argument. `fn f({x, ...rest})`
-		// would infer the parameter `{x: T0}` and reject `f({x: 1, y: 2})` for the extra y.
-		// Marking the parameter's variable open keeps the folded object inexact, the same
-		// shape the written `open` marker produces. The rule is the same whether the pattern
-		// sits in the parameter list or in a `val` over the parameter in the body. A tuple
-		// pattern needs no marking, since the requirement its fixed prefix emits is already
-		// inexact.
-		if v, isVar := scrutinee.(*soltype.TypeVarType); isVar && rest != nil && purpose == forBinding && c.unannotatedParamVars.Contains(v) {
-			v.Open = true
-		}
 		if rest != nil && named.Len() == 0 {
 			// Each named field requires the scrutinee to be an object. A pattern made only of
 			// a rest names none, so it states the requirement itself. Without it, the
@@ -587,7 +575,7 @@ func (c *checker) bindRecoveredElem(scope *Scope, lvl int, e ast.Pat, scrutineeM
 
 // tupleRestType resolves what a trailing `...rest` binds: the scrutinee's elements past the
 // fixed prefix, re-gathered into a tuple. An inexact scrutinee hands its open tail on. With
-// no tuple shape, as for an un-annotated parameter, the leftover is still SOME tuple, so it
+// no tuple shape, as for an untyped closure parameter, the leftover is still SOME tuple, so it
 // binds a variable bounded below by `[...]`. Unbounded it would coalesce to `never`, which
 // lets a caller assign the result to anything. restConcrete drives the borrow wrap.
 func (c *checker) tupleRestType(lvl int, node ast.Node, scrutinee soltype.Type, scrutTup, concreteTup *soltype.TupleType, prefix int) (bind, restConcrete soltype.Type) {

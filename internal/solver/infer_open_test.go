@@ -6,20 +6,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestInferOpenParam exercises the `open` parameter marker end to end (M4 B2): an
-// `open` param's usage-inferred object renders row-polymorphic (inexact), while an
-// un-`open` peer closes to exact (the B1 Policy-A close). Passing an object with
-// extra fields to the open param checks.
+// TestInferOpenParam covers the `open` parameter marker (M4 B2). On a parameter with a
+// written type the marker changes nothing, so a written inexact object stays inexact and
+// accepts extra fields, and an exact one stays exact. A parameter named `open` is an
+// ordinary binding.
 func TestInferOpenParam(t *testing.T) {
-	t.Run("open param renders inexact", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn dist(open p) { p.x
+	t.Run("an open param keeps its inexact type", func(t *testing.T) {
+		values, _, errs := inferSource(t, `fn dist(open p: &{x: unknown, y: unknown, ...}) { p.x
  p.y }`)
 		require.Empty(t, errs)
 		require.Equal(t, "fn (p: &{x: unknown, y: unknown, ...}) -> undefined", values["dist"])
 	})
 
-	t.Run("un-open peer renders exact", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn dist(p) { p.x
+	t.Run("a param without the marker keeps its exact type", func(t *testing.T) {
+		values, _, errs := inferSource(t, `fn dist(p: &{x: unknown, y: unknown}) { p.x
  p.y }`)
 		require.Empty(t, errs)
 		require.Equal(t, "fn (p: &{x: unknown, y: unknown}) -> undefined", values["dist"])
@@ -28,13 +28,13 @@ func TestInferOpenParam(t *testing.T) {
 	// `open` is provisional and context-sensitive: a param literally named `open`
 	// (no following pattern) is an ordinary binding, not a marker.
 	t.Run("open as a plain param name is not a marker", func(t *testing.T) {
-		values, _, errs := inferSource(t, "fn f(open) { return open }")
+		values, _, errs := inferSource(t, "fn f<T0>(open: T0) { return open }")
 		require.Empty(t, errs)
 		require.Equal(t, "fn <T0>(open: T0) -> T0", values["f"])
 	})
 
-	// Each call below goes to a callee declared with the signature "open param renders
-	// inexact" or "un-open peer renders exact" asserts.
+	// Each call below goes to a callee declared with the signature "an open param keeps its
+	// inexact type" or "a param without the marker keeps its exact type" asserts.
 	calls := []struct {
 		name string
 		src  string
@@ -74,13 +74,13 @@ val r = foo({x: 1, y: 2})`,
 // rejects an extra field at ANY depth, while an open param accepts one at any depth.
 func TestInferOpenParamNested(t *testing.T) {
 	t.Run("open renders inexact at every level", func(t *testing.T) {
-		values, _, errs := inferSource(t, "fn foo(open p) { p.a.b }")
+		values, _, errs := inferSource(t, "fn foo(open p: &{a: {b: unknown, ...}, ...}) { p.a.b }")
 		require.Empty(t, errs)
 		require.Equal(t, "fn (p: &{a: {b: unknown, ...}, ...}) -> undefined", values["foo"])
 	})
 
 	t.Run("closed seals every level to exact", func(t *testing.T) {
-		values, _, errs := inferSource(t, "fn foo(p) { p.a.b }")
+		values, _, errs := inferSource(t, "fn foo(p: &{a: {b: unknown}}) { p.a.b }")
 		require.Empty(t, errs)
 		require.Equal(t, "fn (p: &{a: {b: unknown}}) -> undefined", values["foo"])
 	})

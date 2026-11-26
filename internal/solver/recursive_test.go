@@ -68,12 +68,11 @@ func TestInferRecursiveRendersMuKnot(t *testing.T) {
 			//
 			// This case infers `f` and calls it in one source, since `f` calls itself.
 			name:    "knot beside a retained type parameter",
-			src:     `fn f(x) { return {next: f(x), value: x} }`,
+			src:     `fn f<T0>(x: T0) { return {next: f(x), value: x} }`,
 			binding: "f",
 			want:    "fn <T0>(x: T0) -> {next: μX0.{next: X0, value: T0}, value: T0}",
 			wantErrs: []string{
 				nonReturningMsg("1:4-1:5", "f", "fn <T0>(x: T0) -> {next: μX0.{next: X0, value: T0}, value: T0}"),
-				"1:38-1:39: use of moved value 'x'",
 			},
 		},
 		{
@@ -273,7 +272,7 @@ func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 			name: "a recursive result through a type parameter still renders a knot",
 			src: `
 				fn f() { return {next: f()} }
-				fn id(x) { return x }
+				fn id<T0>(x: T0) { return x }
 				val d = id(f())
 			`,
 			binding:  "d",

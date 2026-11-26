@@ -49,25 +49,13 @@ type checker struct {
 	// walked so far, keyed by what it waits on. settleFlowsWaitingOn turns each into its
 	// event once what it waits on is settled. See ownership_events.go.
 	pendingFlows map[flowWait][]provisionalFlow
-	// paramByVar maps the VarID of each unannotated parameter a walked body binds to the
-	// parameter, so a flow out of it can read the ownership its body settles.
-	paramByVar map[liveness.VarID]*soltype.FuncParam
-	// unsettledParams holds each unannotated parameter whose body is still being walked.
-	// Its ownership is not settled until the walk finishes.
-	unsettledParams set.Set[*soltype.FuncParam]
 	// rejectedPatElems holds each pattern element a binding walk reported as unsupported,
 	// such as the `...rest` of `val {...rest, x} = p`. emitPatternFlows emits no flow for a
 	// pattern that holds one.
 	rejectedPatElems set.Set[ast.Node]
 
-	// pendingRecvReads holds the member reads off inferred receivers that top-level bodies
-	// collected. A value initializer can still pass such a body to a call that types its
-	// receiver, so checkPendingRecvReads checks them once the component is constrained.
-	pendingRecvReads []inferredRecvRead
-
 	// pendingMutations holds the unsettled mutations that top-level bodies collected, which
-	// checkPendingMutations checks once the component is constrained, for the same reason
-	// pendingRecvReads waits.
+	// checkPendingMutations checks once the component is constrained.
 	pendingMutations []unsettledMutation
 
 	// topThrows is the throws sink for a `try` block written at module top level, where
@@ -419,18 +407,15 @@ type checker struct {
 	// inferFunc reads and clears it on entry, so a lambda nested inside the body does not
 	// take the member's receiver as its own.
 	memberReceiver *ast.MethodReceiver
-	// argFunc is the function expression inferCallArgs is about to infer as a call argument,
-	// consumed by the inferFunc call that walks it. inferFunc reads and clears it on entry, so a
-	// lambda nested inside the argument's body is not taken for an argument itself.
-	argFunc *ast.FuncExpr
 	// closureHint is the function type the function expression closureHintFor flows into.
 	// It types each parameter that function expression leaves unannotated. inferExprIn sets
-	// both, and inferFunc reads and clears them on entry, as it does argFunc.
+	// both, and inferFunc reads and clears them on entry, so a lambda nested in the body does
+	// not take them for its own.
 	closureHint    *soltype.FuncType
 	closureHintFor *ast.FuncExpr
-	// readThroughVars holds the inner variable of each borrow inferFunc infers for an
-	// unannotated parameter, and the result variable of each field read through one of those
-	// borrows. fieldReadBorrow reads a field off such a borrow as a borrow at the same lifetime.
+	// readThroughVars holds the inner variable of each immutable borrow a closure parameter
+	// takes from its context before the call solves it, and the result variable of each field
+	// read through one of those borrows. fieldReadBorrow reads a field off such a borrow as a borrow at the same lifetime.
 	readThroughVars set.Set[*soltype.TypeVarType]
 	// declaredReadShapes maps the result variable of a field read through an immutable
 	// borrow to the field's declared type. Only a field declared as an object, tuple, class
@@ -442,9 +427,6 @@ type checker struct {
 	// it instantiates a copy of the variable, and the freshener adds that copy to
 	// readThroughVars.
 	readThroughLocals set.Set[*soltype.TypeVarType]
-	// unannotatedParamVars holds the variable inferFunc mints for each parameter with no
-	// written type.
-	unannotatedParamVars set.Set[*soltype.TypeVarType]
 
 	// memberSelf is set beside memberReceiver for an instance member, by inferMemberFunc, and
 	// carries what inferFunc needs to bind the member's `self` and build its SelfParam.
@@ -623,9 +605,6 @@ type funcCtx struct {
 	// does one that yields `never`. inferFunc reads it to warn about a `gen` marker the
 	// body never uses. It is the generator twin of raised.
 	yielded bool
-	// inferredRecvReads holds each member read in this body, or in a body it encloses, whose
-	// receiver is an identifier typed only by how the body uses it.
-	inferredRecvReads []inferredRecvRead
 	// unsettledMutations holds each mutating operation in this body, or in a body it
 	// encloses, through an immutable binding whose value had no known type yet. See
 	// unsettledMutation.
@@ -679,14 +658,6 @@ type funcCtx struct {
 	// cfg is this body's control-flow graph, retained from the pre-pass. liveness and
 	// stmtToRef are derived from it. It is nil at module top-level, where no pre-pass runs.
 	cfg *liveness.CFG
-	// openEscapes holds the VarID of each binding the body passes whole as a call argument
-	// into a destination that outlives the frame and whose type leaves ownership open.
-	// noteOpenEscapes records them, and markOpenEscapeParams reads them once the body is
-	// walked.
-	openEscapes set.Set[liveness.VarID]
-	// destructureInits holds the initializer of each `val` or `var` destructuring in this
-	// body that takes its parts out of the initializer's place. markMovedParams reads it.
-	destructureInits set.Set[ast.Node]
 	// unwrittenBorrows holds each expression reported for filling a borrow destination without
 	// a written borrow. A binding whose initializer is in it keeps no closure reachable.
 	unwrittenBorrows set.Set[ast.Node]

@@ -273,12 +273,12 @@ func TestNestedWriteInfersMutContainerAndRoundTrips(t *testing.T) {
 	}{
 		{
 			name: "one level",
-			src:  "fn foo(mut obj) { obj.p.x = 5 }",
+			src:  "fn foo(mut obj: {p: {x: number}}) { obj.p.x = 5 }",
 			want: "fn (obj: {p: {x: number}}) -> undefined",
 		},
 		{
 			name: "three levels",
-			src:  "fn foo(mut obj) { obj.a.b.c = 5 }",
+			src:  "fn foo(mut obj: {a: {b: {c: number}}}) { obj.a.b.c = 5 }",
 			want: "fn (obj: {a: {b: {c: number}}}) -> undefined",
 		},
 	}
@@ -295,7 +295,7 @@ func TestNestedWriteInfersMutContainerAndRoundTrips(t *testing.T) {
 	// since the property it tests is that the inferred `foo` accepts its own displayed type.
 	// A declared `foo` would accept that type by construction.
 	t.Run("round-trip caller", func(t *testing.T) {
-		src := `fn foo(mut obj) { obj.p.x = 5 }
+		src := `fn foo(mut obj: {p: {x: number}}) { obj.p.x = 5 }
 fn caller(a: {p: {x: number}}) -> undefined { foo(a) }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)

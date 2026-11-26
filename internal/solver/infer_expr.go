@@ -532,7 +532,7 @@ func astKind(n any) string {
 // in Info. It delegates to inferFunc, the shared core also used by inferFuncDecl,
 // factored so neither side owns the other. A `<T>` type-param list resolves into
 // the function's own FuncType.TypeParams, quantified by value-binding
-// generalization and freshened per call. An un-annotated param gets a fresh var,
+// generalization and freshened per call. An untyped closure param gets a fresh var,
 // which generalization turns into a quantifier or coalesces to unknown/never at
 // render time.
 func (c *checker) inferFuncExpr(scope *Scope, lvl int, e *ast.FuncExpr) soltype.Type {
@@ -583,10 +583,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// that is not an instance member, a constructor included, since a constructor binds its own.
 	member := c.memberSelf
 	c.memberSelf = nil
-	// Take the argument marker inferCallArgs left, and clear it so a lambda nested in the body
-	// is not taken for a call argument.
-	isArg := c.argFunc != nil && ast.Node(c.argFunc) == node
-	c.argFunc = nil
 	// Take the function type a closure flows into, and clear it so a lambda nested in the
 	// body does not take it for its own.
 	hint := c.takeClosureHint(node)
@@ -670,7 +666,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		if !written && !rest && hint != nil && i < len(hint.Params) && !hint.Params[i].Rest {
 			pt, written, contextual = hint.Params[i].Type, true, true
 			// An immutable borrow of a type the call has not solved yet is read through, so a
-			// field read off it keeps the borrow, as it does for a borrow F3 infers.
+			// field read off it keeps the borrow.
 			if ref, isRef := pt.(*soltype.RefType); isRef && !ref.Mut {
 				if v, isVar := ref.Inner.(*soltype.TypeVarType); isVar {
 					c.addReadThroughVar(v)
@@ -690,32 +686,40 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// Rule 2 of PR 3. A bare annotation is owned and only an `&` annotation
 		// borrows. An `&` annotation already mints its lifetime in
 		// resolveLifetimeAnn, so a parameter has nothing to attach here.
-		// An `open` un-annotated param keeps its usage-inferred object inexact at
-		// display time (B2). The marker only makes sense for an inferred var; an
-		// annotated param's exactness is fixed by its annotation, and paramType
-		// returns the resolved annotation (not a var) in that case.
+		// An `open` closure parameter with no type keeps the object its uses infer inexact
+		// at display time (B2). The marker only makes sense for a variable. An annotated
+		// param's exactness is fixed by its annotation, and writtenParamType returns the
+		// resolved annotation, not a variable, in that case.
 		if p.Open {
 			if v, ok := pt.(*soltype.TypeVarType); ok {
 				v.Open = true
 			}
 		}
-		// F3 makes an unannotated parameter that does not escape a borrow. A parameter the body
-		// only reads through does not escape, so it borrows immutably, as `p` in
-		// `fn read(p) { return p.x }` does. A destructuring parameter whose leaves the body only
-		// reads through borrows the same way, as `{x}` in `fn take({x}) { return x }` does. Its
-		// leaves then bind as borrows too. A function passed as a call argument keeps a plain
-		// variable for each parameter, since the callee's signature gives each one its type.
+		// A parameter with no written or contextual type has no type the body can rely on.
 		if v, ok := pt.(*soltype.TypeVarType); ok && !written {
-			c.addUnannotatedParamVar(v)
-			// A closure's context has to type a parameter the closure leaves unannotated. A
-			// class member is typed by its own signature, which checkMemberSignatures checks.
-			if fe, isClosure := node.(*ast.FuncExpr); isClosure && memberName == "" && member == nil && recv == nil {
+			fe, isClosure := node.(*ast.FuncExpr)
+			_, isRestPat := p.Pattern.(*ast.RestPat)
+			switch {
+			case p.TypeAnn != nil || isRestPat:
+				// The annotation did not resolve, and resolveTypeAnn reported why, or a rest
+				// parameter has no type, which restParamSlot reported. The parameter keeps its
+				// variable, so its uses report nothing further.
+			case isClosure && memberName == "" && member == nil && recv == nil:
+				// A closure keeps the variable, through which a generic context such as
+				// `fn apply<F>(f: F)` still reaches it. checkParamTypes reports it when no
+				// context does.
 				c.queueParamTypeCheck(fe, p, pat, v)
+			default:
+				// A declaration or class member is typed by its own signature. The error type
+				// accepts every use, so the body reports nothing further.
+				pt = &soltype.ErrorType{}
+				// When signatures are required, the missing signature check already reports the
+				// parameter of a function or member it checks.
+				if !c.requireSignatures || !signatureCheckCovers(node) {
+					// The name drops a default, since the annotation goes before it.
+					c.report(&MissingParamTypeError{Param: p, Name: writtenParamName(pat), Declared: true})
+				}
 			}
-		}
-		if v, ok := pt.(*soltype.TypeVarType); ok && !written && !isArg && body != nil && paramOnlyReadThrough(pat, rest, optional, body) {
-			pt = soltype.NewRef(false, c.ctx.freshLifetime(lvl), v)
-			c.addReadThroughVar(v)
 		}
 		if name, ok := identPatName(pat); ok {
 			// The param's IdentPat IS its definition site, so record it as the binding's
@@ -724,8 +728,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// parameter (see bindingDecl). pat is an ast.Node (*ast.Param is not).
 			sources := []provenance.Provenance{&ast.NodeProvenance{Node: pat}}
 			if !written {
-				// An un-annotated param's type is the fresh var minted here, so a
-				// param-type mismatch blames the param. An annotated param's blame
+				// An untyped param's type is the fresh var minted here, so a param-type
+				// mismatch blames the param. An annotated param's blame
 				// instead rides on its annotation, recorded by resolveTypeAnn.
 				c.recordProv(pt, pat, ParamBinding)
 			}
@@ -740,8 +744,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				defaults = append(defaults, paramDefaultSite{def: def, param: pt, scope: snapshotScope(declScope, fnScope), widens: widens})
 			}
 			// A `mut p: T` parameter may mutate the `T` it owns. The caller moves its
-			// argument into `p` either way, so the signature keeps the plain `T`. An
-			// unannotated `mut p` is mutable too, and its type is inferred from its uses.
+			// argument into `p` either way, so the signature keeps the plain `T`. An untyped
+			// closure parameter `mut p` is mutable too.
 			//
 			// A call moves its argument into a written type only when the type is a
 			// concrete owned shape. An annotation naming a union, an intersection, or a type
@@ -989,7 +993,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		extraVarIDs := c.runLivenessPrePass(fnScope, sig.Params, recv, closure, enclosed, paramTypes, body)
 		recordParamVarIDs(c.varIDs, fnScope, sig.Params)
 		recordExtraParamVarIDs(fnScope, extraVarIDs)
-		c.registerUnsettledParams(sig.Params, params)
 		// Walk the body for type-checking and to collect its ReturnStmts; the
 		// block's TAIL value is intentionally discarded. Unlike a value-position
 		// block, where the last expression IS the block's value, a function body's
@@ -1024,23 +1027,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		c.shareOutlivingBorrowLifetimes()
 		c.commitOwnedReturns()
 		c.ownReturnedClosures()
-		// A body that moves an unannotated parameter takes ownership of the caller's value,
-		// so each call moves the argument it passes there. It reads the flows that wait on
-		// the parameters, so it runs before settleParams settles them.
-		c.markMovedParams(sig.Params, params)
-		// D9 decides an unannotated parameter that escapes where the destination's type
-		// leaves ownership open. A parameter the body cannot write is a `'static` borrow, so
-		// the caller keeps reading its value. A `mut` parameter may be written, so it stays
-		// owned. This runs after markMovedParams, since a parameter the body also moves is
-		// owned by that move. A function passed as a call argument takes its parameter types
-		// from the callee, so the callee decides their ownership, as it does for a read-through
-		// parameter.
-		if !isArg {
-			c.markOpenEscapeParams(sig.Params, params)
-		}
-		// The parameters' ownership is now settled, so a flow out of or into one of them can
-		// become its event.
-		c.settleParams(params)
 		c.finishOwnershipEvents()
 		retExprs = c.fn.returnExprs
 		throws = c.fn.throws
@@ -1049,7 +1035,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		if gen != nil {
 			gen.delegateNexts = c.fn.delegateNexts
 		}
-		recvReads := c.fn.inferredRecvReads
 		mutations := c.fn.unsettledMutations
 		// A closure that moves a local it captures takes the local from the body it is
 		// written in. recordClosureCaptures reads these names there.
@@ -1062,10 +1047,6 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			}
 		}
 		collected = c.popFuncCtx(saved)
-		// A read inside this body can still learn its receiver's type from the enclosing body,
-		// as a callback's parameter does from the call it is passed to, so the enclosing body
-		// decides it. The outermost body decides once everything it encloses is walked.
-		c.settleInferredRecvReads(recvReads)
 		c.settleUnsettledMutations(mutations)
 		// A body with no `return` that always leaves along the exceptional edge reaches
 		// no normal exit, so it produces `never`, not the `undefined` a fall-through body
@@ -1525,7 +1506,7 @@ func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (sol
 // hand-maintained type switch.
 //
 // There is one boundary. The visitor treats a TypeVarType as a leaf, so a borrow
-// reachable only through a usage-inferred variable is not forced here. That is the
+// reachable only through an inference variable is not forced here. That is the
 // same place the global-write CarrierOf peel stops, and the deeper handling rides
 // M4 G2.
 func (c *checker) constrainEscape(t soltype.Type) {
@@ -1786,7 +1767,7 @@ func (c *checker) notMovedInto(t soltype.Type) bool {
 
 // writtenParamType is paramType, and also reports whether the type is the one p's annotation
 // names. It is false for an unannotated parameter and for one whose annotation failed to
-// resolve, whose type is then inferred from its uses.
+// resolve, and the type is then a fresh variable.
 func (c *checker) writtenParamType(scope *Scope, p *ast.Param, lvl int) (soltype.Type, bool) {
 	if p.TypeAnn != nil {
 		// A parameter's annotation sits one position deeper in the input, which flips the
@@ -1884,8 +1865,8 @@ func (c *checker) wrapBorrow(e *ast.BorrowExpr, lvl int, sub soltype.Type, check
 		// `{x: number}` for `var mut q = {x: 0}`. The borrow wraps that value. Wrapping
 		// the variable itself would constrain it against a borrow of itself, so the value's
 		// immutable inner would reach the variable and then fail the `&mut` it now sits under.
-		// A variable that holds no known owned value, such as an unannotated parameter's, is
-		// wrapped as it is.
+		// A variable that holds no known owned value, such as an untyped closure parameter's,
+		// is wrapped as it is.
 		if carrier := c.ownedCarrier(s); carrier != nil {
 			inner = carrier
 		} else {
@@ -1978,8 +1959,8 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 	ownedMut := e.Mut && c.ownedMutation(e, recv, obj.place)
 	_, _, recvLt := soltype.UnwrapRef(recv)
 	recvCarrier := soltype.CarrierOf(recv)
-	// Read-after-write cache. A usage-inferred receiver may carry a recorded
-	// write for this field. Take the cached value as the field's static shape
+	// Read-after-write cache. A receiver typed by an inference variable may carry a
+	// recorded write for this field. Take the cached value as the field's static shape
 	// so the explicit borrow uses the same precise type the implicit read
 	// would. The cache is keyed on a TypeVar receiver, matching the gate
 	// inferMemberAssign uses when it records a write.
@@ -2160,10 +2141,6 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 		c.emitArgFlows(e, fn, eventRef)
 		c.emitCallEnd(e, fn, eventRef)
 	}
-	// A module-level receiver outlives every local, so an argument its method stores there
-	// escapes. A destination typed by an inference variable has no ownership yet, so D9 decides
-	// it from the enclosing function's parameter once the body is walked.
-	c.noteOpenEscapes(scope, e, fn)
 	c.recordType(e, ret)
 	return pathResult{value: ret, shortCircuits: target.shortCircuits}
 }
@@ -2203,8 +2180,6 @@ func (c *checker) inferCallTarget(scope *Scope, lvl int, e *ast.CallExpr) callTa
 		}
 	}
 	callee, shortCircuits := c.inferCallee(scope, lvl, e)
-	// A member read called on the spot runs against its receiver, so it needs no binding.
-	c.markInferredRecvReadCalled(e.Callee)
 	target := c.calleeTarget(lvl, e, callee, c.calleeFreshlyInstantiated(scope, e))
 	target.shortCircuits = shortCircuits
 	return target
@@ -2621,9 +2596,6 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset m
 		if t, ok := preset[a]; ok {
 			args[i] = t
 			continue
-		}
-		if fe, ok := a.(*ast.FuncExpr); ok {
-			c.argFunc = fe
 		}
 		args[i] = c.inferExprIn(scope, lvl, a, dests[i])
 	}
@@ -3139,7 +3111,7 @@ func (c *checker) inferFieldAssign(lvl int, e *ast.BinaryExpr, object ast.Expr, 
 	// A write to a declared readonly field is reported here, blamed on the target, so every
 	// receiver form gives the same diagnostic. The structural requirement below would
 	// otherwise reject it as a subtyping failure. A receiver whose shape is still being
-	// inferred, such as an unannotated parameter, declares no field. A caller that passes
+	// inferred, such as an untyped closure parameter, declares no field. A caller that passes
 	// an object with a readonly field into that shape gets ReadonlyFieldSubtypeError.
 	declared, hasDeclared := member.(*soltype.PropertyElem)
 	// A constructor may write its class's own readonly field once, to initialize it.
@@ -4314,12 +4286,11 @@ func (c *checker) resolveMemberPath(scope *Scope, lvl int, e *ast.MemberExpr, ob
 // receiver has AT LEAST this property, so width tolerance is expressed as
 // inexactness rather than as an unconditionally width-tolerant arm.
 //
-// This inexactness currently flows out to the inferred param type. A param used
-// only through member reads coalesces to its upper bound, so `fn (p) { p.foo }`
-// infers an inexact param `{foo: number, ...}`. M4 phase B PR B1 ("close
-// usage-inferred shapes to exact") will seal that coalesced result to exact via
-// the Policy-A close, rendering `{foo: number}`. The per-access requirement minted
-// here stays inexact; only the coalesced result is closed.
+// A variable used only through member reads, such as an untyped closure parameter,
+// coalesces to its upper bound, so a read `p.foo` gives `p` the inexact
+// `{foo: number, ...}`. The Policy-A close seals that coalesced result to exact,
+// rendering `{foo: number}`. The per-access requirement minted here stays inexact,
+// and only the coalesced result is closed.
 //
 // The ObjectType <: ObjectType arm of constrain lowers fieldVar from the receiver's
 // matching property (so fieldVar coalesces to that property's type); a receiver
@@ -4433,7 +4404,6 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	// entry (§3.3).
 	c.recordProv(fieldVar, provNode, MemberAccess)
 	c.constrain(blame, recvCarrier, req)
-	c.noteInferredRecvRead(blame, recvCarrier)
 	// fieldReadBorrow takes the whole receiver and unwraps mut/lifetime internally,
 	// applying PR 4 rule 4 to produce the field-bounded borrow.
 	out := c.fieldReadBorrow(fieldVar, recv, name, lvl)
@@ -4452,10 +4422,8 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 // `undefined`.
 //
 // A receiver whose shape is not statically known returns the existing `fieldVar`
-// unchanged. A usage-inferred TypeVar carrier and an index path with no
-// concrete property both fall into this branch. The inferred-receiver paths
-// keep their pre-PR-4 behaviour, so only annotated reference shapes pick up
-// the new borrow. The exception is an immutable borrow whose inner is in
+// unchanged. A TypeVar carrier and an index path with no concrete property both
+// fall into this branch, so only annotated reference shapes read as a borrow. The exception is an immutable borrow whose inner is in
 // readThroughVars, which reads as `fieldVar` borrowed at the receiver's lifetime.
 //
 // A field typed by a rigid type parameter `T` reads off an immutable borrow at
@@ -4500,14 +4468,6 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 		return newUnion(nil, []soltype.Type{borrow, &soltype.UndefinedType{}})
 	}
 	return fieldVar
-}
-
-// addUnannotatedParamVar adds v to unannotatedParamVars.
-func (c *checker) addUnannotatedParamVar(v *soltype.TypeVarType) {
-	if c.unannotatedParamVars == nil {
-		c.unannotatedParamVars = set.NewSet[*soltype.TypeVarType]()
-	}
-	c.unannotatedParamVars.Add(v)
 }
 
 // addReadThroughVar adds v to readThroughVars.
@@ -4823,8 +4783,8 @@ func (c *checker) indexAccess(e *ast.IndexExpr, recv soltype.Type) (*soltype.Ind
 //   - A variable on the way has no lower bound, so nothing has yet flowed in to say
 //     what it holds.
 //   - A variable on the way is in openVars, so its lower bounds are not all it can
-//     hold. An unannotated parameter is one, since `fn f(k = "a")` may be called as
-//     `f("b")`.
+//     hold. An untyped closure parameter is one, since `fn (k = "a") {...}` may be
+//     called with `"b"`.
 //   - The bounds cycle back to a variable already being resolved.
 func (c *checker) boundValueType(t soltype.Type) (soltype.Type, bool) {
 	return c.boundValueTypeOnPath(t, set.NewSet[*soltype.TypeVarType]())

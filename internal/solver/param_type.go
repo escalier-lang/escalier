@@ -50,7 +50,7 @@ func (c *checker) checkParamTypes() {
 		if ft, ok := c.info.TypeOf(p.closure).(*soltype.FuncType); ok && checked.Contains(ft) {
 			continue
 		}
-		name, _ := printer.Print(p.pat, printer.DefaultOptions())
+		name := writtenParamName(p.pat)
 		err := &MissingParamTypeError{Param: p.param, Name: name}
 		if shown := c.info.TypeOf(p.pat); shown != nil {
 			if inferred := coalesce(shown, soltype.Negative); writable(inferred) {
@@ -91,23 +91,54 @@ func (v *unwritableFinder) EnterType(t soltype.Type, _ soltype.Polarity) soltype
 
 func (v *unwritableFinder) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
-// MissingParamTypeError reports a closure parameter with no annotation that nothing the closure
-// flows into gives a type. Param is the parameter, which the error blames. Name is its pattern as
+// MissingParamTypeError reports a parameter with no annotation and no type to take in its place:
+// a closure parameter that nothing the closure flows into gives a type, or, when Declared is set,
+// a parameter of a function declaration or class member. Param is the parameter, which the error blames. Name is its pattern as
 // the source writes it. Suggestion is the annotation to write, or empty when the checker has no
 // type it can write.
 type MissingParamTypeError struct {
 	Param      *ast.Param
 	Name       string
 	Suggestion string
+	// Declared reports that the parameter belongs to a function declaration or class member,
+	// which no context types.
+	Declared bool
 }
 
 func (*MissingParamTypeError) isSolverError()        {}
 func (e *MissingParamTypeError) Span() ast.Span      { return e.Param.Span() }
 func (e *MissingParamTypeError) Related() []ast.Span { return nil }
 func (e *MissingParamTypeError) Message() string {
+	if e.Declared {
+		return "parameter '" + e.Name + "' has no type; write its type"
+	}
 	msg := "parameter '" + e.Name + "' has no type, and nothing the closure flows into supplies one"
 	if e.Suggestion == "" {
 		return msg + "; write its type"
 	}
 	return msg + "; write `" + e.Suggestion + "`"
+}
+
+// writtenParamName returns pat as the source writes it, without its default.
+func writtenParamName(pat ast.Pat) string {
+	if ip, ok := pat.(*ast.IdentPat); ok && ip.Default != nil {
+		bare := *ip
+		bare.Default = nil
+		pat = &bare
+	}
+	name, _ := printer.Print(pat, printer.DefaultOptions())
+	return name
+}
+
+// signatureCheckCovers reports whether the missing signature check examines node's
+// signature, which it does for a function declaration and for a class method, getter or
+// setter, each with a body.
+func signatureCheckCovers(node ast.Node) bool {
+	switch n := node.(type) {
+	case *ast.FuncDecl:
+		return n.Body != nil
+	case *ast.FuncExpr:
+		return n.Body != nil
+	}
+	return false
 }

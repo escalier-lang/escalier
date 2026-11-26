@@ -210,7 +210,7 @@ func TestInferAssignBodyLevelWeakVarWritesItsVariables(t *testing.T) {
 // p's variable, so the reassignment is rejected rather than adding 5 to p's type, and f's
 // signature stays `fn <T0>(p: T0) -> T0`.
 func TestInferAssignBodyLevelWeakVarLeavesCapturedVariables(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p) {
+	values, _, errs := inferSource(t, `fn f<T0>(p: T0) {
 	var k = fn (x) { return p }
 	k = fn (x) { return 5 }
 	return p
@@ -259,22 +259,6 @@ func TestInferAssignUnionTarget(t *testing.T) {
 		require.Len(t, errs, 1)
 		require.Equal(t, "3:7-3:8: cannot constrain 3 <: 1 | 2", msgWithSpan(t, errs[0]))
 	})
-}
-
-// Assigning an inference-variable source into a union target records the WHOLE union as
-// the variable's upper bound rather than committing to one member. `a = x` for an
-// un-annotated param `x` and `var a: 1 | 2` defers, because the union-super exists rule
-// is gated to a concrete sub. The variable falls through to the subVar arm, which records
-// the whole union, so `x` coalesces as the sound and complete `1 | 2`.
-func TestInferAssignUnionTargetVarRHSWidensToUnion(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		fn f(c: boolean, x) {
-			var a: 1 | 2 = if c { 1 } else { 2 }
-			a = x
-		}
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (c: boolean, x: 1 | 2) -> undefined", values["f"])
 }
 
 // A namespace name as an assignment target reports NamespaceUsedAsValue, mirroring

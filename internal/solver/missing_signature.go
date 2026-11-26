@@ -318,11 +318,17 @@ func writtenSignature(head string, sig *ast.FuncSig, inferred DeclSignature) str
 		params = append(params, rendered.Receiver)
 	}
 	for i, p := range sig.Params {
-		name, _ := printer.Print(p.Pattern, printer.DefaultOptions())
+		name := writtenParamName(p.Pattern)
 		if p.Optional {
 			name += "?"
 		}
-		params = append(params, name+": "+rendered.Params[i])
+		param := name + ": " + rendered.Params[i]
+		// A default follows the type, as in `x: number = 5`.
+		if def := paramDefault(p); def != nil {
+			written, _ := printer.Print(def, printer.DefaultOptions())
+			param += " = " + written
+		}
+		params = append(params, param)
 	}
 	return head + "<" + strings.Join(rendered.Binders, ", ") + ">(" + strings.Join(params, ", ") + ") " + ret
 }
@@ -369,8 +375,8 @@ func (c *checker) checkSignature(
 	var params []string
 	for _, p := range sig.Params {
 		if needsParams && p.TypeAnn == nil {
-			written, _ := printer.Print(p.Pattern, printer.DefaultOptions())
-			params = append(params, written)
+			// The message names the parameter as an annotation would follow it.
+			params = append(params, writtenParamName(p.Pattern))
 		}
 	}
 	missingReturn := needsReturn && sig.Return == nil

@@ -403,24 +403,8 @@ fn g() -> undefined {
 			want: []string{"9:8-9:10: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
 		},
 		{
-			// `g`'s parameter type is not settled at the recursive call, so the argument's flow waits
-			// until `g`'s body settles `p` as owned. This case infers `g` and calls it in one
-			// source, since `g` calls itself.
-			name: "passed to a recursive call's unannotated parameter",
-			src: `val xs: Array<number> = [1]
-fn g(p, c: boolean) -> number {
-	val q = p
-	if c { return g(xs, false) }
-	return 1
-}`,
-			want: []string{"4:18-4:20: cannot move module-level value 'xs' inside a function. Borrow it with `&xs`"},
-		},
-		{
-			// The closure's body moves `p`, which settles `h`'s parameter as owned. This case infers
-			// the closure and calls it in one source. `h` renders as `fn (p: unknown) -> undefined`,
-			// and a call to a callee declared with that signature moves nothing. The move comes
-			// from the parameter's moved flag, which the rendered signature does not show.
-			name: "passed to a closure's unannotated parameter",
+			// `h`'s parameter is owned, so the call moves `xs`.
+			name: "passed to a closure's parameter",
 			src: `val xs: Array<number> = [1]
 fn g() -> undefined {
 	val h = fn(p: Array<number>) { val q = p }

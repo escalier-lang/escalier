@@ -149,16 +149,6 @@ class Keyed<U> extends Bag<U> {
 			errs: []string{"3:36-3:37: cannot constrain 5 <: U"},
 		},
 		{
-			// p is inferred, so it may still be inferred to U.
-			name: "AnInferredParameterFlowingIntoTheClassParameter",
-			src: `class C<U> {
-	v: U,
-	put(&mut self, p) { self.v = p },
-}`,
-			binding: "C",
-			want:    "{new <U>(v: U) -> C<U>}",
-		},
-		{
 			// A body that only moves the class's parameter around works for every instance.
 			name: "AMethodMovingTheClassParameter",
 			src: `class Box<T> {

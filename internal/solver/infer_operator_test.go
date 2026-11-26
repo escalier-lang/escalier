@@ -74,15 +74,6 @@ val x = n + 1`)
 	})
 }
 
-// Constraining an un-annotated parameter against an operator's parameter gives the
-// parameter its type, so the function's signature is inferred from the operator
-// alone.
-func TestInferBinaryConstrainsUnannotatedParam(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(a) { return a + 1 }`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (a: number) -> number", values["f"])
-}
-
 // A rejected operand blames that operand, not the whole expression. The operator's
 // parameter type comes from the prelude, which records no AST node, so the error
 // has no related span.
@@ -174,7 +165,7 @@ func TestInferUnaryYieldsDeclaredReturn(t *testing.T) {
 // The prefix and binary `-` bind under different names, so one source applies both
 // and each checks its own arity.
 func TestInferUnaryMinusBesideBinaryMinus(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(a, b) { return a - -b }`)
+	values, _, errs := inferSource(t, `fn f(a: number, b: number) { return a - -b }`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (a: number, b: number) -> number", values["f"])
 }

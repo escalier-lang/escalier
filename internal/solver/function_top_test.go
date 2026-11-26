@@ -211,7 +211,7 @@ func TestACalleeThatIsNotFunctionKeepsTheCallRules(t *testing.T) {
 		expected  []string
 	}{
 		"AnUnannotatedParameter": {
-			src:       `fn g(f) { return f(1) }`,
+			src:       `fn g<T0>(f: fn (arg0: 1) -> T0) { return f(1) }`,
 			signature: "fn <T0>(f: fn (arg0: 1) -> T0) -> T0",
 		},
 		"AnUnboundedTypeParameter": {

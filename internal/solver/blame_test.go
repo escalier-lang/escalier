@@ -126,7 +126,7 @@ func TestInferRecordBuilderIsPolymorphic(t *testing.T) {
 	}{
 		{
 			name: "a closure bound at module level",
-			src:  "fn mk(v) { return {a: v} }",
+			src:  "fn mk<T0>(v: T0) { return {a: v} }",
 			want: "fn <T0>(v: T0) -> {a: T0}",
 		},
 	}
@@ -415,7 +415,7 @@ func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
 //   - val: keeps the initializer's inferred type;
 //   - function return: recovers to `unknown`, since a function with a written return
 //     binds from its signature alone;
-//   - param: recovers to a fresh var, which renders like an unannotated parameter.
+//   - param: recovers to a fresh variable, so its uses report nothing further.
 func TestUnsupportedAnnotationRecovers(t *testing.T) {
 	tests := []struct {
 		name string
@@ -480,8 +480,8 @@ func TestBlameMutabilityDiagnostics(t *testing.T) {
 			primary: "mut",
 		},
 		"SharedAwaitIntoMut": {
-			src:     `async fn g(p) { val mut r = await p }`,
-			want:    "1:29-1:36: cannot bind the value 'p' settles to with `mut`, since awaiting 'p' again yields the same value; await a call that makes a new promise instead",
+			src:     `async fn g<T0>(p: Promise<{x: number}, T0>) -> Promise<undefined, T0> { val mut r = await p }`,
+			want:    "1:85-1:92: cannot bind the value 'p' settles to with `mut`, since awaiting 'p' again yields the same value; await a call that makes a new promise instead",
 			primary: "await p",
 		},
 	}

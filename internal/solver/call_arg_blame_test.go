@@ -84,7 +84,7 @@ func TestACallBlamesTheArgumentThatDoesNotFit(t *testing.T) {
 			// The parameter's type reaches `T` only through the body, so the argument has to
 			// reach the same copy of `T` that the return reads.
 			name: "AGenericCalleeLinkingAParameterToItsTypeParameter",
-			src:  "fn g<T>(p) -> T {\n\tval z: T = p.x\n\treturn z\n}\n" + `val n: number = g({x: "s"})`,
+			src:  "fn g<T>(p: {x: T}) -> T {\n\tval z: T = p.x\n\treturn z\n}\n" + `val n: number = g({x: "s"})`,
 			want: []string{`5:23-5:26: cannot constrain "s" <: number`},
 		},
 		{

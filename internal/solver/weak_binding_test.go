@@ -117,7 +117,7 @@ fn f() -> undefined {
 			name: "AStoredParameterWidensOnlyInTheMap",
 			src: `import "std:map"
 val mut seen = map.Map()
-fn put(x) {
+fn put<T0: number>(x: T0) {
 	val n: number = x
 	seen.set("k", [x])
 	return x
@@ -135,7 +135,7 @@ val one = put(1)
 			name: "AStoredParameterOfUnknownTypeMoves",
 			src: `import "std:map"
 val mut seen = map.Map()
-fn put(x) {
+fn put<T0>(x: T0) {
 	seen.set("k", [x])
 	return x
 }
@@ -180,16 +180,15 @@ fn b() -> undefined { seen.set("k", {a: 2}) }
 			},
 		},
 		{
-			// Nothing calls `remember`, so nothing decides what `value` holds. The map's value
-			// type settles at `never` and the parameter at `unknown`, with no error. #2352 keeps
-			// remember monomorphic over the map's value type, so `value` becomes `never` too.
+			// Nothing calls `remember`, so only the parameter's written type decides what the
+			// map holds. The map's value type settles at `unknown`, with no error.
 			name: "AStoreOfAParameterNothingCalls",
 			src: `import "std:map"
 val mut seen = map.Map()
-fn remember(value) { seen.set("last", value) }
+fn remember(value: unknown) { seen.set("last", value) }
 `,
 			values: map[string]string{
-				"seen":     "Map<string, never>",
+				"seen":     "Map<string, unknown>",
 				"remember": "fn (value: unknown) -> undefined",
 			},
 		},
@@ -240,7 +239,7 @@ export val mut b = Box(5)
 			// `val five = 5` is.
 			name: "AnExportedValueACallDecides",
 			src: `
-fn id(x) { return x }
+fn id<T0>(x: T0) { return x }
 export val five = id(5)
 `,
 			values: map[string]string{"five": "5"},

@@ -99,7 +99,7 @@ func TestInferTryCatchBindsTheKnownThrows(t *testing.T) {
 			// A callee's throws reach the arms once they are solved. An unannotated callback's
 			// throws are still open when the arms are walked, so the arms see them only later.
 			name: "AnArmMatchesAValueACallbackThrows",
-			src:  `fn f(cb) { return try { cb() } catch { "x" => 1, _ => 2 } }`,
+			src:  `fn f<T0>(cb: fn () -> T0 throws unknown) { return try { cb() } catch { "x" => 1, _ => 2 } }`,
 			want: "fn <T0>(cb: fn () -> T0 throws unknown) -> T0 | 1 | 2",
 		},
 		{

@@ -521,11 +521,6 @@ func (c *checker) inferComponent(
 ) {
 	inner := lvl + 1
 
-	// An overloaded function in a mutually-recursive group must annotate its parameters,
-	// since the fixed point tells its arms apart by their domains. See
-	// checkOverloadAnnotations for what a set that fails this infers instead.
-	rejected := c.checkOverloadAnnotations(g, component)
-
 	// Phase 1: a fresh var per value binding, all defined before any body so a
 	// mutually-recursive reference resolves through the var. M2 only infers value
 	// bindings; type-sort keys are handled (as unsupported) after the value walk.
@@ -849,10 +844,8 @@ func (c *checker) inferComponent(
 			continue
 		}
 		// An overload set reaches the binding var as ONE lower bound, the intersection of
-		// its arms, recorded after every arm is inferred. See fuseOverloadArms. A set the
-		// annotation gate rejected does not fuse: it degrades to its first arm, which is
-		// the recovery phase 3 binds it at.
-		fused := len(funcOnlyDecls(g, key)) > 1 && !rejected.Contains(key)
+		// its arms, recorded after every arm is inferred. See fuseOverloadArms.
+		fused := len(funcOnlyDecls(g, key)) > 1
 		for _, d := range g.GetDecls(key) {
 			// M4 E3: a top-level destructuring `val [a, b] = …` / `val {x, y} = …`
 			// registers one decl under one leaf key per bound name. Bind it per key it
@@ -993,11 +986,9 @@ func (c *checker) inferComponent(
 	// Every call and annotated binding in the component has constrained the closures that
 	// flow into it, so a closure parameter has every bound a context gives it.
 	c.checkParamTypes()
-	// Every call in the component has constrained the functions passed to it, so a callback's
-	// receiver has every lower bound it will get.
-	c.checkPendingRecvReads()
-	// The same holds for a value mutated through an immutable binding before its type was
-	// known.
+	// Every call in the component has constrained the functions passed to it, so a value
+	// mutated through an immutable binding before its type was known has every lower bound it
+	// will get.
 	c.checkPendingMutations()
 	// Every subtype check in the component has recorded what its sub required of a super
 	// signature's quantified lifetimes, so a requirement the signature's caller cannot be
@@ -1033,7 +1024,7 @@ func (c *checker) inferComponent(
 		// the arm at arms[i], and Sources[i] all line up. b.sources also carries any
 		// rejected duplicate-declaration decls, which would desync the per-scheme index
 		// that a multi-target go-to-definition relies on.
-		if len(b.arms) > 1 && !rejected.Contains(key) {
+		if len(b.arms) > 1 {
 			// A signature-bound set was already sorted in phase 1, so this stable re-sort is
 			// a no-op for it. It also orders the ordinary group-var path's arms the same way.
 			sortArms(module, b.arms)
@@ -1300,42 +1291,6 @@ func (c *checker) fuseOverloadArms(b *componentBinding) {
 		types[i] = arm.t
 	}
 	c.constrain(b.primary, &soltype.IntersectionType{Types: types}, b.v)
-}
-
-// checkOverloadAnnotations requires every arm of an overloaded function in a
-// mutually-recursive group to annotate its parameters. It returns the keys that failed,
-// which phases 2 and 3 degrade to the binding's first arm so a later reference still
-// resolves. A singleton component is not gated, since self-recursion resolves against
-// the arm the call selects rather than against a fixed point over the group.
-//
-// The requirement is on DOMAINS, not whole signatures. The arrow-decomposition rule
-// tells a fused set's arms apart by which inputs each accepts, so leaving the parameters
-// to inference widens every arm onto the same `unknown` and infers nothing useful for
-// the group. Return types are outputs the same decomposition infers, which is the
-// relaxation this rule is scoped around.
-func (c *checker) checkOverloadAnnotations(
-	g *dep_graph.DepGraph, component []dep_graph.BindingKey,
-) set.Set[dep_graph.BindingKey] {
-	rejected := set.NewSet[dep_graph.BindingKey]()
-	if len(component) <= 1 {
-		return rejected
-	}
-	for _, key := range component {
-		funcs := funcOnlyDecls(g, key)
-		if len(funcs) <= 1 {
-			// Not an overload set. A name a `val`/`var` shares with a function is a
-			// duplicate declaration, reported in phase 2 rather than here.
-			continue
-		}
-		for _, fd := range funcs {
-			if !allParamsAnnotated(fd.FuncSig) {
-				c.report(&UnannotatedRecursiveOverloadError{Decl: fd, Name: key.Name()})
-				rejected.Add(key)
-				break // one diagnostic per overloaded binding, blaming the first gap
-			}
-		}
-	}
-	return rejected
 }
 
 // funcOnlyDecls returns the FuncDecls bound to key when the name is bound ONLY by

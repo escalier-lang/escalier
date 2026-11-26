@@ -211,8 +211,8 @@ func TestFlowLifetimeRules(t *testing.T) {
 	})
 }
 
-// TestFlowLifetimeNonEscapingParam covers F3's `store` and `read`, whose unannotated parameters
-// take their ownership from the body.
+// TestFlowLifetimeNonEscapingParam covers F3's `store` and `read`, whose written parameter
+// types decide whether a call moves or borrows its argument.
 func TestFlowLifetimeNonEscapingParam(t *testing.T) {
 	runFlowLifetimeCases(t, []flowLifetimeCase{
 		// F3. `store` lets `p` escape into module-level state, so its parameter is owned. `read`
@@ -222,8 +222,8 @@ func TestFlowLifetimeNonEscapingParam(t *testing.T) {
 			src: `
 				var sink = {x: 0}
 
-				fn store(p) { sink = p }     // store: fn (p: {x: number}) -> undefined
-				fn read(p) { return p.x }    // read: fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0
+				fn store(p: {x: number}) { sink = p }     // store: fn (p: {x: number}) -> undefined
+				fn read<T0>(p: &{x: T0}) { return p.x }    // read: fn <T0, 'a>(p: &'a {x: T0}) -> &'a T0
 
 				fn go() -> number {
 					val a = {x: 1}
@@ -249,7 +249,7 @@ func TestFlowLifetimeEscapingParamMoves(t *testing.T) {
 			src: `
 				var sink = {x: 0}
 
-				fn store(p) { sink = p }
+				fn store(p: {x: number}) { sink = p }
 			`,
 			values: map[string]string{
 				"store": "fn (p: {x: number}) -> undefined",

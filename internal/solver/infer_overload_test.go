@@ -35,8 +35,8 @@ func TestInferOverloadResolvesByArgType(t *testing.T) {
 // arm.
 func TestInferOverloadDispatchesOnArity(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { return x }
-		fn f(x, y) { return x }
+		fn f<T0>(x: T0) { return x }
+		fn f<T0>(x: T0, y: unknown) { return x }
 		val a = f(5)
 		val b = f(5, "hi")
 	`)
@@ -123,28 +123,12 @@ val r = f(5)`},
 // the string arm even though the generic arm is declared first and would also match.
 func TestInferOverloadSpecificityBeatsDeclarationOrder(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { return x }
+		fn f<T0>(x: T0) { return x }
 		fn f(x: string) -> boolean { return true }
 		val r = f("hi")
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "boolean", values["r"], "the more specific (string) arm outranks the earlier generic arm")
-}
-
-// A call with an unconstrained argument (a still-unconstrained parameter variable)
-// falls back to declaration-order first-match: f(y) inside `fn (y) {…}` resolves to
-// the first arm and pins y to that arm's parameter type. This over-narrows the
-// enclosing function (g then rejects a later g("hi")) — a documented MVP limitation
-// whose real fix (deferred resolution) is tracked in #723.
-func TestInferOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		fn f(x: number) -> number { return x }
-		fn f(x: string) -> string { return x }
-		fn g(y) { return f(y) }
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (y: number) -> number", values["g"],
-		"an unconstrained argument defers to declaration-order first-match, pinning y to the first arm")
 }
 
 // No arm accepts the argument ⇒ NoMatchingOverloadError listing the candidates.
@@ -157,23 +141,6 @@ func TestInferOverloadNoMatch(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t,
 		"4:11-4:18: No matching overload for this call\n  fn (x: number) -> number\n  fn (x: string) -> string",
-		msgWithSpan(t, errs[0]))
-}
-
-// An overloaded function in a mutually-recursive group must annotate the parameters of
-// every arm. The fixed point tells the arms apart by their domains, so leaving those to
-// inference collapses every arm onto the same `unknown` parameter. The error blames the
-// first arm with an un-annotated parameter, and the binding degrades to that arm, which
-// is why the indistinguishable-arms check does not also fire.
-func TestInferOverloadMutualRecursionRequiresAnnotation(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn f(x) { g(x) }
-		fn f(y) { g(y) }
-		fn g(z) { f(z) }
-	`)
-	require.Len(t, errs, 1)
-	require.Equal(t,
-		"2:3-2:19: Overloaded function in a recursive group must annotate its parameters: f",
 		msgWithSpan(t, errs[0]))
 }
 
@@ -282,8 +249,8 @@ func TestInferOverloadValuePosition(t *testing.T) {
 // the level-0 intersection and aliases the arm's type variable across uses.)
 func TestInferOverloadGenericArmValuePositionNoAlias(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { return x }
-		fn f(x, y) { return x }
+		fn f<T0>(x: T0) { return x }
+		fn f<T0>(x: T0, y: unknown) { return x }
 		val g = f
 		val a = g("hi")
 		val b = g(true)
@@ -298,7 +265,7 @@ func TestInferOverloadGenericArmValuePositionNoAlias(t *testing.T) {
 // whether the callee is the overloaded name directly or a let-bound alias.
 func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 	direct, _, errs := inferSource(t, `
-		fn f(x) { return x }
+		fn f<T0>(x: T0) { return x }
 		fn f(x: string) -> boolean { return true }
 		val r = f("hi")
 	`)
@@ -306,7 +273,7 @@ func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 	require.Equal(t, "boolean", direct["r"], "direct call picks the more specific arm")
 
 	binding, _, errs := inferSource(t, `
-		fn f(x) { return x }
+		fn f<T0>(x: T0) { return x }
 		fn f(x: string) -> boolean { return true }
 		val g = f
 		val r = g("hi")
@@ -320,7 +287,7 @@ func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 // selects the arm that accepts it, most-specific-first with declaration-order tiebreak.
 func TestInferOverloadThreeArmSpecificity(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { return x }
+		fn f<T0>(x: T0) { return x }
 		fn f(x: number) -> boolean { return true }
 		fn f(x: string) -> string { return x }
 		val p = f(5)
@@ -525,4 +492,48 @@ func TestInferOverloadObjectArgDisjointFieldTypes(t *testing.T) {
 	nv, _, ne := inferSource(t, base+`val r = f({x: 1, y: 2})`)
 	require.Empty(t, ne)
 	require.Equal(t, "boolean", nv["r"], "a number-valued argument matches only the number arm")
+}
+
+// TestInferOverloadDeferredFallsBackToFirstMatch asserts that a call whose argument is still an
+// unconstrained variable tries the arms in declaration order. The callback's `x` takes `T`,
+// which `each` has not bound when `on(x)` is checked, so the call picks the first arm.
+func TestInferOverloadDeferredFallsBackToFirstMatch(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn on(x: number) -> number { return x }
+		fn on(x: string) -> string { return x }
+		declare fn each<T>(v: T, cb: fn (x: T) -> undefined) -> undefined
+		fn f(c: number) -> undefined {
+			each(c, fn (x) {
+				val r = on(x)
+				return undefined
+			})
+		}
+	`)
+	require.Empty(t, errs)
+}
+
+// TestInferOverloadArmWithoutAFullSignature covers an overload set with an arm that leaves part
+// of its signature out, so the set is not bound from its signatures alone.
+func TestInferOverloadArmWithoutAFullSignature(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		expected []string
+	}{
+		{
+			name:     "UntypedParam",
+			src:      "fn on(x: number) -> number { return 1 }\nfn on(x: string, y) -> number { return 2 }\nval r = on(1)",
+			expected: []string{"2:18-2:19: parameter 'y' has no type; write its type"},
+		},
+		{
+			name: "NoReturnType",
+			src:  "fn on(x: number) -> number { return 1 }\nfn on(x: string) { return 2 }\nval r = on(1)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.expected, messagesWithSpan(t, errs))
+		})
+	}
 }

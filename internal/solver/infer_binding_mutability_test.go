@@ -118,7 +118,7 @@ fn f() -> undefined { sink.x = 1 }`,
 		// The second write reads `p.a` back at the type the first write stored.
 		{
 			name: "WriteThroughFieldWrittenEarlier",
-			src: `fn g(mut p) {
+			src: `fn g(mut p: {a: {x: number}}) {
 	p.a = {x: 1}
 	p.a.x = 2
 }`,
@@ -127,7 +127,7 @@ fn f() -> undefined { sink.x = 1 }`,
 		// mutable borrow instead.
 		{
 			name: "WriteThroughCallResult",
-			src:  `fn g(h) { h().a.x = 2 }`,
+			src:  `fn g(h: fn () -> &mut {x: number}) -> undefined { h().x = 2 }`,
 		},
 		// The callback's `p` takes its type from the call. A `&mut` borrow is written
 		// through the borrow, so the binding plays no part.
@@ -196,21 +196,13 @@ func TestMutParamSignature(t *testing.T) {
 			src:  `fn f(mut p: {x: number}) -> undefined { p.x = 1 }`,
 			want: "fn (p: {x: number}) -> undefined",
 		},
-		// An unannotated `mut` parameter is mutable, and its type comes from its uses.
+		// Binding mutability is never inferred, so a write through a parameter without `mut`
+		// is rejected.
 		{
-			name: "UnannotatedWrite",
-			src:  `fn f(mut p) { p.x = 1 }`,
-			want: "fn (p: {x: number}) -> undefined",
-		},
-		// Binding mutability is never inferred, so a write through an unannotated
-		// parameter without `mut` is rejected. The parameter's shape still comes from its
-		// uses. The write could not tell whether `p` is owned, so it asked only that the
-		// field exist, and the field's type is left open.
-		{
-			name: "UnannotatedWriteWithoutMut",
-			src:  `fn f(p) { p.x = 1 }`,
+			name: "WriteWithoutMut",
+			src:  `fn f(p: {x: unknown}) { p.x = 1 }`,
 			want: "fn (p: {x: unknown}) -> undefined",
-			errs: []string{"1:11-1:18: cannot mutate 'p' because its binding is immutable; declare it as `mut p`"},
+			errs: []string{"1:25-1:32: cannot mutate 'p' because its binding is immutable; declare it as `mut p`"},
 		},
 		// A call does not move its argument into a union parameter, so the `mut` has no
 		// effect and the write is rejected.
@@ -430,12 +422,11 @@ async fn g() -> Promise<undefined> {
 	val mut n = await p
 }`,
 		},
-		// Nothing has typed what the unannotated `p` settles to, so it may be an object that
-		// another await of `p` also yields.
+		// `p` settles to an object, which another await of `p` also yields.
 		{
-			name: "AwaitedUntypedParameter",
-			src:  `async fn g(p) { val mut r = await p }`,
-			want: []string{"1:29-1:36: cannot bind the value 'p' settles to with `mut`, since awaiting 'p' again yields the same value; await a call that makes a new promise instead"},
+			name: "AwaitedParameter",
+			src:  `async fn g<T0>(p: Promise<{x: number}, T0>) -> Promise<undefined, T0> { val mut r = await p }`,
+			want: []string{"1:85-1:92: cannot bind the value 'p' settles to with `mut`, since awaiting 'p' again yields the same value; await a call that makes a new promise instead"},
 		},
 	}
 
