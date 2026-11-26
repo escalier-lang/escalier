@@ -328,9 +328,9 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				beta := c.readPatternField(e, lvl, scrutinee, e.Key.Name, e.Default != nil, purpose)
 				var t soltype.Type = beta
 				if purpose == forBinding {
-					t = c.applyLeafExtras(scope, lvl, e, beta, fieldConcrete(concrete, e.Key.Name), e.TypeAnn, e.Default)
+					t = c.applyLeafExtras(scope, lvl, e, beta, c.fieldConcrete(concrete, e.Key.Name), e.TypeAnn, e.Default)
 				}
-				t = c.applyBindMode(lvl, e, leafMut(e.Mutable, purpose), t, c.concreteLeaf(fieldConcrete(concrete, e.Key.Name), e.TypeAnn), scrutineeMode)
+				t = c.applyBindMode(lvl, e, leafMut(e.Mutable, purpose), t, c.concreteLeaf(c.fieldConcrete(concrete, e.Key.Name), e.TypeAnn), scrutineeMode)
 				c.bindLeaf(scope, e.Key.Name, t, e, leafTypes, emit, purpose)
 				named.Add(e.Key.Name)
 				fields = append(fields, &soltype.ObjectPatField{
@@ -436,7 +436,7 @@ func (c *checker) projectField(
 			c.constrain(blame, beta, prop.Type)
 		}
 	}
-	return beta, fieldConcrete(concrete, name)
+	return beta, c.fieldConcrete(concrete, name)
 }
 
 // arityErrorSpan returns the span a TuplePatternArityError underlines. got is the value's
@@ -1483,9 +1483,9 @@ func (c *checker) definedMembers(t soltype.Type) (soltype.Type, bool) {
 //   - `&mut` scrutinee: the leaf is a mutable borrow bounded by the scrutinee's
 //     lifetime. The `mut` marker is redundant.
 //
-// The borrow wrap is gated on the concrete element being borrowable, mirroring
-// fieldReadBorrow. A primitive or function element is copied, not borrowed, so it is
-// returned unchanged. A leaf whose element shape is not statically known has a nil
+// The borrow wrap is gated on borrowableLeaf, mirroring fieldReadBorrow. A primitive,
+// function, or other value-type element is copied, not borrowed, so it is returned
+// unchanged. A leaf whose element shape is not statically known has a nil
 // concrete and is also returned unchanged. This is the same conservative choice
 // fieldReadBorrow makes for an unknown receiver. The exception is a read-through
 // scrutinee. A leaf of unknown shape binds through it as a borrow at the scrutinee's
@@ -1511,7 +1511,7 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 			c.ctx.markRigidReadVar(v)
 			return soltype.NewRef(false, scrutineeMode.lt, v)
 		}
-		if ri, ok := leafType.(soltype.RefInner); ok && soltype.BorrowableType(concrete) {
+		if ri, ok := leafType.(soltype.RefInner); ok && c.borrowableLeaf(concrete) {
 			return soltype.NewRef(false, scrutineeMode.lt, ri)
 		}
 		if v, isVar := leafType.(*soltype.TypeVarType); isVar && concrete == nil && scrutineeMode.readThrough {
@@ -1520,7 +1520,7 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 		}
 		return leafType
 	case bmMut:
-		if _, ok := leafType.(soltype.RefInner); ok && soltype.BorrowableType(concrete) {
+		if _, ok := leafType.(soltype.RefInner); ok && c.borrowableLeaf(concrete) {
 			// Route the projection through a fresh variable rather than wrapping the
 			// leaf type directly. A tuple or object pattern pins each leaf type to the
 			// scrutinee's concrete element as an upper bound. That makes the leaf type
@@ -1542,6 +1542,14 @@ func (c *checker) applyBindMode(lvl int, node ast.Node, mut bool, leafType, conc
 		}
 		return leafType
 	}
+}
+
+// borrowableLeaf reports whether a leaf whose element is concrete binds through a borrowed
+// scrutinee as a borrow. concrete must be a borrowable type that is not a value type. So
+// `{x: number}` borrows, while `number`, a function, and the union of literals
+// `"light" | "dark"` are copied out. A nil concrete reports false.
+func (c *checker) borrowableLeaf(concrete soltype.Type) bool {
+	return soltype.BorrowableType(concrete) && !c.holdsValueType(concrete)
 }
 
 // widenOwnedLeaf returns the type a `mut` leaf moved out of an owned scrutinee binds at.
@@ -1598,35 +1606,37 @@ func (c *checker) concreteLeaf(concrete soltype.Type, typeAnn ast.TypeAnn) solty
 	return concrete
 }
 
-// fieldConcrete returns field `name`'s type from a concrete object type, or nil when
-// t is not a concrete object or lacks the field. It reads the threaded concrete type,
-// so it resolves a field even at a nested level where the scrutinee is a projection
-// variable. It is the object-pattern analogue of indexing a concrete tuple's elements.
-func fieldConcrete(t soltype.Type, name string) soltype.Type {
-	switch t := t.(type) {
-	case *soltype.ObjectType:
-		if prop, found := t.Prop(name); found {
-			return prop.Type
-		}
-	case *soltype.UnionType:
-		// A union of objects knows the field's shape as the union of what each member holds
-		// there. Reading it is what lets a leaf still decide whether to borrow when narrowing
-		// left the scrutinee as several members.
-		fields := make([]soltype.Type, len(t.Types))
-		for i, member := range t.Types {
-			field := fieldConcrete(member, name)
-			if field == nil {
-				return nil
-			}
-			fields[i] = field
-		}
-		if len(fields) == 0 {
+// fieldConcrete returns field `name`'s type from the concrete object t stands for, or nil
+// when t grounds to no object or lacks the field. It reads the threaded concrete type, so
+// it resolves a field even at a nested level where the scrutinee is a projection variable.
+// It is the object-pattern analogue of indexing a concrete tuple's elements.
+//
+// t is grounded through groundObjectMembers, so an alias such as `Box` in
+// `type Box = {inner: Flat}` and a class instance read the fields their bodies declare,
+// the same as the inline `{inner: Flat}`. A union reads the field off every member and
+// returns the union of what they hold there, so a leaf still decides whether to borrow
+// when narrowing left the scrutinee as several members.
+func (c *checker) fieldConcrete(t soltype.Type, name string) soltype.Type {
+	if t == nil {
+		return nil
+	}
+	objs, ok := groundObjectMembers(newTypeEvaluator(c.ctx, newSeenPairs()), t)
+	if !ok {
+		return nil
+	}
+	fields := make([]soltype.Type, len(objs))
+	for i, obj := range objs {
+		prop, found := obj.Prop(name)
+		if !found {
 			return nil
 		}
-		// No Context, so subsumption does not run. See peelBorrowUnion.
-		return newUnion(nil, fields)
+		fields[i] = prop.Type
 	}
-	return nil
+	if len(fields) == 1 {
+		return fields[0]
+	}
+	// No Context, so subsumption does not run. See peelBorrowUnion.
+	return newUnion(nil, fields)
 }
 
 // patternDefaultsField reports whether a destructured field's value sub-pattern

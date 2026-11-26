@@ -252,7 +252,7 @@ func (b *pathBinder) shorthandView(scope *Scope, s *ucs.Scrutinee, elem *ast.Obj
 	parent := b.viewOf(scope, s.Parent)
 	name := elem.Key.Name
 	beta := b.c.readPatternField(elem, b.lvl, parent.ty, name, elem.Default != nil, forBinding)
-	v := derive(parent, beta, fieldConcrete(parent.concrete, name))
+	v := derive(parent, beta, b.c.fieldConcrete(parent.concrete, name))
 	b.views[s] = v
 	return v
 }
