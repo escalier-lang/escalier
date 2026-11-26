@@ -586,7 +586,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// Take the argument marker inferCallArgs left, and clear it so a lambda nested in the body
 	// is not taken for a call argument.
 	isArg := c.argFunc != nil && ast.Node(c.argFunc) == node
-	c.argFunc = nil
+	var argSig *soltype.FuncType
+	if isArg {
+		argSig = c.argFuncSig
+	}
+	c.argFunc, c.argFuncSig = nil, nil
 	// Report any named lifetime the signature uses without binding it in its own `<…>`
 	// list, and the symmetric unused binder. Run before resolving the params so the scan
 	// reads the written names, not what namedLifetime has since interned.
@@ -689,6 +693,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// variable for each parameter, since the callee's signature gives each one its type.
 		if v, ok := pt.(*soltype.TypeVarType); ok && !written {
 			c.addUnannotatedParamVar(v)
+			// A member read in the body looks a method up on the type the callee declares
+			// for the parameter, as it would under an annotation.
+			if declared, ok := declaredParamType(argSig, i); ok && !rest {
+				c.addDeclaredParamType(v, declared)
+			}
 		}
 		if v, ok := pt.(*soltype.TypeVarType); ok && !written && !isArg && body != nil && paramOnlyReadThrough(pat, rest, optional, body) {
 			pt = soltype.NewRef(false, c.ctx.freshLifetime(lvl), v)
@@ -2110,7 +2119,14 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	if hasEventRef {
 		c.emitReceiverFlow(lvl, e, eventRef)
 	}
-	args := c.inferCallArgs(scope, lvl, e, preset)
+	// A function argument's unannotated parameters read their methods off target.fn. A second
+	// instance carries type variables the callee <: callShape constraint never binds, so a
+	// method read off it would return a type no argument reaches.
+	argSig := target.fn
+	if target.secondInstance {
+		argSig = nil
+	}
+	args := c.inferCallArgs(scope, lvl, e, argSig, preset)
 	var ret soltype.Type
 	var fn *soltype.FuncType
 	if target.overloads != nil {
@@ -2589,7 +2605,10 @@ func (c *checker) implicitMutBorrow(src ast.Expr, srcT, dest soltype.Type) solty
 // afterward would record an argument move against an inner branch.
 //
 // An argument preset holds takes that type, and its expression is not inferred.
-func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset map[ast.Expr]soltype.Type) []soltype.Type {
+//
+// fn is the callee's single signature, or nil when the call resolves against an overload set
+// or the callee's signature is not known yet.
+func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, fn *soltype.FuncType, preset map[ast.Expr]soltype.Type) []soltype.Type {
 	args := make([]soltype.Type, len(e.Args))
 	for i, a := range e.Args {
 		c.noteKeeper(a, e)
@@ -2599,10 +2618,34 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset m
 		}
 		if fe, ok := a.(*ast.FuncExpr); ok {
 			c.argFunc = fe
+			c.argFuncSig = declaredCallbackSig(fn, i)
 		}
 		args[i] = c.inferExpr(scope, lvl, a)
 	}
 	return args
+}
+
+// declaredCallbackSig returns the function type fn declares for its parameter at index i. It
+// returns nil when fn is nil, when i falls past the parameters or on a rest parameter, and
+// when the parameter's type is not a function type or carries a binder of its own.
+func declaredCallbackSig(fn *soltype.FuncType, i int) *soltype.FuncType {
+	if fn == nil || i >= len(fn.Params) || fn.Params[i].Rest {
+		return nil
+	}
+	cb, ok := fn.Params[i].Type.(*soltype.FuncType)
+	if !ok || quantified(cb) {
+		return nil
+	}
+	return cb
+}
+
+// declaredParamType returns the type sig declares for its parameter at index i. It returns
+// false when sig is nil, and when i falls past the parameters or on a rest parameter.
+func declaredParamType(sig *soltype.FuncType, i int) (soltype.Type, bool) {
+	if sig == nil || i >= len(sig.Params) || sig.Params[i].Rest {
+		return nil, false
+	}
+	return sig.Params[i].Type, true
 }
 
 // recordCallArgEffects checks a call's arguments against the signature it resolved to.
@@ -4329,6 +4372,13 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 			}
 		}
 	}
+	// An unannotated parameter of a function passed as a call argument has no lower bound yet,
+	// since the call binds it only after the body is walked. A method, getter, or setter is
+	// read off the type the callee declares for it instead, so `inner.bump()` resolves and
+	// checks its receiver as it would under an annotation.
+	if res, ok := c.declaredParamMember(lvl, blame, name, recv, place); ok {
+		return res
+	}
 	// Strip the borrow wrapper before building the field-read requirement (D2):
 	//   - Reading a field through a `mut`/`'a` borrow is always legal and yields
 	//     the field's value, not the borrow.
@@ -4410,6 +4460,45 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	return pathResult{value: out}
 }
 
+// declaredParamMember reads the method, getter, or setter name off the type the callee
+// declares for recv, when recv is the variable of an unannotated parameter of a function
+// passed as a call argument. place is the binding recv is an owned layer of, or nil. It
+// returns false when recv is any other type, and when the declared type reads name as a field
+// or has no member by that name.
+func (c *checker) declaredParamMember(lvl int, blame ast.Node, name string, recv soltype.Type, place *ownedPlace) (pathResult, bool) {
+	v, isVar := recv.(*soltype.TypeVarType)
+	if !isVar {
+		return pathResult{}, false
+	}
+	declared, found := c.declaredParamTypes[v]
+	if !found {
+		return pathResult{}, false
+	}
+	// A parameter declared as a borrow is not an owned layer of its binding, so a `&mut self`
+	// method reached through an immutable borrow reports the borrow's mutability rather than
+	// the binding's.
+	if _, isBorrow := declared.(*soltype.RefType); isBorrow {
+		place = nil
+	}
+	carrier := readCarrier(declared)
+	if wrapper, ok := c.primitiveWrapper(carrier); ok {
+		declared, carrier = wrapper, wrapper
+	}
+	if array, ok := c.ctx.variadicArray(carrier); ok {
+		declared, carrier = array, array
+	}
+	// A field and a missing member both take the structural read on recv, which reads a
+	// field through the borrow the call later binds and blames a miss on the property.
+	member, found := c.readMember(name, carrier)
+	if _, isProp := member.(*soltype.PropertyElem); !found || isProp {
+		return pathResult{}, false
+	}
+	if res, ok := c.projectedMember(lvl, blame, name, declared, carrier, place); ok {
+		return res, true
+	}
+	return c.objectMember(lvl, blame, name, carrier)
+}
+
 // fieldReadBorrow applies PR 4 rule 4. A member read yields a borrow of the
 // field bounded by the receiver when the field is reference-shaped. An owned
 // receiver mints a fresh lifetime here. A borrowed receiver's lifetime passes
@@ -4477,6 +4566,15 @@ func (c *checker) addUnannotatedParamVar(v *soltype.TypeVarType) {
 		c.unannotatedParamVars = set.NewSet[*soltype.TypeVarType]()
 	}
 	c.unannotatedParamVars.Add(v)
+}
+
+// addDeclaredParamType records declared as the type the callee declares for the parameter
+// whose variable is v.
+func (c *checker) addDeclaredParamType(v *soltype.TypeVarType, declared soltype.Type) {
+	if c.declaredParamTypes == nil {
+		c.declaredParamTypes = map[*soltype.TypeVarType]soltype.Type{}
+	}
+	c.declaredParamTypes[v] = declared
 }
 
 // addReadThroughVar adds v to readThroughVars.
