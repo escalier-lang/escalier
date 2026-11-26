@@ -46,6 +46,52 @@ func TestSignaturePlaceholder(t *testing.T) {
 			`,
 		},
 		{
+			name: "GeneratorErrorPlaceholder",
+			src: `
+				declare fn fail() -> number throws string
+				gen fn f() -> Generator<number, undefined, unknown, _> { yield fail() }
+			`,
+		},
+		{
+			name: "TwoPlaceholdersInOneParam",
+			src:  `fn f(x: [_, _]) -> number { return x[0] + x[1] }`,
+			expected: []string{
+				"error 1:10-1:11: 'f' is declared at module level, so parameter 'x' needs a type in place of `_`; write `x: [number, number]`",
+			},
+		},
+		{
+			name: "ErrorPlaceholderInfersClassWithLifetime",
+			src: `
+				class Ref<'a> { v: &'a Array<string> }
+				declare fn fail<'a>(e: &'a Array<string>) -> number throws Ref<'a>
+				fn f<'a>(e: &'a Array<string>) -> number throws _ { return fail(e) }
+			`,
+			expected: []string{
+				"error 4:53-4:54: `_` in the error type infers `Ref<'a>`, which holds a lifetime; write the type, or write its borrow and lifetime around `_`, as in `&'a _`",
+			},
+		},
+		{
+			name: "ErrorPlaceholderInfersAliasWithLifetime",
+			src: `
+				type Ref<'a> = {v: &'a Array<string>}
+				declare fn fail<'a>(e: &'a Array<string>) -> number throws Ref<'a>
+				fn f<'a>(e: &'a Array<string>) -> number throws _ { return fail(e) }
+			`,
+			expected: []string{
+				"error 4:53-4:54: `_` in the error type infers `Ref<'a>`, which holds a lifetime; write the type, or write its borrow and lifetime around `_`, as in `&'a _`",
+			},
+		},
+		{
+			name: "ErrorPlaceholderInfersFuncWithLifetime",
+			src: `
+				declare fn fail<'a>(e: &'a Array<string>) -> number throws 'a fn () -> number
+				fn f<'a>(e: &'a Array<string>) -> number throws _ { return fail(e) }
+			`,
+			expected: []string{
+				"error 3:53-3:54: `_` in the error type infers `fn () -> number`, which holds a lifetime; write the type, or write its borrow and lifetime around `_`, as in `&'a _`",
+			},
+		},
+		{
 			name: "ParamPlaceholder",
 			src:  `fn f(x: _) -> number { return x + 1 }`,
 			expected: []string{
@@ -145,6 +191,18 @@ func TestSignaturePlaceholder(t *testing.T) {
 			},
 		},
 		{
+			name: "SetterParamPlaceholder",
+			src: `
+				class C {
+					n: number,
+					set v(&mut self, x: _) { self.n = x },
+				}
+			`,
+			expected: []string{
+				"error 4:26-4:27: 'v' is a method, so parameter 'x' needs a type in place of `_`; write `x: number`",
+			},
+		},
+		{
 			name: "MethodReturnPlaceholder",
 			src: `
 				class C {
@@ -196,6 +254,11 @@ func TestSignaturePlaceholderInfersErrorType(t *testing.T) {
 			name:     "PromiseError",
 			src:      "declare fn fail() -> Promise<number, string>\nasync fn f() -> Promise<number, _> { return await fail() }",
 			expected: "() -> Promise<number, string>",
+		},
+		{
+			name:     "GeneratorError",
+			src:      "declare fn fail() -> number throws string\ngen fn f() -> Generator<number, undefined, unknown, _> { yield fail() }",
+			expected: "() -> Generator<number, undefined, unknown, string>",
 		},
 		{
 			name:     "NestedInThrows",

@@ -99,7 +99,7 @@ func (c *checker) checkPlaceholders(
 			continue
 		}
 		if shown := coalesce(t, soltype.Positive); holdsLifetime(shown) {
-			c.report(&ErrorTypePlaceholderLifetimeError{Ann: p.ann, Inferred: soltype.Print(shown)})
+			c.report(&ErrorTypePlaceholderLifetimeError{Ann: p.ann, Inferred: soltype.PrintAsScheme(shown)})
 		}
 	}
 	if len(misplaced) == 0 {

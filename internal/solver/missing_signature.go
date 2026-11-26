@@ -194,7 +194,7 @@ func (c *checker) checkMemberSignatures(class *ast.ClassDecl) {
 		var key ast.ObjKey
 		var fn *ast.FuncExpr
 		suggest := func() string { return "" }
-		rendered := func() (soltype.FuncSignature, bool) { return soltype.FuncSignature{}, false }
+		var rendered func() (soltype.FuncSignature, bool)
 		// checkSignature calls suggest only for a member that leaves out just its return
 		// type, so the lookups of the member's registered type run for those members alone.
 		switch e := elem.(type) {
@@ -217,11 +217,11 @@ func (c *checker) checkMemberSignatures(class *ast.ClassDecl) {
 		case *ast.GetterElem:
 			key, fn = e.Name, e.Fn
 			rendered = func() (soltype.FuncSignature, bool) {
-				t, ok := c.getterType(class, e)
+				t, ok := c.accessorType(class, e.Name, e.Static, false)
 				return soltype.FuncSignature{Ret: t}, ok
 			}
 			suggest = func() string {
-				t, ok := c.getterType(class, e)
+				t, ok := c.accessorType(class, e.Name, e.Static, false)
 				if !ok {
 					return ""
 				}
@@ -229,6 +229,10 @@ func (c *checker) checkMemberSignatures(class *ast.ClassDecl) {
 			}
 		case *ast.SetterElem:
 			key, fn = e.Name, e.Fn
+			rendered = func() (soltype.FuncSignature, bool) {
+				t, ok := c.accessorType(class, e.Name, e.Static, true)
+				return soltype.FuncSignature{Params: []string{t}}, ok
+			}
 		default:
 			continue
 		}
@@ -254,28 +258,41 @@ func memberName(key ast.ObjKey) string {
 	return written
 }
 
-// getterType renders the type the getter g of class reads, under the names of the class's
-// type and lifetime parameters. ok is false when the checker registered no such getter.
-func (c *checker) getterType(class *ast.ClassDecl, g *ast.GetterElem) (string, bool) {
+// accessorType renders the type an accessor of class named key reads or writes, under the
+// names of the class's type and lifetime parameters. static picks the class's static side,
+// and setter picks the setter's parameter type over the getter's type. ok is false when the
+// checker registered no such accessor.
+func (c *checker) accessorType(class *ast.ClassDecl, key ast.ObjKey, static, setter bool) (string, bool) {
 	instance, ok := c.info.TypeOf(class.Name).(*soltype.ClassType)
 	if !ok {
 		return "", false
 	}
 	def, ok := c.ctx.classDef(instance.Name)
-	name, named := objKeyName(g.Name)
+	name, named := objKeyName(key)
 	if !ok || !named {
 		return "", false
 	}
 	members := def.Body
-	if g.Static {
+	if static {
 		members = def.Static
 	}
 	if members == nil {
 		return "", false
 	}
 	for _, elem := range members.Elems {
-		if ge, isGetter := elem.(*soltype.GetterElem); isGetter && ge.Name == name {
-			return soltype.PrintWithDeclaredParams(ge.Type, def.TypeParams, def.LifetimeParams), true
+		var t soltype.Type
+		switch elem := elem.(type) {
+		case *soltype.GetterElem:
+			if !setter && elem.Name == name {
+				t = elem.Type
+			}
+		case *soltype.SetterElem:
+			if setter && elem.Name == name && elem.Param != nil {
+				t = elem.Param.Type
+			}
+		}
+		if t != nil {
+			return soltype.PrintWithDeclaredParams(t, def.TypeParams, def.LifetimeParams), true
 		}
 	}
 	return "", false
