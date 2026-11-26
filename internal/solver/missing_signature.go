@@ -160,7 +160,7 @@ func (c *checker) checkDeclSignatures(d ast.Decl, funcSite, closureSite signatur
 		}
 		c.checkSignature(&d.FuncSig, true, d.Name.Name, funcSite, d.Name, suggest)
 		c.checkPlaceholders(&d.FuncSig, d.Name.Name, funcSite, func() (soltype.FuncSignature, bool) {
-			return sig.PrintWritten(), ok
+			return writtenParts(sig, ok)
 		})
 	case *ast.ClassDecl:
 		c.checkMemberSignatures(d)
@@ -179,12 +179,18 @@ func (c *checker) checkDeclSignatures(d ast.Decl, funcSite, closureSite signatur
 		}
 		c.checkSignature(&fn.FuncSig, true, ident.Name, closureSite, d.Pattern, suggest)
 		c.checkPlaceholders(&fn.FuncSig, ident.Name, closureSite, func() (soltype.FuncSignature, bool) {
-			if !typed {
-				return soltype.FuncSignature{}, false
-			}
-			return DeclSignature{Type: ft}.PrintWritten(), true
+			return writtenParts(DeclSignature{Type: ft}, typed)
 		})
 	}
+}
+
+// writtenParts returns sig's parts as PrintWritten renders them. It returns false, and no
+// parts, when ok is false or sig has no type.
+func writtenParts(sig DeclSignature, ok bool) (soltype.FuncSignature, bool) {
+	if !ok || sig.Type == nil {
+		return soltype.FuncSignature{}, false
+	}
+	return sig.PrintWritten(), true
 }
 
 // checkMemberSignatures reports each method, getter and setter of class whose signature is
@@ -201,11 +207,7 @@ func (c *checker) checkMemberSignatures(class *ast.ClassDecl) {
 		case *ast.MethodElem:
 			key, fn = e.Name, e.Fn
 			rendered = func() (soltype.FuncSignature, bool) {
-				sig, ok := c.info.MethodSignature(class, e)
-				if !ok {
-					return soltype.FuncSignature{}, false
-				}
-				return sig.PrintWritten(), true
+				return writtenParts(c.info.MethodSignature(class, e))
 			}
 			suggest = func() string {
 				sig, ok := c.info.MethodSignature(class, e)

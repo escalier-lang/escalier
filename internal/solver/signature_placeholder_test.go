@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/soltype"
 
 	"github.com/stretchr/testify/require"
 )
@@ -296,4 +297,12 @@ func TestSignaturePlaceholderInfersErrorType(t *testing.T) {
 			require.Equal(t, tt.expected, renderWritten(sig))
 		})
 	}
+}
+
+// TestWrittenPartsWithoutSignature asserts that writtenParts returns no parts for a
+// declaration the checker recorded no signature for.
+func TestWrittenPartsWithoutSignature(t *testing.T) {
+	parts, ok := writtenParts(DeclSignature{}, true)
+	require.False(t, ok)
+	require.Equal(t, soltype.FuncSignature{}, parts)
 }
