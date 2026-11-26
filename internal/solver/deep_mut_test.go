@@ -111,18 +111,88 @@ func TestReadonlyPermitsValueMutationButNotReassignment(t *testing.T) {
 // An explicit `&obj.f` on a borrow field flows the field's own borrow through
 // rather than re-anchoring to the receiver, matching the implicit-read path.
 func TestExplicitBorrowOfBorrowFieldFlowsFieldLifetime(t *testing.T) {
-	t.Run("immutable borrow field", func(t *testing.T) {
-		src := "fn f(obj: {a: &{x: number}}) { return &obj.a }"
-		values, _, errs := inferSource(t, src)
-		require.Empty(t, errs)
-		require.Equal(t, "fn <'a>(obj: {a: &'a {x: number}}) -> &'a {x: number}", values["f"])
-	})
-	t.Run("mutable borrow field", func(t *testing.T) {
-		src := "fn f(obj: {a: &mut {x: number}}) { return &obj.a }"
-		values, _, errs := inferSource(t, src)
-		require.Empty(t, errs)
-		require.Equal(t, "fn <'a>(obj: {a: &'a mut {x: number}}) -> &'a mut {x: number}", values["f"])
-	})
+	tests := []struct {
+		name     string
+		src      string
+		expected string
+	}{
+		{
+			name:     "ImmutableBorrowField",
+			src:      "fn f(obj: {a: &{x: number}}) { return &obj.a }",
+			expected: "fn <'a>(obj: {a: &'a {x: number}}) -> &'a {x: number}",
+		},
+		{
+			// An immutable borrow of the field lends its referent immutably, whatever
+			// borrow the field holds.
+			name:     "MutableBorrowField",
+			src:      "fn f(obj: {a: &mut {x: number}}) { return &obj.a }",
+			expected: "fn <'a>(obj: {a: &'a mut {x: number}}) -> &'a {x: number}",
+		},
+		{
+			// A write records the field's type for the receiver, and the borrow that follows
+			// reads it from there.
+			name:     "FieldWrittenBeforeItIsBorrowed",
+			src:      "fn f(mut obj, q: &{x: number}) { obj.a = q\n return &obj.a }",
+			expected: "fn <'a>(obj: {a: &'a {x: number} & unknown}, q: &'a {x: number}) -> &'a {x: number}",
+		},
+		{
+			name:     "MutableBorrowOfMutableBorrowField",
+			src:      "fn f(mut obj: {a: &mut {x: number}}) { return &mut obj.a }",
+			expected: "fn <'a>(obj: {a: &'a mut {x: number}}) -> &'a mut {x: number}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.expected, values["f"])
+		})
+	}
+}
+
+// TestBorrowOfBorrowFieldAgainstWrittenReturn covers a borrow of a field that holds a
+// borrow, checked against a written return type. Each source writes the return type the
+// checker infers for it unannotated, so it checks clean.
+func TestBorrowOfBorrowFieldAgainstWrittenReturn(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		expected []string
+	}{
+		{
+			name: "ElidedLifetime",
+			src:  "fn f(obj: {a: &{x: number}}) -> &{x: number} { return &obj.a }",
+		},
+		{
+			name: "NamedLifetime",
+			src:  "fn f<'a>(obj: {a: &'a {x: number}}) -> &'a {x: number} { return &obj.a }",
+		},
+		{
+			name: "ThroughBorrowedReceiver",
+			src:  "fn f<'a>(obj: &{a: &'a {x: number}}) -> &'a {x: number} { return &obj.a }",
+		},
+		{
+			name: "ImmutableBorrowOfMutableBorrowField",
+			src:  "fn f(obj: {a: &mut {x: number}}) -> &{x: number} { return &obj.a }",
+		},
+		{
+			name: "MutableBorrowOfMutableBorrowField",
+			src:  "fn f(mut obj: {a: &mut {x: number}}) -> &mut {x: number} { return &mut obj.a }",
+		},
+		{
+			name: "MutableBorrowOfImmutableBorrowField",
+			src:  "fn f(mut obj: {a: &{x: number}}) -> undefined { val r = &mut obj.a }",
+			expected: []string{
+				"1:19-1:31: cannot constrain immutable object <: mutable object",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.expected, messagesWithSpan(t, errs))
+		})
+	}
 }
 
 // Borrowing a field of a deep-mut container with `&mut obj.a` yields a clean
