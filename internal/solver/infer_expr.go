@@ -2024,12 +2024,17 @@ func (c *checker) inferBorrowOfMember(scope *Scope, lvl int, e *ast.BorrowExpr, 
 	}
 	target := &soltype.RefType{Mut: e.Mut, Lt: lt, Inner: inner}
 	if fieldBorrow != nil {
-		// A field that holds a borrow lends that borrow again, so `&obj.a` with
-		// `a: &'a T` is `&'a T`, the field's lifetime and referent, rather than a
-		// borrow of the borrow. A written return type `&'a T` then accepts it.
-		target = &soltype.RefType{Mut: e.Mut, Lt: fieldBorrow.Lt, Inner: fieldBorrow.Inner}
-		if e.Mut {
-			// `&mut obj.a` lends a mutable borrow, which an immutable borrow in `a` cannot give.
+		// A field that holds a borrow lends its referent, so `&obj.a` with `a: &'a T`
+		// borrows T rather than the borrow in `a`.
+		target = &soltype.RefType{Mut: e.Mut, Lt: lt, Inner: fieldBorrow.Inner}
+		switch {
+		case !e.Mut && !fieldBorrow.Mut:
+			// An immutable borrow can be copied, so the result keeps the field's lifetime
+			// and outlives the receiver, as `a` itself does.
+			target.Lt = fieldBorrow.Lt
+		default:
+			// The result borrows through the borrow in `a`, so it cannot outlive that
+			// borrow, and a `&mut obj.a` needs `a` to hold a mutable borrow.
 			c.constrain(e, fieldBorrow, target)
 		}
 	}
