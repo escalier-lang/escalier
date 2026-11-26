@@ -99,9 +99,10 @@ func kindName(mut bool) string {
 }
 
 // ContentsBorrowedError reports a call that takes a place mutably while a mutable borrow of
-// the place's contents is live. A borrow of the contents reaches a value stored in one of the
-// place's slots rather than the place itself. `&mut arr[0]` is one, and so is the result of
-// `first(&mut arr)` with `declare fn first<'a>(a: &'a mut Array<Flat>) -> &'a mut Flat`.
+// the place's contents is live, and the call could remove what that borrow reaches. A borrow
+// of the contents reaches a value stored in one of the place's slots rather than the place
+// itself. `&mut arr[0]` is one, and so is the result of `first(&mut arr)` with
+// `declare fn first<'a>(a: &'a mut Array<Flat>) -> &'a mut Flat`.
 type ContentsBorrowedError struct {
 	// Place names what the call takes mutably, `arr` for `arr.pop()`.
 	Place  string

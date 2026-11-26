@@ -926,6 +926,22 @@ The form also decides what the body may do with the source:
   `&mut Array<T>` can remove an element behind its own signature. A write
   through `f` or to `arr[i]` stays allowed, since neither hands an element to
   a new owner. Two mutable borrows of `arr` itself may still be live together.
+- **Only contents a callee could remove conflict.** A callee removes a value
+  when it takes it out of a slot and hands it to a new owner. It can do that
+  to an element of an `Array`, a `Map` or a `Set`, and to an entry of an
+  object with an index signature such as `Record<string, T>`. It cannot do it
+  to a field of an object or class, or to a slot of a tuple. Reading `b.inner`
+  through `&mut b` yields a borrow, and a borrow cannot fill an owned slot, so
+  the callee can only overwrite the field. The old value is then dropped, and
+  the garbage collector keeps it alive for `f`, which nothing else owns. So
+  `val f = &mut b.inner; reset(&mut b); f.x = 1` is accepted, while
+  `val f = first(&mut b.items); reset(&mut b); f.x = 1` with
+  `items: Array<Flat>` is rejected. When the borrow comes from a call, the
+  checker cannot see which slot the result reaches. It rejects the call when
+  the type of the argument the borrow was taken from reaches a removable slot
+  through fields, tuple slots and mutable borrows. A declared class, a type
+  parameter, and an object with a `&mut self` method count as removable, since
+  their slots are not visible.
 
 ```esc
 fn inside(arr: Array<Flat>) -> undefined {
