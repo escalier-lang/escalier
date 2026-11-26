@@ -89,11 +89,37 @@ func (c *checker) checkCanReturn() {
 		// The check asks only whether a return arm is a type the caller picks. A type
 		// parameter whose name occurs once is still one, so the display keeps it.
 		display, isFunc := coalesceScheme(p.fn, p.genLevel, nil, nil, false).(*soltype.FuncType)
-		if !isFunc || finitelyInhabitedGiven(display.Ret, c.aliasInhabited) {
+		if !isFunc || finitelyInhabited(display.Ret) && c.someReturnInhabited(p.bodyReturns) {
 			continue
 		}
 		c.report(&NonReturningRecursionError{Site: p.site, Name: p.name, Fn: display})
 	}
+}
+
+// someReturnInhabited reports whether one of a function's return points produces a value a
+// finite construction can reach, given the types each one produces. A function whose return type
+// is written reaches here, so a return type the source writes as a recursive alias with no finite
+// value is checked through the values the body builds.
+//
+// A return point whose whole type is an alias passes along a value someone else built, as
+// `return x` does for a parameter `x: Next`, so it counts as reaching one. One that builds
+// structure around such an alias does not, as `return {next: g()}` does when `g` returns `Next`.
+// A body with no return point, such as one that only throws, reaches none of them and counts as
+// returning, since it diverges rather than recursing.
+func (c *checker) someReturnInhabited(returns []soltype.Type) bool {
+	if len(returns) == 0 {
+		return true
+	}
+	for _, t := range returns {
+		shown := coalesce(t, soltype.Positive)
+		if _, passed := shown.(*soltype.AliasType); passed {
+			return true
+		}
+		if finitelyInhabitedGiven(shown, c.aliasInhabited) {
+			return true
+		}
+	}
+	return false
 }
 
 // pendingReturn is one function body waiting for checkCanReturn.
@@ -107,6 +133,9 @@ type pendingReturn struct {
 	name     string
 	fn       *soltype.FuncType
 	genLevel int
+	// bodyReturns holds the type each return point produces, when the function's return type
+	// is written, and is nil otherwise.
+	bodyReturns []soltype.Type
 }
 
 // queueReturnCheck queues one body-carrying function for checkCanReturn. node is the *ast.FuncDecl
@@ -119,7 +148,7 @@ type pendingReturn struct {
 // A queued entry is rolled back with the probe that recorded it, mirroring the errs snapshot
 // openProbe takes. A discarded trial must leave no diagnostic behind, and the queue turns into
 // diagnostics after the trial is over.
-func (c *checker) queueReturnCheck(node ast.Node, ft *soltype.FuncType, genLevel int, memberName string) {
+func (c *checker) queueReturnCheck(node ast.Node, ft *soltype.FuncType, genLevel int, memberName string, bodyReturns []soltype.Type) {
 	site, name := node, memberName
 	if fd, isDecl := node.(*ast.FuncDecl); isDecl && fd.Name != nil {
 		site, name = fd.Name, fd.Name.Name
@@ -129,7 +158,7 @@ func (c *checker) queueReturnCheck(node ast.Node, ft *soltype.FuncType, genLevel
 		probe.onRollback(func() { c.pendingReturns = c.pendingReturns[:queueLen] })
 	}
 	c.pendingReturns = append(c.pendingReturns,
-		pendingReturn{site: site, name: name, fn: ft, genLevel: genLevel})
+		pendingReturn{site: site, name: name, fn: ft, genLevel: genLevel, bodyReturns: bodyReturns})
 }
 
 // finitelyInhabited reports whether a finite value has type t. It reads a coalesced type, where a

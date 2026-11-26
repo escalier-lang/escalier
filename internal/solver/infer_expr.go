@@ -1062,6 +1062,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// declaration. A bare `return` and a body with no return point are checked at the
 	// declaration.
 	returnPoints := []returnPoint{{site: node, t: ret}}
+	// bodyReturns holds the type each return point produces, for checkCanReturn to read when
+	// the return type is written. It stays nil otherwise.
+	var bodyReturns []soltype.Type
 	if len(collected) > 0 {
 		returnPoints = make([]returnPoint, len(collected))
 		for i, t := range collected {
@@ -1153,6 +1156,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			if hasBody {
 				for _, rp := range returnPoints {
 					c.constrain(rp.site, rp.t, annT) // body <: declared return
+					bodyReturns = append(bodyReturns, rp.t)
 				}
 				// No caller can observe an annotated return the body never reaches, so warn
 				// and point at the annotation. A body that diverges into `never` on purpose
@@ -1191,7 +1195,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// waits until the enclosing group's bound graph is complete, since a mutually-recursive knot is
 	// not tied until every body in the group has been walked.
 	if hasBody {
-		c.queueReturnCheck(node, ft, lvl-1, memberName)
+		c.queueReturnCheck(node, ft, lvl-1, memberName, bodyReturns)
 		// The scope holds every name the signature's positions wrote, including a name a
 		// parameter after this one writes.
 		for i := range callOnlyParams {

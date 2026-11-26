@@ -405,6 +405,20 @@ func TestNonReturningRecursionThroughAlias(t *testing.T) {
 			},
 		},
 		{
+			// Throwing builds no value, so nothing recurses.
+			name: "StubThatThrows",
+			src:  "type Next = {next: Next}\nfn todo() -> Next throws string { throw \"todo\" }",
+			expected: []string{
+				"2:14-2:18: every path through the body throws, so the declared return type `Next` is " +
+					"unreachable; the body returns `never`",
+			},
+		},
+		{
+			// The parameter is a value someone else built, passed along whole.
+			name: "PassesAParameterAlong",
+			src:  "type Next = {next: Next}\nfn f(x: Next) -> Next { return x }",
+		},
+		{
 			name: "AliasAlone",
 			src:  "type Next = {next: Next}",
 		},
