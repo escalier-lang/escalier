@@ -3786,7 +3786,131 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			src: named + `
 				fn f(xs: &Named<number>) -> undefined { xs.each(fn (v, arr) { return arr.push(1) }) }
 			`,
-			want: []string{"object is missing property: push"},
+			want: []string{"cannot constrain immutable Named<number> <: mutable Named<number>"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, errs := inferSource(t, tt.src)
+			if len(tt.want) == 0 {
+				require.Empty(t, errorMessagesOf(errs))
+				return
+			}
+			require.Equal(t, tt.want, errorMessagesOf(errs))
+		})
+	}
+}
+
+// TestInferMethodCallOnUnannotatedCallbackParam covers a method call on a callback parameter
+// written without an annotation. The method is read off the type the callee declares for the
+// parameter, so each call checks as it would on a parameter annotated with that type.
+func TestInferMethodCallOnUnannotatedCallbackParam(t *testing.T) {
+	const box = `
+		class Box {
+			x: number,
+			bump(&mut self) -> undefined { self.x = self.x + 1 },
+			get(self) -> number { return self.x },
+			peek(&self) -> number { return self.x },
+		}
+	`
+	apply := func(param, callback string) string {
+		return box + `
+			declare fn apply(f: fn (` + param + `) -> undefined) -> undefined
+			fn f() -> undefined { apply(` + callback + `) }
+		`
+	}
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "a mutating method through a declared mutable borrow",
+			src:  apply("b: &mut Box", "fn (inner) { inner.bump() }"),
+		},
+		{
+			name: "a reading method through a declared immutable borrow",
+			src:  apply("b: &Box", "fn (inner) { inner.peek() }"),
+		},
+		{
+			name: "a consuming method on a declared owned instance",
+			src:  apply("b: Box", "fn (inner) { inner.get() }"),
+		},
+		{
+			name: "a mutating method on a declared owned instance bound with mut",
+			src:  apply("mut b: Box", "fn (mut inner) { inner.bump() }"),
+		},
+		{
+			name: "a mutating Array method through a declared mutable borrow",
+			src: `
+				declare fn apply(f: fn (b: &mut Array<number>) -> undefined) -> undefined
+				fn f() -> undefined { apply(fn (inner) { inner.push(1) }) }
+			`,
+		},
+		{
+			name: "a mutating method through a callback type named by an alias",
+			src: box + `
+				type Cb = fn (b: &mut Box) -> undefined
+				declare fn apply(f: Cb) -> undefined
+				fn f() -> undefined { apply(fn (inner) { inner.bump() }) }
+			`,
+		},
+		{
+			name: "a field write through a declared mutable borrow",
+			src:  apply("b: &mut Box", "fn (inner) { inner.x = 1 }"),
+		},
+		{
+			name: "a function held in an object-type property",
+			src: `
+				declare fn apply(f: fn (b: {m: fn () -> number}) -> undefined) -> undefined
+				fn f() -> undefined { apply(fn (inner) { inner.m() }) }
+			`,
+		},
+		{
+			// A method that hands its own receiver to a callback, called with a callback
+			// that mutates the receiver it is given.
+			name: "a callback passed to a method mutates the receiver it is handed",
+			src: `
+				class Box {
+					x: number,
+					bump(&mut self) -> undefined { self.x = self.x + 1 },
+					run(&mut self, f: fn (b: &mut Box) -> undefined) -> undefined { f(self) },
+				}
+				fn f(mut b: Box) -> undefined { b.run(fn (inner) { inner.bump() }) }
+			`,
+		},
+		{
+			name: "a consuming method through a declared immutable borrow",
+			src:  apply("b: &Box", "fn (inner) { inner.get() }"),
+			want: []string{
+				"'get' takes its receiver by value, so it moves the instance and cannot be reached through a borrow.",
+			},
+		},
+		{
+			name: "a mutating method through a declared immutable borrow",
+			src:  apply("b: &Box", "fn (inner) { inner.bump() }"),
+			want: []string{"cannot constrain immutable Box <: mutable Box"},
+		},
+		{
+			name: "a mutating method on a declared owned instance bound without mut",
+			src:  apply("b: Box", "fn (inner) { inner.bump() }"),
+			want: []string{"cannot mutate 'inner' because its binding is immutable; declare it as `mut inner`"},
+		},
+		{
+			// The callee's `mut` belongs to its own binding, so the callback's binding
+			// decides whether it may mutate what it owns.
+			name: "a mutating method on an instance the callee binds with mut",
+			src:  apply("mut b: Box", "fn (inner) { inner.bump() }"),
+			want: []string{"cannot mutate 'inner' because its binding is immutable; declare it as `mut inner`"},
+		},
+		{
+			name: "a mutating Array method through a declared immutable borrow",
+			src: `
+				declare fn apply(f: fn (b: &Array<number>) -> undefined) -> undefined
+				fn f() -> undefined { apply(fn (inner) { inner.push(1) }) }
+			`,
+			want: []string{"cannot constrain immutable Array<number> <: mutable Array<number>"},
 		},
 	}
 	for _, tt := range tests {

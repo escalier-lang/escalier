@@ -419,6 +419,11 @@ type checker struct {
 	// consumed by the inferFunc call that walks it. inferFunc reads and clears it on entry, so a
 	// lambda nested inside the argument's body is not taken for an argument itself.
 	argFunc *ast.FuncExpr
+	// argFuncSig is the function type the callee declares for the parameter argFunc fills. It
+	// is nil when the callee's signature is not known yet, or when that parameter's type is
+	// not a function type free of its own binders. inferFunc reads and clears it alongside
+	// argFunc.
+	argFuncSig *soltype.FuncType
 	// readThroughVars holds the inner variable of each borrow inferFunc infers for an
 	// unannotated parameter, and the result variable of each field read through one of those
 	// borrows. fieldReadBorrow reads a field off such a borrow as a borrow at the same lifetime.
@@ -436,6 +441,9 @@ type checker struct {
 	// unannotatedParamVars holds the variable inferFunc mints for each parameter with no
 	// written type.
 	unannotatedParamVars set.Set[*soltype.TypeVarType]
+	// declaredParamTypes maps the variable inferFunc mints for an unannotated parameter of a
+	// function passed as a call argument to the type the callee declares for that parameter.
+	declaredParamTypes map[*soltype.TypeVarType]soltype.Type
 
 	// memberSelf is set beside memberReceiver for an instance member, by inferMemberFunc, and
 	// carries what inferFunc needs to bind the member's `self` and build its SelfParam.

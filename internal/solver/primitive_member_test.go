@@ -75,10 +75,9 @@ func TestPrimitiveMemberReadsWrapper(t *testing.T) {
 			want: map[string]string{"n": "string"},
 		},
 		{
-			// `n` has no type when the body reads `toFixed`, so the read becomes a
-			// requirement on `n`. The `number` that `apply`'s parameter type passes in
-			// later satisfies it through `Number`.
-			name: "CallbackReceiverSolvedAfterRead",
+			// `n` has no annotation, so `toFixed` is read off `number`, the type `apply`
+			// declares for its callback's parameter, through `Number`.
+			name: "CallbackReceiverDeclaredByCallee",
 			src: `
 				declare fn apply(f: fn (x: number) -> string) -> string
 				val r = apply(fn (n) { return n.toFixed(2) })
@@ -110,8 +109,8 @@ func TestPrimitiveMemberReadsWrapper(t *testing.T) {
 			want: map[string]string{"r": "number"},
 		},
 		{
-			// A `&self` method reads off a receiver solved after the read, the same way
-			// a wrapper's method does.
+			// A `&self` method reads off the type the callee declares for the callback's
+			// parameter, the same way a wrapper's method does.
 			name: "CallbackReadsImmutSelfMethod",
 			src: `
 				class Counter {
@@ -120,6 +119,20 @@ func TestPrimitiveMemberReadsWrapper(t *testing.T) {
 				}
 				declare fn withCounter(f: fn (c: &Counter) -> number) -> number
 				val r = withCounter(fn (c) { return c.get() })
+			`,
+			want: map[string]string{"r": "number"},
+		},
+		{
+			// A `&mut self` method reads off a declared `&mut Counter`, which lends it
+			// mutable access.
+			name: "CallbackReadsMutSelfMethod",
+			src: `
+				class Counter {
+					count: number,
+					inc(&mut self) -> number { return self.count },
+				}
+				declare fn withCounter(f: fn (c: &mut Counter) -> number) -> number
+				val r = withCounter(fn (c) { return c.inc() })
 			`,
 			want: map[string]string{"r": "number"},
 		},
@@ -194,20 +207,7 @@ func TestPrimitiveMemberRejected(t *testing.T) {
 			want: []string{"3:37-3:41: object is missing property: nope"},
 		},
 		{
-			// The read has no receiver binding to check a `&mut self` method against, so
-			// the method stays missing.
-			name: "CallbackMutSelfMethod",
-			src: `
-				class Counter {
-					count: number,
-					inc(&mut self) -> number { return self.count },
-				}
-				declare fn withCounter(f: fn (c: &mut Counter) -> number) -> number
-				val r = withCounter(fn (c) { return c.inc() })
-			`,
-			want: []string{"7:43-7:46: object is missing property: inc"},
-		},
-		{
+			// A consuming method moves the instance, and a declared `&Counter` has none to move.
 			name: "CallbackConsumingSelfMethod",
 			src: `
 				class Counter {
@@ -217,7 +217,9 @@ func TestPrimitiveMemberRejected(t *testing.T) {
 				declare fn withCounter(f: fn (c: &Counter) -> number) -> number
 				val r = withCounter(fn (c) { return c.take() })
 			`,
-			want: []string{"7:43-7:47: object is missing property: take"},
+			want: []string{
+				"7:41-7:47: 'take' takes its receiver by value, so it moves the instance and cannot be reached through a borrow.",
+			},
 		},
 		{
 			// `undefined` has no members to read, so the union read falls back to the
@@ -266,7 +268,7 @@ func TestPrimitiveMemberMissingRelatedSpan(t *testing.T) {
 	}{
 		{
 			// The `number` comes from the parameter type `apply` declares for its callback.
-			name: "CallbackReceiverSolvedAfterRead",
+			name: "CallbackReceiverDeclaredByCallee",
 			src: `
 				declare fn apply(f: fn (x: number) -> string) -> string
 				val r = apply(fn (n) { return n.nope() })
