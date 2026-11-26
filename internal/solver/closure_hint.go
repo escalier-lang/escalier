@@ -81,6 +81,11 @@ func (c *checker) monoBindingType(scope *Scope, name string) soltype.Type {
 // agrees on.
 func (c *checker) callArgDests(lvl int, target callTarget, argc int) []soltype.Type {
 	dests := make([]soltype.Type, argc)
+	// A second instance of a variable callee's bound is not the one the call constrains, so
+	// a parameter type read off it would hand a closure variables the call never solves.
+	if target.secondInstance {
+		return dests
+	}
 	if target.fn != nil {
 		for i := range dests {
 			if i < len(target.fn.Params) && !target.fn.Params[i].Rest {
