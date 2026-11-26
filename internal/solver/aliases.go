@@ -46,6 +46,12 @@ type AliasDef struct {
 	// resolved body before the flag is set.
 	NotProductive bool
 
+	// Uninhabited reports that no finite value has the alias's type, as for
+	// `type Next = {next: Next}`. markUninhabitedAliases sets it once the component's bodies
+	// are resolved. checkCanReturn reads it, so a function written to return the alias reports
+	// that a call to it never returns.
+	Uninhabited bool
+
 	// PhantomParams holds one entry per TypeParam, true when no argument passed to that
 	// parameter can appear in the type an instantiation denotes. markPhantomParams computes it,
 	// and internAlias drops a phantom parameter's argument when it renders an alias reference's

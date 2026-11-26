@@ -2,6 +2,7 @@ package solver
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -88,7 +89,7 @@ func (c *checker) checkCanReturn() {
 		// The check asks only whether a return arm is a type the caller picks. A type
 		// parameter whose name occurs once is still one, so the display keeps it.
 		display, isFunc := coalesceScheme(p.fn, p.genLevel, nil, nil, false).(*soltype.FuncType)
-		if !isFunc || finitelyInhabited(display.Ret) {
+		if !isFunc || finitelyInhabitedGiven(display.Ret, c.aliasInhabited) {
 			continue
 		}
 		c.report(&NonReturningRecursionError{Site: p.site, Name: p.name, Fn: display})
@@ -141,25 +142,34 @@ func (c *checker) queueReturnCheck(node ast.Node, ft *soltype.FuncType, genLevel
 // the way, which is the one thing that makes this false.
 //
 // Every shape the walk cannot decide reads as inhabited, so an unfamiliar one never produces a
-// diagnostic. Three reach it through the final arm. A quantified type parameter is one, since the
-// caller chooses what it stands for and may choose something inhabited, which is what makes a
-// parameter reaching the return count as a base case. `never` is another. Nothing has that type, but
-// a function returning it diverges or throws rather than recursing, and
-// `fn todo() -> never throws string { throw "todo" }` is a stub anyone may write. An alias reference
-// is the third, since deciding one would mean expanding it.
+// diagnostic. A quantified type parameter is one, since the caller chooses what it stands for and
+// may choose something inhabited, which is what makes a parameter reaching the return count as a
+// base case. `never` is another. Nothing has that type, but a function returning it diverges or
+// throws rather than recursing, and `fn todo() -> never throws string { throw "todo" }` is a stub
+// anyone may write. An alias reference is the third, since deciding one would mean expanding it.
+// finitelyInhabitedGiven takes a decision for each alias reference instead.
 //
 // It is a recursive switch rather than a soltype visitor, which the CLAUDE.md convention would
 // otherwise call for. Each kind folds its operands differently — an object needs every required
 // member, a union needs one arm — and the enter/exit visitor carries no per-node synthesized value
 // to fold. guardsEveryOperand in productivity.go is the same shape for the same reason.
 func finitelyInhabited(t soltype.Type) bool {
+	return finitelyInhabitedGiven(t, func(*soltype.AliasType) bool { return true })
+}
+
+// finitelyInhabitedGiven is finitelyInhabited, with aliasInhabited deciding each alias reference
+// in t rather than every one reading as inhabited.
+func finitelyInhabitedGiven(t soltype.Type, aliasInhabited func(*soltype.AliasType) bool) bool {
+	rec := func(t soltype.Type) bool { return finitelyInhabitedGiven(t, aliasInhabited) }
 	switch t := t.(type) {
+	case *soltype.AliasType:
+		return aliasInhabited(t)
 	case *soltype.RecursiveVarType:
 		// The construction came back to the knot, so this path builds one more level instead of
 		// finishing.
 		return false
 	case *soltype.RecursiveType:
-		return finitelyInhabited(t.Body)
+		return rec(t.Body)
 	case *soltype.FuncType, *soltype.GeneratorType:
 		// A closure and a generator each hold their payload unevaluated, so building one runs none
 		// of the code that would produce that payload.
@@ -172,13 +182,13 @@ func finitelyInhabited(t soltype.Type) bool {
 			switch elem := elem.(type) {
 			case *soltype.PropertyElem:
 				// An omitted optional property is never built, so it cannot force another lap.
-				if !elem.Optional && !finitelyInhabited(elem.Type) {
+				if !elem.Optional && !rec(elem.Type) {
 					return false
 				}
 			case *soltype.SpreadElem:
 				// A `...A` merges A's own members in at this position, so what A requires this
 				// object requires.
-				if !finitelyInhabited(elem.Type) {
+				if !rec(elem.Type) {
 					return false
 				}
 			}
@@ -187,7 +197,7 @@ func finitelyInhabited(t soltype.Type) bool {
 	case *soltype.TupleType:
 		// A tuple has a fixed arity, so every position is built.
 		for _, elem := range t.Elems {
-			if !finitelyInhabited(elem) {
+			if !rec(elem) {
 				return false
 			}
 		}
@@ -199,7 +209,7 @@ func finitelyInhabited(t soltype.Type) bool {
 			return true
 		}
 		for _, member := range t.Types {
-			if finitelyInhabited(member) {
+			if rec(member) {
 				return true
 			}
 		}
@@ -207,7 +217,7 @@ func finitelyInhabited(t soltype.Type) bool {
 	case *soltype.IntersectionType:
 		// A value of an intersection is a value of each member at once, so every member must finish.
 		for _, member := range t.Types {
-			if !finitelyInhabited(member) {
+			if !rec(member) {
 				return false
 			}
 		}
@@ -219,11 +229,57 @@ func finitelyInhabited(t soltype.Type) bool {
 		if t.Inner == nil {
 			return true
 		}
-		return finitelyInhabited(t.Inner)
+		return rec(t.Inner)
 	case *soltype.ExactnessType:
 		// The marker sets exactness on its operand and adds no structure of its own.
-		return finitelyInhabited(t.Operand)
+		return rec(t.Operand)
 	default:
 		return true
 	}
+}
+
+// markUninhabitedAliases sets AliasDef.Uninhabited on each alias in shells that no finite value
+// inhabits. `type Next = {next: Next}` is one. checkProductive accepts it, since every lap emits an
+// object, but building a `Next` needs another `Next` first.
+//
+// shells are the aliases of one dep_graph component, with their bodies resolved. An alias is
+// inhabited when its body is, reading a reference to an alias outside the component by its own
+// mark and one inside it as inhabited only once that alias has been shown to be. Every alias in
+// the component starts uninhabited, and the loop repeats until no more become inhabited, so an
+// alias whose every path leads back into the component stays uninhabited. An alias
+// checkProductive rejected is left unmarked, since it names no type to ask about.
+func (c *checker) markUninhabitedAliases(shells []*aliasShell) {
+	inComponent := set.NewSet[string]()
+	for _, sh := range shells {
+		inComponent.Add(sh.qname)
+	}
+	inhabited := set.NewSet[string]()
+	given := func(a *soltype.AliasType) bool {
+		if inComponent.Contains(a.Name) {
+			return inhabited.Contains(a.Name)
+		}
+		return c.aliasInhabited(a)
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, sh := range shells {
+			if sh.def.NotProductive || inhabited.Contains(sh.qname) {
+				continue
+			}
+			if finitelyInhabitedGiven(sh.def.Body, given) {
+				inhabited.Add(sh.qname)
+				changed = true
+			}
+		}
+	}
+	for _, sh := range shells {
+		sh.def.Uninhabited = !sh.def.NotProductive && !inhabited.Contains(sh.qname)
+	}
+}
+
+// aliasInhabited reports whether a finite value has the alias a names, reading the mark
+// markUninhabitedAliases left on it. An alias the registry does not hold reads as inhabited.
+func (c *checker) aliasInhabited(a *soltype.AliasType) bool {
+	def, ok := c.ctx.aliasDef(a.Name)
+	return !ok || !def.Uninhabited
 }

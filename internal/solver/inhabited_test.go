@@ -358,3 +358,70 @@ func TestFinitelyInhabited(t *testing.T) {
 		})
 	}
 }
+
+// TestNonReturningRecursionThroughAlias covers functions whose written return type is a recursive
+// alias. A call to one whose alias no finite value inhabits never returns, the same as a call to a
+// function inferred to return a μ-knot with no base case.
+func TestNonReturningRecursionThroughAlias(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		expected []string
+	}{
+		{
+			name:     "RequiredSelfReference",
+			src:      "type Next = {next: Next}\nfn g() -> Next { return {next: g()} }",
+			expected: []string{nonReturningMsg("2:4-2:5", "g", "fn () -> Next")},
+		},
+		{
+			name:     "TupleSelfReference",
+			src:      "type Pair = [number, Pair]\nfn g() -> Pair { return [1, g()] }",
+			expected: []string{nonReturningMsg("2:4-2:5", "g", "fn () -> Pair")},
+		},
+		{
+			name:     "MutualRecursion",
+			src:      "type A = {b: B}\ntype B = {a: A}\nfn g() -> A { return {b: {a: g()}} }",
+			expected: []string{nonReturningMsg("3:4-3:5", "g", "fn () -> A")},
+		},
+		{
+			name:     "GenericSelfReference",
+			src:      "type L<T> = {head: T, tail: L<T>}\nfn g(x: number) -> L<number> { return {head: x, tail: g(x)} }",
+			expected: []string{nonReturningMsg("2:4-2:5", "g", "fn (x: number) -> L<number>")},
+		},
+		{
+			name:     "InsideTheReturnType",
+			src:      "type Next = {next: Next}\nfn g() -> {first: Next} { return {first: {next: g().first}} }",
+			expected: []string{nonReturningMsg("2:4-2:5", "g", "fn () -> {first: Next}")},
+		},
+		{
+			name: "AliasAlone",
+			src:  "type Next = {next: Next}",
+		},
+		{
+			name: "BaseCaseUnionArm",
+			src:  "type List = {head: number, tail: List | undefined}\nfn f() -> List { return {head: 1, tail: undefined} }",
+		},
+		{
+			name: "OptionalProperty",
+			src:  "type List = {head: number, tail?: List}\nfn f() -> List { return {head: 1} }",
+		},
+		{
+			name: "DeferredBehindFunction",
+			src:  "type Stream = {head: number, rest: fn () -> Stream}\nfn f() -> Stream { return {head: 1, rest: f} }",
+		},
+		{
+			name: "MutualRecursionWithBaseCase",
+			src:  "type A = {b: B}\ntype B = {a: A} | undefined\nfn f() -> A { return {b: undefined} }",
+		},
+		{
+			name: "ArrayOfSelf",
+			src:  "type Tree = {children: Array<Tree>}\nfn f() -> Tree { return {children: []} }",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.expected, messagesWithSpan(t, errs))
+		})
+	}
+}

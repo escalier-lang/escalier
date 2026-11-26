@@ -230,7 +230,7 @@ func TestInferPhantomArgumentSurvivesInTheRenderedType(t *testing.T) {
 		type Deep<T> = {a: Deep<{b: T}>}
 		declare fn make() -> Deep<number>
 		val d: Deep<string> = make()
-		fn f(p: Deep<number>) -> Deep<number> { return p }
+		declare fn f(p: Deep<number>) -> Deep<number>
 	`)
 	require.Equal(t, []string{
 		"2:13-2:14: no argument passed to type parameter T can appear in the type, so " +
