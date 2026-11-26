@@ -2133,7 +2133,7 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	if hasEventRef {
 		c.emitReceiverFlow(lvl, e, eventRef)
 	}
-	args := c.inferCallArgs(scope, lvl, e, preset, c.callArgDests(lvl, target, len(e.Args)))
+	args := c.inferCallArgs(scope, lvl, e, preset, c.callArgDests(lvl, target, e.Args))
 	var ret soltype.Type
 	var fn *soltype.FuncType
 	if target.overloads != nil {

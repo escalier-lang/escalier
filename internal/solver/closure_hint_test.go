@@ -74,3 +74,33 @@ func TestClosureParamTypedByContext(t *testing.T) {
 		})
 	}
 }
+
+// TestClosureCallsAMutSelfMethodThroughItsContext covers a closure parameter typed by the call
+// it is passed to, through which the body calls a `&mut self` method. A `&mut` context lets the
+// call run, and a `&` context rejects it.
+func TestClosureCallsAMutSelfMethodThroughItsContext(t *testing.T) {
+	const counter = "class Counter {\n\tcount: number,\n\tinc(&mut self) -> number { return self.count },\n}\n"
+	tests := []struct {
+		name     string
+		src      string
+		expected []string
+	}{
+		{
+			name: "MutableBorrow",
+			src: counter + "declare fn withCounter(f: fn (c: &mut Counter) -> number) -> number\n" +
+				"val r = withCounter(fn (c) { return c.inc() })",
+		},
+		{
+			name: "ImmutableBorrow",
+			src: counter + "declare fn withCounter(f: fn (c: &Counter) -> number) -> number\n" +
+				"val r = withCounter(fn (c) { return c.inc() })",
+			expected: []string{"6:37-6:42: cannot constrain immutable Counter <: mutable Counter"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.expected, messagesWithSpan(t, errs))
+		})
+	}
+}
