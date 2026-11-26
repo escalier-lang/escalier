@@ -3765,7 +3765,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 					})
 				}
 			`,
-			want: []string{"cannot constrain immutable Box <: mutable Box"},
+			want: []string{"cannot constrain immutable Box <: mutable object"},
 		},
 		{
 			name: "a direct parameter cannot borrow Self",
@@ -3786,7 +3786,7 @@ func TestInferBorrowedReceiverInACallback(t *testing.T) {
 			src: named + `
 				fn f(xs: &Named<number>) -> undefined { xs.each(fn (v, arr) { return arr.push(1) }) }
 			`,
-			want: []string{"object is missing property: push"},
+			want: []string{"cannot constrain immutable Named<number> <: mutable Named<number>"},
 		},
 	}
 	for _, tt := range tests {

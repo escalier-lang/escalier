@@ -75,9 +75,8 @@ func TestPrimitiveMemberReadsWrapper(t *testing.T) {
 			want: map[string]string{"n": "string"},
 		},
 		{
-			// `n` has no type when the body reads `toFixed`, so the read becomes a
-			// requirement on `n`. The `number` that `apply`'s parameter type passes in
-			// later satisfies it through `Number`.
+			// `apply`'s parameter types `n` as `number` before the body is checked, so the
+			// read finds `toFixed` through `Number`.
 			name: "CallbackReceiverSolvedAfterRead",
 			src: `
 				declare fn apply(f: fn (x: number) -> string) -> string
@@ -191,11 +190,11 @@ func TestPrimitiveMemberRejected(t *testing.T) {
 				declare fn apply(f: fn (x: number) -> string) -> string
 				val r = apply(fn (n) { return n.nope() })
 			`,
-			want: []string{"3:37-3:41: object is missing property: nope"},
+			want: []string{"3:35-3:41: object is missing property: nope"},
 		},
 		{
-			// The read has no receiver binding to check a `&mut self` method against, so
-			// the method stays missing.
+			// `withCounter`'s parameter types `c` as `&mut Counter` before the body is checked,
+			// so the body may call a `&mut self` method through it.
 			name: "CallbackMutSelfMethod",
 			src: `
 				class Counter {
@@ -205,7 +204,6 @@ func TestPrimitiveMemberRejected(t *testing.T) {
 				declare fn withCounter(f: fn (c: &mut Counter) -> number) -> number
 				val r = withCounter(fn (c) { return c.inc() })
 			`,
-			want: []string{"7:43-7:46: object is missing property: inc"},
 		},
 		{
 			name: "CallbackConsumingSelfMethod",
@@ -217,7 +215,7 @@ func TestPrimitiveMemberRejected(t *testing.T) {
 				declare fn withCounter(f: fn (c: &Counter) -> number) -> number
 				val r = withCounter(fn (c) { return c.take() })
 			`,
-			want: []string{"7:43-7:47: object is missing property: take"},
+			want: []string{"7:41-7:47: 'take' takes its receiver by value, so it moves the instance and cannot be reached through a borrow."},
 		},
 		{
 			// `undefined` has no members to read, so the union read falls back to the
@@ -265,14 +263,15 @@ func TestPrimitiveMemberMissingRelatedSpan(t *testing.T) {
 		related []string
 	}{
 		{
-			// The `number` comes from the parameter type `apply` declares for its callback.
-			name: "CallbackReceiverSolvedAfterRead",
+			// `n` takes the parameter type `apply` declares for its callback, as the call
+			// instantiates it. That copy records no source node, so the error names none.
+			name: "CallbackReceiverTypedByCallee",
 			src: `
 				declare fn apply(f: fn (x: number) -> string) -> string
 				val r = apply(fn (n) { return n.nope() })
 			`,
-			want:    "3:37-3:41: object is missing property: nope",
-			related: []string{"number"},
+			want:    "3:35-3:41: object is missing property: nope",
+			related: []string{},
 		},
 		{
 			name:    "MixedPrimitiveUnion",

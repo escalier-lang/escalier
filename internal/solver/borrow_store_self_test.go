@@ -140,7 +140,7 @@ func TestSelfReceiverIsAStoreSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class Holder<'a> {
 			peer: &'a mut {value: number},
-			drain(&self, out: &mut {slot: &'a mut {value: number}}) -> undefined { out.slot = self.peer },
+			drain(&mut self, out: &mut {slot: &'a mut {value: number}}) -> undefined { out.slot = self.peer },
 		}
 
 		val build = fn (mut p: {value: number}, sink: &mut {slot: &mut {value: number}}) -> undefined {

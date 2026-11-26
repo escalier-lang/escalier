@@ -1541,11 +1541,11 @@ func TestOwnershipDataflow(t *testing.T) {
 				class Holder<'a> {
 					peer: &'a mut {x: number},
 					n: number,
-					get(&self) -> &'a mut {x: number} { return self.peer },
+					get(&mut self) -> &'a mut {x: number} { return self.peer },
 				}
 				fn go() -> number {
 					val mut p = {x: 1}
-					val h = Holder(&mut p, 0)
+					val mut h = Holder(&mut p, 0)
 					val x = h.get()
 					val y = h
 					return x.x
