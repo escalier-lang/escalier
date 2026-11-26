@@ -587,6 +587,9 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// is not taken for a call argument.
 	isArg := c.argFunc != nil && ast.Node(c.argFunc) == node
 	c.argFunc = nil
+	// Take the function type a closure flows into, and clear it so a lambda nested in the
+	// body does not take it for its own.
+	hint := c.takeClosureHint(node)
 	// Report any named lifetime the signature uses without binding it in its own `<…>`
 	// list, and the symmetric unused binder. Run before resolving the params so the scan
 	// reads the written names, not what namedLifetime has since interned.
@@ -661,9 +664,24 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// FuncParam below.
 		pat, rest, optional := c.restParamSlot(p, i == len(sig.Params)-1)
 		pt, written := c.writtenParamType(declScope, p, lvl)
+		// A parameter the closure leaves unannotated takes the type of the context's
+		// parameter at its position, so the body is checked against that type.
+		contextual := false
+		if !written && !rest && hint != nil && i < len(hint.Params) && !hint.Params[i].Rest {
+			pt, written, contextual = hint.Params[i].Type, true, true
+			// An immutable borrow of a type the call has not solved yet is read through, so a
+			// field read off it keeps the borrow, as it does for a borrow F3 infers.
+			if ref, isRef := pt.(*soltype.RefType); isRef && !ref.Mut {
+				if v, isVar := ref.Inner.(*soltype.TypeVarType); isVar {
+					c.addReadThroughVar(v)
+				}
+			}
+		}
 		// A caller fills the parameter, so the lower bounds the body sees are not all it
 		// can hold.
-		c.markOpenVar(pt)
+		if !contextual {
+			c.markOpenVar(pt)
+		}
 		// A generic function in parameter position is a rank-2 callback such as
 		// `g: <V>(x: V) -> V`. Its `<V>` binder is kept on the parameter's FuncType so a
 		// caller's argument is checked against it by skolemizing `V`, and a call to the
@@ -705,7 +723,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// lets CannotAssignToImmutableError point "declared immutable here" at the
 			// parameter (see bindingDecl). pat is an ast.Node (*ast.Param is not).
 			sources := []provenance.Provenance{&ast.NodeProvenance{Node: pat}}
-			if p.TypeAnn == nil {
+			if !written {
 				// An un-annotated param's type is the fresh var minted here, so a
 				// param-type mismatch blames the param. An annotated param's blame
 				// instead rides on its annotation, recorded by resolveTypeAnn.
@@ -763,7 +781,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// paramTypes, keyed by leaf name, so the liveness pre-pass seeds the leaf's
 			// alias mutability. An un-annotated destructuring param mints a fresh var pt
 			// whose mismatch blame should point at the pattern.
-			if p.TypeAnn == nil {
+			if !written {
 				c.recordProv(pt, pat, ParamBinding)
 			}
 			mirror := c.bindPattern(fnScope, lvl, pat, pt, paramTypes)
@@ -2115,7 +2133,7 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	if hasEventRef {
 		c.emitReceiverFlow(lvl, e, eventRef)
 	}
-	args := c.inferCallArgs(scope, lvl, e, preset)
+	args := c.inferCallArgs(scope, lvl, e, preset, c.callArgDests(lvl, target, e.Args))
 	var ret soltype.Type
 	var fn *soltype.FuncType
 	if target.overloads != nil {
@@ -2593,8 +2611,10 @@ func (c *checker) implicitMutBorrow(src ast.Expr, srcT, dest soltype.Type) solty
 // contains statements, such as an `if`, overwrites c.fn.currentStmt, so reading the point
 // afterward would record an argument move against an inner branch.
 //
-// An argument preset holds takes that type, and its expression is not inferred.
-func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset map[ast.Expr]soltype.Type) []soltype.Type {
+// An argument preset holds takes that type, and its expression is not inferred. dests holds the
+// parameter type each argument flows into, nil where none is known, index-aligned with e.Args.
+// It types the parameters a closure argument leaves unannotated.
+func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset map[ast.Expr]soltype.Type, dests []soltype.Type) []soltype.Type {
 	args := make([]soltype.Type, len(e.Args))
 	for i, a := range e.Args {
 		c.noteKeeper(a, e)
@@ -2605,7 +2625,7 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset m
 		if fe, ok := a.(*ast.FuncExpr); ok {
 			c.argFunc = fe
 		}
-		args[i] = c.inferExpr(scope, lvl, a)
+		args[i] = c.inferExprIn(scope, lvl, a, dests[i])
 	}
 	return args
 }
@@ -2844,7 +2864,13 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			}
 		}
 	}
-	sourceT := c.inferExpr(scope, lvl, e.Right)
+	// A closure stored into a typed place takes its parameter types from that place. The
+	// target is read for its declared type only, since it is inferred after the value.
+	var dest soltype.Type
+	if _, isClosure := e.Right.(*ast.FuncExpr); isClosure {
+		dest = c.assignDestType(scope, e.Left)
+	}
+	sourceT := c.inferExprIn(scope, lvl, e.Right, dest)
 	// The assignment's events read the types its checks record, so they are emitted once
 	// every path below has returned.
 	if hasEventRef {
@@ -4556,7 +4582,30 @@ func (c *checker) fieldBorrow(fieldType soltype.Type, readVar soltype.RefInner, 
 			// retires the depth-two `&mut &mut` shape entirely.
 			return fieldType, true
 		}
+		// A `&mut` field read through an immutable receiver lends its referent immutably, for
+		// no longer than the receiver, since the receiver cannot hand out the mutable borrow it
+		// holds.
+		if !recvMut && recvLt != nil {
+			return &soltype.RefType{Mut: false, Lt: recvLt, Inner: fieldType.Inner}, true
+		}
 		return nil, false
+	case *soltype.UnionType:
+		// Each member reads as it would on its own, so `inner: Box | null` off an immutable
+		// receiver reads `&Box | null`. A union with no member that borrows reads as a plain
+		// value.
+		members := make([]soltype.Type, len(fieldType.Types))
+		borrows := false
+		for i, m := range fieldType.Types {
+			members[i] = m
+			if borrow, ok := c.fieldBorrow(m, nil, recvMut, recvLt, lvl); ok {
+				members[i] = borrow
+				borrows = borrows || borrow != m
+			}
+		}
+		if !borrows {
+			return nil, false
+		}
+		return newUnion(nil, members), true
 	case *soltype.ObjectType, *soltype.TupleType, *soltype.ClassType, *soltype.AliasType:
 		// A bare object/tuple field a borrowed receiver lends is read as a
 		// receiver-bounded borrow whose mutability follows the receiver (PR 14): a

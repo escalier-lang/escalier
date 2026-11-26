@@ -74,7 +74,12 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 		// both roles.
 		var t soltype.Type = &soltype.UndefinedType{}
 		if s.Expr != nil {
-			t = c.inferExpr(scope, lvl, s.Expr)
+			// A returned closure takes its parameter types from the written return type.
+			var dest soltype.Type
+			if c.fn != nil {
+				dest = c.fn.returnAnn
+			}
+			t = c.inferExprIn(scope, lvl, s.Expr, dest)
 		}
 		if c.fn != nil {
 			c.fn.returns = append(c.fn.returns, t)

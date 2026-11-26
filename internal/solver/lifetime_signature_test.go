@@ -23,7 +23,7 @@ func TestSignatureImpliesBodyLifetimes(t *testing.T) {
 		},
 		{
 			name: "a class lifetime the body makes outlive a member lifetime reports",
-			src: "class Holder<'a> {\n\tpeer: &'a mut {value: number},\n" +
+			src: "class Holder<'a> {\n\tpeer: &'a {value: number},\n" +
 				"\tpick<'b>(&self) -> &'b {value: number} { return self.peer },\n}",
 			want: []string{"3:7-3:9: the body requires the class's 'a to outlive 'b, but the signature does not imply it; write 'a in place of 'b"},
 		},
