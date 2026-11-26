@@ -175,7 +175,20 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 			c.noteBoundClosure(closure)
 		}
 	}
-	initT := c.inferExpr(scope, lvl, d.Init)
+	// A closure initializer takes its parameter types from the annotation, so the annotation
+	// is resolved before the closure is inferred. Every other initializer is inferred first,
+	// which keeps its diagnostics ahead of the annotation's.
+	var annT soltype.Type
+	annOK, annResolved := false, false
+	var dest soltype.Type
+	if _, isClosure := d.Init.(*ast.FuncExpr); isClosure && d.TypeAnn != nil {
+		annT, annOK = c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d))
+		annResolved = true
+		if annOK {
+			dest = annT
+		}
+	}
+	initT := c.inferExprIn(scope, lvl, d.Init, dest)
 	// An unannotated name binds whatever its initializer produces, so a field read through a
 	// borrow binds a borrow and needs the borrow written. A destructuring pattern reads
 	// through the borrow itself and needs nothing written.
@@ -234,7 +247,10 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl, ns str
 		// placeholder, so constraining `initT <: never` would cascade a spurious
 		// error and adopting `never` would poison the binding. Keep the inferred
 		// initializer type instead (error recovery).
-		annT, ok := c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d))
+		if !annResolved {
+			annT, annOK = c.resolveDeclaredTypeAnn(scope, d.TypeAnn, lvl, symName, varDeclSymbolPosition(d))
+		}
+		ok := annOK
 		// The binding keeps its initializer, which names the slot a FuncKeptForStaticError
 		// reports.
 		c.noteKeeper(d.Init, d)

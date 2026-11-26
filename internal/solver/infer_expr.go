@@ -2133,7 +2133,7 @@ func (c *checker) resolveCallPath(scope *Scope, lvl int, e *ast.CallExpr, preset
 	if hasEventRef {
 		c.emitReceiverFlow(lvl, e, eventRef)
 	}
-	args := c.inferCallArgs(scope, lvl, e, preset, target.fn)
+	args := c.inferCallArgs(scope, lvl, e, preset, c.callArgDests(lvl, target, len(e.Args)))
 	var ret soltype.Type
 	var fn *soltype.FuncType
 	if target.overloads != nil {
@@ -2611,11 +2611,10 @@ func (c *checker) implicitMutBorrow(src ast.Expr, srcT, dest soltype.Type) solty
 // contains statements, such as an `if`, overwrites c.fn.currentStmt, so reading the point
 // afterward would record an argument move against an inner branch.
 //
-// An argument preset holds takes that type, and its expression is not inferred. fn is the one
-// signature the call applies its arguments to, or nil for an overload set or a callee whose
-// signature is not yet known. Its parameter types type the parameters a closure argument leaves
-// unannotated.
-func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset map[ast.Expr]soltype.Type, fn *soltype.FuncType) []soltype.Type {
+// An argument preset holds takes that type, and its expression is not inferred. dests holds the
+// parameter type each argument flows into, nil where none is known, index-aligned with e.Args.
+// It types the parameters a closure argument leaves unannotated.
+func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset map[ast.Expr]soltype.Type, dests []soltype.Type) []soltype.Type {
 	args := make([]soltype.Type, len(e.Args))
 	for i, a := range e.Args {
 		c.noteKeeper(a, e)
@@ -2626,12 +2625,7 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr, preset m
 		if fe, ok := a.(*ast.FuncExpr); ok {
 			c.argFunc = fe
 		}
-		// The callee's parameter at this position types a closure argument's parameters.
-		var dest soltype.Type
-		if fn != nil && i < len(fn.Params) && !fn.Params[i].Rest {
-			dest = fn.Params[i].Type
-		}
-		args[i] = c.inferExprIn(scope, lvl, a, dest)
+		args[i] = c.inferExprIn(scope, lvl, a, dests[i])
 	}
 	return args
 }
@@ -2870,7 +2864,13 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			}
 		}
 	}
-	sourceT := c.inferExpr(scope, lvl, e.Right)
+	// A closure stored into a typed place takes its parameter types from that place. The
+	// target is read for its declared type only, since it is inferred after the value.
+	var dest soltype.Type
+	if _, isClosure := e.Right.(*ast.FuncExpr); isClosure {
+		dest = c.assignDestType(scope, e.Left)
+	}
+	sourceT := c.inferExprIn(scope, lvl, e.Right, dest)
 	// The assignment's events read the types its checks record, so they are emitted once
 	// every path below has returned.
 	if hasEventRef {
