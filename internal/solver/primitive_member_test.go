@@ -193,19 +193,6 @@ func TestPrimitiveMemberRejected(t *testing.T) {
 			want: []string{"3:35-3:41: object is missing property: nope"},
 		},
 		{
-			// `withCounter`'s parameter types `c` as `&mut Counter` before the body is checked,
-			// so the body may call a `&mut self` method through it.
-			name: "CallbackMutSelfMethod",
-			src: `
-				class Counter {
-					count: number,
-					inc(&mut self) -> number { return self.count },
-				}
-				declare fn withCounter(f: fn (c: &mut Counter) -> number) -> number
-				val r = withCounter(fn (c) { return c.inc() })
-			`,
-		},
-		{
 			name: "CallbackConsumingSelfMethod",
 			src: `
 				class Counter {

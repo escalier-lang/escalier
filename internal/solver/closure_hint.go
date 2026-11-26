@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -75,11 +77,12 @@ func (c *checker) monoBindingType(scope *Scope, name string) soltype.Type {
 	return nil
 }
 
-// callArgDests returns, for each of a call's argc arguments, the parameter type the argument
+// callArgDests returns, for each of a call's arguments args, the parameter type the argument
 // flows into, or nil where none is known. A target with one signature gives that signature's
-// parameter types. An overload set gives the parameter type every arm accepting argc arguments
-// agrees on.
-func (c *checker) callArgDests(lvl int, target callTarget, argc int) []soltype.Type {
+// parameter types. An overload set gives the parameter type every arm accepting len(args)
+// arguments agrees on, and gives none when no argument is a function expression.
+func (c *checker) callArgDests(lvl int, target callTarget, args []ast.Expr) []soltype.Type {
+	argc := len(args)
 	dests := make([]soltype.Type, argc)
 	// A second instance of a variable callee's bound is not the one the call constrains, so
 	// a parameter type read off it would hand a closure variables the call never solves.
@@ -94,7 +97,9 @@ func (c *checker) callArgDests(lvl int, target callTarget, argc int) []soltype.T
 		}
 		return dests
 	}
-	if target.overloads == nil {
+	// Only a function expression reads its argument's type, and instantiating every arm of an
+	// overload set mints variables, so a call with no closure argument skips the arms.
+	if target.overloads == nil || !slices.ContainsFunc(args, isFuncExpr) {
 		return dests
 	}
 	var arms []*soltype.FuncType
@@ -161,3 +166,9 @@ func (v *typeVarFinder) EnterType(t soltype.Type, _ soltype.Polarity) soltype.En
 }
 
 func (v *typeVarFinder) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+
+// isFuncExpr reports whether e is a function expression.
+func isFuncExpr(e ast.Expr) bool {
+	_, ok := e.(*ast.FuncExpr)
+	return ok
+}
