@@ -1,5 +1,13 @@
 # @escalier/cli
 
+## 0.1.2
+
+### Patch Changes
+
+- 0f5e5f5: End the `building: <pkg>` line before printing the package's errors, so each error starts on a line of its own instead of running on from the package path.
+- 5e28529: A module-level function or method may write `_` in its signature only in its error type, as in `throws _`, `throws Array<_>` or `Promise<T, _>`. A `_` anywhere else reports an error that suggests the inferred type to write, and an error-type `_` that infers a type holding a lifetime is rejected.
+- 899cd96: A `mut` binding in a destructuring pattern no longer keeps `undefined` in its type when its default fills that case in, and it keeps the literal members of a union it widens.
+
 ## 0.1.1
 
 ### Patch Changes

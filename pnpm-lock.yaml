@@ -155,6 +155,8 @@ importers:
 
   fixtures/enum_script: {}
 
+  fixtures/error_type_placeholder: {}
+
   fixtures/exception_handling: {}
 
   fixtures/export_keyword_visibility: {}
