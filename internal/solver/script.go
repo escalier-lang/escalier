@@ -210,6 +210,7 @@ func (c *checker) bindScriptAlias(scope *Scope, lvl int, decl *ast.TypeDecl) {
 	c.inferAliasBody(sh)
 	c.deferArgBounds = false
 	c.checkProductive(shells)
+	c.markUninhabitedAliases(shells)
 	markPhantomParams(shells)
 	c.reportPhantomParams(shells)
 	c.ctx.buildingAliases = prevBuilding

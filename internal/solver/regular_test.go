@@ -259,13 +259,13 @@ func TestConstrainRegularAliasClosesOnItsKnot(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		type H<T> = {a: keyof T, b: H<{c: T}>}
 		fn node() { return {a: "c", b: node()} }
-		fn use() -> H<{c: number}> { return node() }
+		val use: H<{c: number}> = node()
 	`)
 	require.Equal(t,
 		[]string{nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "c", b: μX0.{a: "c", b: X0}}`)},
 		messagesWithSpan(t, errs))
 	require.Equal(t, `fn () -> {a: "c", b: μX0.{a: "c", b: X0}}`, values["node"])
-	require.Equal(t, "fn () -> H<{c: number}>", values["use"])
+	require.Equal(t, "H<{c: number}>", values["use"])
 }
 
 // The reference one lap above the knot checks too. Its own level emits `keyof number`, which is
@@ -275,11 +275,11 @@ func TestConstrainRegularAliasChecksTheLapAboveTheKnot(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type H<T> = {a: keyof T, b: H<{c: T}>}
 		fn node() { return {a: "c", b: node()} }
-		fn use() -> H<number> { return node() }
+		val use: H<number> = node()
 	`)
 	require.Equal(t, []string{
 		nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "c", b: μX0.{a: "c", b: X0}}`),
-		`4:34-4:40: cannot constrain "c" <: never`,
+		`4:24-4:30: cannot constrain "c" <: never`,
 	}, messagesWithSpan(t, errs))
 }
 
@@ -293,11 +293,11 @@ func TestConstrainRegularAliasStillReportsAMismatch(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type H<T> = {a: keyof T, b: H<{c: T}>}
 		fn node() { return {a: "wrong", b: node()} }
-		fn use() -> H<{c: number}> { return node() }
+		val use: H<{c: number}> = node()
 	`)
 	require.Equal(t, []string{
 		nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "wrong", b: μX0.{a: "wrong", b: X0}}`),
-		`4:39-4:45: cannot constrain "wrong" <: "c"`,
+		`4:29-4:35: cannot constrain "wrong" <: "c"`,
 	}, messagesWithSpan(t, errs))
 }
 
@@ -311,7 +311,7 @@ func TestConstrainRegularAliasInstantiationsAgree(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type Chain<T> = {a: keyof T, b: Chain<{c: T}>}
 		declare fn make() -> Chain<{c: number}>
-		fn use() -> Chain<{c: string}> { return make() }
+		val use: Chain<{c: string}> = make()
 	`)
 	require.Empty(t, Messages(errs))
 }
@@ -323,11 +323,11 @@ func TestConstrainNonRegularAliasStillReachesTheBudget(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type Nest<T> = {here: T, deeper: Nest<{b: T}>}
 		declare fn make() -> Nest<number>
-		fn use() -> Nest<string> { return make() }
+		val use: Nest<string> = make()
 	`)
 	require.Equal(t, []string{
-		"4:37-4:43: cannot constrain number <: string",
-		"4:37-4:43: comparing two instantiations of `Nest` reached the limit of 200 type-operator " +
+		"4:27-4:33: cannot constrain number <: string",
+		"4:27-4:33: comparing two instantiations of `Nest` reached the limit of 200 type-operator " +
 			"expansions and was cut off; either the two sides recurse without ever repeating a pair " +
 			"the check can close on, or their alias chains run deeper than the limit unfolds",
 	}, messagesWithSpan(t, errs))
@@ -352,11 +352,11 @@ func TestConstrainRegularAliasKeepsAReductionDiagnostic(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type H<T> = {a: keyof T, e: {x: number}["z"], b: H<{c: T}>}
 		fn node() { return {a: "c", e: 1, b: node()} }
-		fn use() -> H<{c: number}> { return node() }
+		val use: H<{c: number}> = node()
 	`)
 	require.Equal(t, []string{
 		nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "c", e: 1, b: μX0.{a: "c", e: 1, b: X0}}`),
-		`4:39-4:45: object {x: number} has no property "z"`,
+		`4:29-4:35: object {x: number} has no property "z"`,
 	}, messagesWithSpan(t, errs))
 }
 
@@ -367,10 +367,10 @@ func TestMemberReadOnRegularAliasKeepsTheAliasName(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		type H<T> = {a: keyof T, b: H<{c: T}>}
 		declare fn mk() -> H<{c: number}>
-		fn field() -> H<{c: {c: number}}> { return mk().b }
+		val field: H<{c: {c: number}}> = mk().b
 	`)
 	require.Empty(t, Messages(errs))
-	require.Equal(t, "fn () -> H<{c: {c: number}}>", values["field"])
+	require.Equal(t, "H<{c: {c: number}}>", values["field"])
 }
 
 // A tuple alias that splices a non-recursive operand every lap checks against another of its own
@@ -383,7 +383,7 @@ func TestConstrainRegularTupleAliasSplicesItsSpread(t *testing.T) {
 		type Pair = [number, string]
 		type WT<T> = [keyof T, ...Pair, WT<{c: T}>]
 		declare fn mk() -> WT<{c: number}>
-		fn use() -> WT<{c: {c: number}}> { return mk() }
+		val use: WT<{c: {c: number}}> = mk()
 	`)
 	require.Empty(t, Messages(errs))
 }

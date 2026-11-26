@@ -358,3 +358,121 @@ func TestFinitelyInhabited(t *testing.T) {
 		})
 	}
 }
+
+// TestNonReturningRecursionThroughAlias covers functions whose written return type is a recursive
+// alias. A call to one whose alias no finite value inhabits never returns, the same as a call to a
+// function inferred to return a μ-knot with no base case.
+func TestNonReturningRecursionThroughAlias(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		expected []string
+	}{
+		{
+			name:     "RequiredSelfReference",
+			src:      "type Next = {next: Next}\nfn g() -> Next { return {next: g()} }",
+			expected: []string{nonReturningMsg("2:4-2:5", "g", "fn () -> Next")},
+		},
+		{
+			name:     "TupleSelfReference",
+			src:      "type Pair = [number, Pair]\nfn g() -> Pair { return [1, g()] }",
+			expected: []string{nonReturningMsg("2:4-2:5", "g", "fn () -> Pair")},
+		},
+		{
+			name:     "MutualRecursion",
+			src:      "type A = {b: B}\ntype B = {a: A}\nfn g() -> A { return {b: {a: g()}} }",
+			expected: []string{nonReturningMsg("3:4-3:5", "g", "fn () -> A")},
+		},
+		{
+			name:     "GenericSelfReference",
+			src:      "type L<T> = {head: T, tail: L<T>}\nfn g(x: number) -> L<number> { return {head: x, tail: g(x)} }",
+			expected: []string{nonReturningMsg("2:4-2:5", "g", "fn (x: number) -> L<number>")},
+		},
+		{
+			name:     "InsideTheReturnType",
+			src:      "type Next = {next: Next}\nfn g() -> {first: Next} { return {first: {next: g().first}} }",
+			expected: []string{nonReturningMsg("2:4-2:5", "g", "fn () -> {first: Next}")},
+		},
+		{
+			// checkProductive rejects Bad, so X's reference to it reads as inhabited and f
+			// reports nothing more.
+			name: "DependsOnARejectedAlias",
+			src:  "type X = {b: Bad}\ntype Bad = {x: X} | Bad\ndeclare fn mk() -> X\nfn f() -> X { return mk() }",
+			expected: []string{
+				"2:6-2:9: recursive type alias `Bad` reaches itself without passing under a type constructor, " +
+					"so no lap of the recursion emits any structure and the alias names no type; wrap the " +
+					"recursive reference in an object, tuple, or function type",
+			},
+		},
+		{
+			// Throwing builds no value, so nothing recurses.
+			name: "StubThatThrows",
+			src:  "type Next = {next: Next}\nfn todo() -> Next throws string { throw \"todo\" }",
+			expected: []string{
+				"2:14-2:18: every path through the body throws, so the declared return type `Next` is " +
+					"unreachable; the body returns `never`",
+			},
+		},
+		{
+			// The parameter is a value someone else built, passed along whole.
+			name: "PassesAParameterAlong",
+			src:  "type Next = {next: Next}\nfn f(x: Next) -> Next { return x }",
+		},
+		{
+			// The structure is built around a value the caller passed in.
+			name: "BuildsAroundAParameter",
+			src:  "type Next = {next: Next}\nfn f(x: Next) -> Next { return {next: x} }",
+		},
+		{
+			// A written return type whose body returns a call that never returns.
+			name:     "ReturnsACallThatNeverReturns",
+			src:      "type Next = {next: Next}\ndeclare fn mk() -> Next\nfn f() -> Next { return mk() }",
+			expected: []string{nonReturningMsg("3:4-3:5", "f", "fn () -> Next")},
+		},
+		{
+			// The call runs only on one branch, and the other branch returns.
+			name: "CallOnOneBranchOfAnIf",
+			src:  "type Next = {next: Next}\ndeclare fn mk() -> Next\nfn f(x: Next, c: boolean) -> Next { return if c { x } else { mk() } }",
+		},
+		{
+			name: "CallInAMatchArm",
+			src:  "type Next = {next: Next}\ndeclare fn mk() -> Next\nfn f(x: Next | undefined) -> Next { return match x { n: Next => n, _ => mk() } }",
+		},
+		{
+			// The condition always runs, so its call never returns either.
+			name:     "CallInTheConditionOfAnIf",
+			src:      "type Next = {next: Next}\ndeclare fn mk() -> Next\ndeclare fn ok(n: Next) -> boolean\nfn f(x: Next) -> Next { return if ok(mk()) { x } else { x } }",
+			expected: []string{nonReturningMsg("4:4-4:5", "f", "fn (x: Next) -> Next")},
+		},
+		{
+			name: "AliasAlone",
+			src:  "type Next = {next: Next}",
+		},
+		{
+			name: "BaseCaseUnionArm",
+			src:  "type List = {head: number, tail: List | undefined}\nfn f() -> List { return {head: 1, tail: undefined} }",
+		},
+		{
+			name: "OptionalProperty",
+			src:  "type List = {head: number, tail?: List}\nfn f() -> List { return {head: 1} }",
+		},
+		{
+			name: "DeferredBehindFunction",
+			src:  "type Stream = {head: number, rest: fn () -> Stream}\nfn f() -> Stream { return {head: 1, rest: f} }",
+		},
+		{
+			name: "MutualRecursionWithBaseCase",
+			src:  "type A = {b: B}\ntype B = {a: A} | undefined\nfn f() -> A { return {b: undefined} }",
+		},
+		{
+			name: "ArrayOfSelf",
+			src:  "type Tree = {children: Array<Tree>}\nfn f() -> Tree { return {children: []} }",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.expected, messagesWithSpan(t, errs))
+		})
+	}
+}

@@ -719,6 +719,7 @@ func (c *checker) inferComponent(
 	// constraint reaches an alias in the component, which is what lets constrain trust the marks
 	// they leave on each AliasDef.
 	c.checkProductive(aliasShells)
+	c.markUninhabitedAliases(aliasShells)
 	markPhantomParams(aliasShells)
 	c.reportPhantomParams(aliasShells)
 	c.ctx.buildingAliases = prevBuilding
