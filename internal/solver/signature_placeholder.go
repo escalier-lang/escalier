@@ -21,27 +21,22 @@ type placeholder struct {
 // and the rest.
 //
 // The error type is the type a `throws` clause writes, or the error parameter of a returned
-// `Promise`, `Generator` or `AsyncGenerator`. A `_` stands for it when it is that whole type,
-// as in `throws _`, or the referent of a borrow written there, as in `throws &'a _`. Every
-// other `_` in sig is misplaced, a `_` written inside a larger error type included.
+// `Promise`, `Generator` or `AsyncGenerator`. Every `_` written anywhere in it stands for
+// part of it, as in `throws _`, `throws &'a _` or `throws Array<_>`. Every other `_` in sig
+// is misplaced.
 func signaturePlaceholders(sig *ast.FuncSig) (errorTypes, misplaced []placeholder) {
-	collect := func(ta ast.TypeAnn, param int, inReturn bool) {
+	gather := func(into *[]placeholder, ta ast.TypeAnn, param int, inReturn bool) {
 		if ta == nil {
 			return
 		}
 		col := &placeholderCollector{}
 		ta.Accept(col)
 		for _, w := range col.found {
-			misplaced = append(misplaced, placeholder{ann: w, param: param, inReturn: inReturn})
+			*into = append(*into, placeholder{ann: w, param: param, inReturn: inReturn})
 		}
 	}
-	errorSlot := func(ta ast.TypeAnn, inReturn bool) {
-		if w, ok := errorTypePlaceholder(ta); ok {
-			errorTypes = append(errorTypes, placeholder{ann: w, param: -1, inReturn: inReturn})
-			return
-		}
-		collect(ta, -1, inReturn)
-	}
+	collect := func(ta ast.TypeAnn, param int, inReturn bool) { gather(&misplaced, ta, param, inReturn) }
+	errorSlot := func(ta ast.TypeAnn, inReturn bool) { gather(&errorTypes, ta, -1, inReturn) }
 	for _, tp := range sig.TypeParams {
 		collect(tp.LowerBound, -1, false)
 		collect(tp.UpperBound, -1, false)
@@ -72,16 +67,6 @@ func signaturePlaceholders(sig *ast.FuncSig) (errorTypes, misplaced []placeholde
 		errorSlot(sig.Throws, false)
 	}
 	return errorTypes, misplaced
-}
-
-// errorTypePlaceholder returns the `_` that stands for the error type ta writes: ta itself,
-// or the referent of the borrow ta writes. ok is false when ta is neither.
-func errorTypePlaceholder(ta ast.TypeAnn) (*ast.WildcardTypeAnn, bool) {
-	if ref, isRef := ta.(*ast.RefTypeAnn); isRef {
-		ta = ref.Inner
-	}
-	w, ok := ta.(*ast.WildcardTypeAnn)
-	return w, ok
 }
 
 // placeholderCollector gathers each `_` a type annotation writes, in source order.

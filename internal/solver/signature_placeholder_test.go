@@ -39,6 +39,13 @@ func TestSignaturePlaceholder(t *testing.T) {
 			`,
 		},
 		{
+			name: "PlaceholderInsidePromiseError",
+			src: `
+				declare fn fail() -> Promise<number, Array<string>>
+				async fn f() -> Promise<number, Array<_>> { return await fail() }
+			`,
+		},
+		{
 			name: "ParamPlaceholder",
 			src:  `fn f(x: _) -> number { return x + 1 }`,
 			expected: []string{
@@ -72,9 +79,6 @@ func TestSignaturePlaceholder(t *testing.T) {
 				declare fn fail() -> number throws Array<string>
 				fn f() -> number throws Array<_> { return fail() }
 			`,
-			expected: []string{
-				"error 3:35-3:36: 'f' is declared at module level, so its signature may write `_` only for its error type",
-			},
 		},
 		{
 			name: "ErrorPlaceholderInfersBorrow",
@@ -192,6 +196,21 @@ func TestSignaturePlaceholderInfersErrorType(t *testing.T) {
 			name:     "PromiseError",
 			src:      "declare fn fail() -> Promise<number, string>\nasync fn f() -> Promise<number, _> { return await fail() }",
 			expected: "() -> Promise<number, string>",
+		},
+		{
+			name:     "NestedInThrows",
+			src:      "declare fn fail() -> number throws Array<string>\nfn f() -> number throws Array<_> { return fail() }",
+			expected: "() -> number throws Array<string>",
+		},
+		{
+			name:     "NestedInPromiseError",
+			src:      "declare fn fail() -> Promise<number, Array<string>>\nasync fn f() -> Promise<number, Array<_>> { return await fail() }",
+			expected: "() -> Promise<number, Array<string>>",
+		},
+		{
+			name:     "NestedInFuncParam",
+			src:      "declare fn fail() -> number throws fn (x: string) -> number\nfn f() -> number throws fn (x: _) -> number { return fail() }",
+			expected: "() -> number throws fn (x: string) -> number",
 		},
 		{
 			name:     "BorrowedError",
